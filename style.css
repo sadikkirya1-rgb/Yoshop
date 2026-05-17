@@ -1167,6 +1167,57 @@
   white-space: nowrap;
 }
 
+/* Utility & Layout Classes */
+.u-flex-1 { flex: 1; }
+.u-flex-2 { flex: 2; }
+.u-flex-grow-1 { flex-grow: 1; }
+.u-flex-grow-05 { flex-grow: 0.5; }
+.u-flex-basis-100 { flex-basis: 100px; }
+.u-flex-basis-150 { flex-basis: 150px; }
+.u-flex-nowrap { flex-wrap: nowrap; }
+
+.u-mt-10 { margin-top: 10px; }
+.u-mt-15 { margin-top: 15px; }
+.u-mt-20 { margin-top: 20px; }
+.u-mb-15 { margin-bottom: 15px; }
+.u-mb-20 { margin-bottom: 20px; }
+.u-text-right { text-align: right; }
+.u-text-center { text-align: center; }
+.u-bold { font-weight: bold; }
+
+/* Component Styles */
+.form-panel {
+  padding: 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card);
+}
+
+.recipe-builder-box {
+  margin-top: 15px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 15px;
+}
+
+.pricing-calc-box {
+  margin-top: 20px;
+  padding-top: 15px;
+  border-top: 1px solid var(--border-color);
+}
+
+.stock-status.in-stock { color: #28a745; }
+.stock-status.out-of-stock { color: #dc3545; }
+
+.menu-item-body {
+  padding: 10px;
+}
+
+.qty-display {
+  font-weight: bold;
+  min-width: 20px;
+  text-align: center;
+}
+
 /* Product Image in Table */
 #addDishTab table td img {
   width: 40px;

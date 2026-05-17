@@ -32,6 +32,11 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('fetch', (event) => {
+  // Bypass service worker for development server scripts to avoid 502/MIME errors
+  if (event.request.url.includes('fiveserver.js') || event.request.url.includes('livereload.js')) {
+    return;
+  }
+
   event.respondWith(
     caches.match(event.request, { ignoreSearch: true })
       .then((response) => {

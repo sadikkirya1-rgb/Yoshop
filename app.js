@@ -218,15 +218,15 @@
 
             item.innerHTML = `
               <img src="${dish.image}" alt="">
-              <div style="padding: 10px;">
+              <div class="menu-item-body">
                 <div class="menu-item-header">
                   <h4>${dish.name}</h4>
                   <p><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(dish.price)}</p>
                 </div>
-                <p style="font-size: 0.8em; color: ${isOutOfStock ? 'red' : 'green'};">Stock: ${stock}</p>
+                <p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">Stock: ${stock}</p>
                 <div class="item-controls">
                   <button onclick="decreaseQty('${CART_ID}', '${dish.name}')" ${quantity === 0 ? 'disabled' : ''}>-</button>
-                  <span style="font-weight: bold; min-width: 20px; text-align: center;">${quantity}</span>
+                  <span class="qty-display">${quantity}</span>
                   <button onclick="addToOrder('${CART_ID}', '${dish.name}')" ${isOutOfStock ? 'disabled' : ''}>+</button>
                 </div>
               </div>`;
