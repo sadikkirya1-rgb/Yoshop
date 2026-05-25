@@ -1021,6 +1021,17 @@ const analytics = getAnalytics(app);
     const receiptModal = document.getElementById('receiptModal');
     let currentTransaction;
 
+    // Handle lookup by index if a numeric index is passed, or use the object directly
+    if (typeof transactionData === 'number' || (typeof transactionData === 'string' && transactionData !== '' && !isNaN(transactionData))) {
+        const idx = parseInt(transactionData, 10);
+        const source = (typeof transactions !== 'undefined') ? transactions : (window.transactions || []);
+        if (source && source[idx]) {
+            transactionData = source[idx];
+        } else {
+            transactionData = null;
+        }
+    }
+
     if (transactionData) {
       currentTransaction = transactionData;
       // Store the historical transaction data on the modal itself for the print function to use
@@ -1427,6 +1438,7 @@ const analytics = getAnalytics(app);
   function renderTransactions() {
     const container = document.getElementById('transactionListContainer');
     const filterDate = document.getElementById('transactionFilterDate').value;
+    console.log('assets.renderTransactions called — transactions length:', Array.isArray(transactions) ? transactions.length : typeof transactions, 'filterDate:', filterDate);
     let filteredTransactions = transactions;
     if (filterDate) {
       filteredTransactions = transactions.filter(t => t.date.startsWith(filterDate));
@@ -1435,22 +1447,50 @@ const analytics = getAnalytics(app);
     const sourceArray = filterDate ? filteredTransactions : transactions;
 
     const tableRows = sourceArray.map((t, i) => {
-      const originalIndex = transactions.indexOf(t);
+      const txIndex = transactions.indexOf(t);
       const tr = document.createElement('tr');
-      
+      tr.className = 'u-cursor-pointer';
+      // Preview receipt when clicking anywhere on the row
+      tr.onclick = (e) => {
+        if (!e.target.closest('button') && !e.target.closest('.icon-btn')) {
+          previewOrder(t);
+        }
+      };
+
       const iconReopen = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path fill-rule="evenodd" d="M8 3a5 5 0 1 1-4.546 2.914.5.5 0 0 0-.908-.417A6 6 0 1 0 8 2v1z"/><path d="M8 4.466V.534a.25.25 0 0 0-.41-.192L5.23 2.308a.25.25 0 0 0 0 .384l2.36 1.966A.25.25 0 0 0 8 4.466z"/></svg>`;
       const iconDownload = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5z"/><path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L6.354 8.146a.5.5 0 1 0-.708.708l2 2z"/></svg>`;
       const iconDelete = `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg>`;
 
       tr.innerHTML = `
-        <td onclick="previewOrder(transactions[${originalIndex}])" style="cursor: pointer; font-size: 0.8em; white-space: nowrap;">${new Date(t.date).toLocaleString()}</td>
-        <td onclick="previewOrder(transactions[${originalIndex}])" style="cursor: pointer; text-align: right; font-size: 0.8em; white-space: nowrap;"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
-        <td style="text-align: right;">
-          <button class="icon-btn" title="Re-Open Bill" onclick="reopenTransaction(${originalIndex})">${iconReopen}</button>
-          <button class="icon-btn" title="Download PDF" onclick="downloadBillAsPDF(${originalIndex})">${iconDownload}</button>
-          <button class="icon-btn" title="Delete Bill" onclick="deleteTransaction(${originalIndex})">${iconDelete}</button>
+        <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}</td>
+        <td class="u-text-right u-fs-08 u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
+        <td class="u-text-right">
+          <button class="btn u-fs-08 row-preview-btn" data-tx-index="${txIndex}" style="display: inline-block; padding: 6px 8px; margin: 0 2px; background: #17a2b8;"> 
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; color: #fff;"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8z"></path><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z" fill="#fff"></path></svg>
+          </button>
+          <button class="icon-btn" title="Re-Open Bill" onclick="reopenTransaction(${txIndex})">${iconReopen}</button>
+          <button class="icon-btn" title="Download PDF" onclick="downloadBillAsPDF(${txIndex})">${iconDownload}</button>
+          <button class="icon-btn" title="Delete Bill" onclick="deleteTransaction(${txIndex})">${iconDelete}</button>
         </td>
       `;
+
+      const previewBtn = tr.querySelector('.row-preview-btn');
+      if (previewBtn) {
+        previewBtn.onclick = (e) => {
+          e.stopPropagation();
+          const attr = previewBtn.getAttribute('data-tx-index');
+          console.log('assets.previewBtn clicked — data-tx-index:', attr, 'tx object exists?', !!t);
+          if (attr !== null && attr !== '' && !isNaN(attr)) {
+            const idx = parseInt(attr, 10);
+            const tx = (Array.isArray(transactions) && transactions[idx]) ? transactions[idx] : t;
+            console.log('assets.previewBtn resolved tx index ->', idx, 'tx found?', !!tx);
+            previewOrder(tx);
+          } else {
+            previewOrder(t);
+          }
+        };
+      }
+
       return tr;
     });
 
