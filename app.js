@@ -1860,7 +1860,6 @@ async function uploadImage(base64Data, path) {
 
   // ===== Transactions =====
   function renderTransactions() {
-    const container = document.getElementById('transactionListContainer');
     const startDate = document.getElementById('transactionStartDate')?.value;
     const endDate = document.getElementById('transactionEndDate')?.value;
     
@@ -4507,6 +4506,5 @@ Object.assign(window, {
   manualBarcodeInput, startCameraScan, closeCameraScanner, startMobileConnection, login, logout, syncNow,
   closeMobileConnectModal, generateAndPrintBarcodes, requestNotificationPermission,
   testLocalNotification, toggleNotifications, dismissNotification,
-  clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN
   clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange
 });
