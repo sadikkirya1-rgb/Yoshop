@@ -3175,23 +3175,30 @@ async function uploadImage(base64Data, path) {
   }
 
   function handleSplashScreen() {
+    if (window._splashStarted) return;
+    window._splashStarted = true;
+
     setTimeout(() => {
-      document.body.classList.remove('loading');
       const splash = document.getElementById('splash-screen');
       const header = document.querySelector('header');
       const appLayout = document.querySelector('.app-layout');
       
-      if (splash) splash.style.opacity = '0';
-      if (header) {
-        header.style.visibility = 'visible';
-        header.style.opacity = '1';
+      if (splash) {
+        splash.style.opacity = '0';
+        setTimeout(() => {
+          splash.style.display = 'none';
+          document.body.classList.remove('loading');
+          if (header) {
+            header.style.visibility = 'visible';
+            header.style.opacity = '1';
+          }
+          if (appLayout) {
+            appLayout.style.visibility = 'visible';
+            appLayout.style.opacity = '1';
+          }
+        }, 800);
       }
-      if (appLayout) {
-        appLayout.style.visibility = 'visible';
-        appLayout.style.opacity = '1';
-      }
-      setTimeout(() => { if (splash) splash.style.display = 'none'; }, 800);
-    }, 2500);
+    }, 3000);
   }
 
   // ===== Settings Accordion =====
@@ -4140,7 +4147,6 @@ async function uploadImage(base64Data, path) {
   }
 
   mainInit();
-  window.addEventListener('load', handleSplashScreen);
 
   // Register Service Worker for PWA
   if ('serviceWorker' in navigator) {

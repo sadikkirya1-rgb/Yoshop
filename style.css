@@ -76,6 +76,7 @@
   }
   .splash-content {
     text-align: center;
+    animation: splashEntrance 1.2s ease-out forwards;
   }
   .splash-logo {
     font-size: 80px;
@@ -85,7 +86,15 @@
     width: 100px;
     height: 100px;
     margin-bottom: 20px;
+    animation: logoPulse 3s ease-in-out infinite;
   }
+
+  @keyframes logoPulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
+
   .splash-content h1 {
     font-size: 2.5em;
     margin: 0;
@@ -94,6 +103,11 @@
     font-size: 1.5em;
     margin: 0 0 10px 0;
     font-weight: 300; /* Lighter font weight */
+  }
+
+  @keyframes splashEntrance {
+    from { opacity: 0; transform: translateY(20px) scale(0.95); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
   }
 
   /* Initially hide the main app */
@@ -1308,25 +1322,11 @@
 @media (max-width: 768px) {
   #login-overlay {
     flex-direction: column !important;
-    overflow-y: auto !important;
+    align-items: center !important;
+    justify-content: center !important;
   }
   #login-overlay .marketing-side {
-    flex: none !important;
-    padding: 40px 20px !important;
-    border-right: none !important;
-    border-bottom: 1px solid rgba(255,255,255,0.1);
-  }
-  #login-overlay .marketing-carousel {
-    text-align: center !important;
-  }
-  #login-overlay .contact-info {
-    text-align: center !important;
-    margin-left: auto;
-    margin-right: auto;
-  }
-  #login-overlay .contact-info p {
-    justify-content: center;
-    align-items: center !important;
+    display: none !important;
   }
   
   #login-overlay .login-side {
