@@ -4,7 +4,7 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, initializeFirestore } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, initializeFirestore, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 
@@ -236,7 +236,6 @@ async function uploadImage(base64Data, path) {
             const shopData = JSON.parse(JSON.stringify({
               menu: menu || [],
               activeOrders: activeOrders || {},
-              transactions: transactions || [],
               settings: settings || defaultSettings,
               staff: staff || [],
               dishCategories: dishCategories || [],
@@ -286,6 +285,50 @@ async function uploadImage(base64Data, path) {
       syncFailureCount++;
       updateOnlineStatus();
     }
+  }
+
+  /**
+   * Records a single transaction to local storage and Firestore sub-collection
+   */
+  async function recordTransaction(transaction) {
+    // 1. Add to local state array for UI immediate update
+    transactions.unshift(transaction);
+    
+    // Keep local list at reasonable size for performance
+    if (transactions.length > 500) transactions.pop();
+    
+    // 2. Save locally to IndexedDB
+    await saveState('transactions', transactions);
+
+    // 3. Save to Cloud Sub-collection if online
+    if (currentUser && dbFirestore && navigator.onLine) {
+      try {
+        const txRef = collection(dbFirestore, "users", currentUser.uid, "transactions");
+        await addDoc(txRef, transaction);
+        console.log('[SYNC] Transaction saved to cloud collection');
+      } catch (e) {
+        handleFirebaseError(e, "Cloud Transaction Record");
+      }
+    }
+  }
+
+  /**
+   * Loads the latest transactions from the cloud collection
+   */
+  async function loadTransactionsFromCloud(uid) {
+    if (!dbFirestore) return;
+    try {
+      const q = query(collection(dbFirestore, "users", uid, "transactions"), orderBy("date", "desc"), limit(200));
+      const snap = await getDocs(q);
+      const cloudTransactions = [];
+      snap.forEach(doc => cloudTransactions.push(doc.data()));
+      if (cloudTransactions.length > 0) {
+        transactions = cloudTransactions;
+        saveState('transactions', transactions);
+        renderTransactions();
+        updateDashboard();
+      }
+    } catch (e) { console.warn("Could not load transactions from collection:", e); }
   }
 
   async function syncNow() {
@@ -1049,7 +1092,7 @@ async function uploadImage(base64Data, path) {
       if (paymentConfirmed) {
         const paymentMethod = document.getElementById('paymentMethod').value;
         const transaction = { date: new Date().toISOString(), customerName: serverName, tableNo: 'Shop', items: bill.items, total: billTotal, paymentMethod: paymentMethod };
-        transactions.unshift(transaction);
+        await recordTransaction(transaction); // Use individual record helper
         bill.items.forEach(item => deductStock(item.name, item.qty));
         document.getElementById('paymentModal').style.display = 'none';
       } else {
@@ -1238,7 +1281,8 @@ async function uploadImage(base64Data, path) {
         // The calling function will handle UI and data clearing.
         return transaction;
     }
-    transactions.unshift(transaction);
+    
+    await recordTransaction(transaction); // Use individual record helper
 
     delete activeOrders[CART_ID]; // Clear the order for the table
     saveData();
@@ -1895,7 +1939,20 @@ async function uploadImage(base64Data, path) {
     }
 
     if (confirm(`Are you sure you want to permanently delete this transaction? This action cannot be undone.`)) {
+      const txToDelete = transactions[index];
       transactions.splice(index, 1);
+
+      // Delete from Cloud Sub-collection
+      if (currentUser && dbFirestore) {
+        const txRef = collection(dbFirestore, "users", currentUser.uid, "transactions");
+        const q = query(txRef, where("date", "==", txToDelete.date), where("total", "==", txToDelete.total));
+        getDocs(q).then(snap => {
+          snap.forEach(async (doc) => {
+            await deleteDoc(doc.ref);
+          });
+        }).catch(e => console.error("Cloud delete failed:", e));
+      }
+
       saveData();
       renderTransactions();
       updateDashboard();
@@ -3152,13 +3209,15 @@ async function uploadImage(base64Data, path) {
               // Update global state with cloud data
               menu = cloudData.menu || menu;
               activeOrders = cloudData.activeOrders || activeOrders;
-              transactions = cloudData.transactions || transactions;
               settings = cloudData.settings || settings;
               staff = cloudData.staff || staff;
               dishCategories = cloudData.dishCategories || dishCategories;
               customers = cloudData.customers || customers;
               units = cloudData.units || units;
               restockHistory = cloudData.restockHistory || restockHistory;
+
+              // Fetch transactions separately from sub-collection
+              loadTransactionsFromCloud(uid);
 
               // Mark initial load as complete
               isInitialLoadComplete = true;
