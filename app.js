@@ -1284,7 +1284,7 @@ async function uploadImage(base64Data, path) {
     document.getElementById('changeDue').textContent = change > 0 ? formatCurrency(change) : '0';
   }
 
-  function finalizePayment(isSplit = false) {
+  async function finalizePayment(isSplit = false) {
     const currentOrder = activeOrders[CART_ID];
     const paymentMethod = document.getElementById('paymentMethod').value;
     const amountTendered = parseFloat(document.getElementById('amountTendered').value);
@@ -1332,7 +1332,7 @@ async function uploadImage(base64Data, path) {
     await recordTransaction(transaction); // Use individual record helper
 
     delete activeOrders[CART_ID]; // Clear the order for the table
-    saveData();
+    await saveData();
     renderMenu();
     document.getElementById('paymentModal').style.display = 'none';
     alert(`Sale processed successfully!`);
