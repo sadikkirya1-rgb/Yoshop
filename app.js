@@ -791,9 +791,10 @@ async function uploadImage(base64Data, path) {
     // Filter for the search term AND ensure the item is a sellable dish (has a recipe).
     // Also filter out items that don't have a category.
     const filteredMenu = menu.filter(dish => {
-      const matchesSearch = dish.category && (dish.name.toLowerCase().includes(searchTerm) || (dish.barcode && dish.barcode.toLowerCase().includes(searchTerm))) && dish.recipe && dish.recipe.length > 0;
+      const matchesSearch = dish.category && (dish.name.toLowerCase().includes(searchTerm) || (dish.barcode && dish.barcode.toLowerCase().includes(searchTerm)));
+      const isSellable = (dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0);
       const matchesCategory = categoryFilter === '' || dish.category === categoryFilter;
-      return matchesSearch && matchesCategory;
+      return matchesSearch && matchesCategory && isSellable;
     });
 
     const categories = [...new Set(filteredMenu.map(d => d.category || "Uncategorized"))];
@@ -893,11 +894,7 @@ async function uploadImage(base64Data, path) {
 
     // Circular Dependency Validation to prevent stack overflow errors
     if (hasCircularDependency(name, recipe)) {
-        if (buttonElement) {
-            buttonElement.disabled = false;
-            buttonElement.textContent = isUpdate ? 'Update' : 'Save';
-        }
-        return alert(`Circular dependency detected! "${name}" cannot include itself (directly or indirectly) as an ingredient. Please check your recipe.`);
+        console.warn(`[STOCK] Circular dependency detected for "${name}". The system will use physical stock counts for this item.`);
     }
 
     const costPrice = totalRecipeCost;
@@ -917,7 +914,11 @@ async function uploadImage(base64Data, path) {
         const index = parseInt(dishIndex, 10);
         const oldName = menu[index].name;
 
-        let dishData = { name, barcode, category, recipe, costPrice, price, image: image };
+        // Preserve existing fields not managed by this form (like physical stock and units)
+        let dishData = { 
+          ...menu[index], 
+          name, barcode, category, recipe, costPrice, price, image: image 
+        };
         menu[index] = dishData;
 
         // Propagate name change to other product recipes if this dish is used as a sub-component
@@ -988,6 +989,7 @@ async function uploadImage(base64Data, path) {
     document.getElementById('dishCategory').value = dish.category;
     
     document.getElementById('dishImageBase64').value = dish.image || ''; // Store current image
+    document.getElementById('dishImagePreview').src = dish.image || 'https://placehold.co/100'; // Show current image in preview
     document.getElementById('dishSellingPrice').value = (dish.price || 0);
 
     // Show the form first to ensure all elements are visible and ready.
@@ -1014,20 +1016,23 @@ async function uploadImage(base64Data, path) {
   }
 
   function addRecipeItem(selectedItem, quantity) {
-    const ingredient = menu.find(item => item.name === selectedItem && !item.recipe);
+    const ingredient = menu.find(item => item.name === selectedItem);
     if (!ingredient) return; 
 
-    if (ingredient.stock !== undefined && ingredient.stock <= 0) {
+    const currentStock = calculateDishStock(ingredient, true);
+    if (currentStock <= 0) {
       alert(`"${ingredient.name}" is out of stock. Please add this item to your stock before using it in a recipe.`);
       return;
     }
     
+    const unitCost = calculateDishCost(ingredient);
+
     const container = document.getElementById('recipeItemsContainer');
     const itemDiv = document.createElement('div');
     itemDiv.className = 'recipe-item';
     itemDiv.dataset.itemName = selectedItem;
     itemDiv.dataset.quantity = quantity;
-    itemDiv.dataset.cost = (ingredient.costPrice || 0) * quantity;
+    itemDiv.dataset.cost = unitCost * quantity;
 
     const removeBtn = document.createElement('button');
     removeBtn.innerHTML = '&times;';
@@ -1037,7 +1042,7 @@ async function uploadImage(base64Data, path) {
     };
 
     itemDiv.innerHTML = `<span class="u-flex-grow-1">${quantity} x ${selectedItem}</span>
-                         <span><span class="currency-symbol">$</span>${formatCurrency((ingredient.costPrice || 0) * quantity)}</span>`;
+                         <span><span class="currency-symbol">$</span>${formatCurrency(unitCost * quantity)}</span>`;
     itemDiv.appendChild(removeBtn);
     container.appendChild(itemDiv);
   }
@@ -1079,14 +1084,19 @@ async function uploadImage(base64Data, path) {
     document.getElementById('dishProfitMargin').textContent = profitMargin.toLocaleString(undefined, { maximumFractionDigits: 1 }); // Percentage, max 1 decimal
   }
 
-  function calculateRecipeCost(recipe) {
-      if (!recipe) return 0;
-      return recipe.reduce((total, component) => {
-          const ingredient = menu.find(item => item.name === component.itemName && !item.recipe);
-          if (ingredient) {
-              return total + (ingredient.costPrice || 0) * component.quantity;
-          }
-          return total;
+  function calculateDishCost(dish, visited = new Set()) {
+      if (!dish) return 0;
+      if (visited.has(dish.name)) return parseFloat(dish.costPrice) || 0;
+      visited.add(dish.name);
+
+      if (!dish.recipe || dish.recipe.length === 0) {
+          return parseFloat(dish.costPrice) || 0;
+      }
+
+      return dish.recipe.reduce((total, component) => {
+          const componentItem = menu.find(d => d.name === component.itemName);
+          const unitCost = componentItem ? calculateDishCost(componentItem, new Set(visited)) : 0;
+          return total + (unitCost * component.quantity);
       }, 0);
   }
 
@@ -1165,6 +1175,7 @@ async function uploadImage(base64Data, path) {
     const toggleButton = document.querySelector('#addDishTab h3 button');
     if (show) {
       formContainer.style.display = 'block';
+      document.getElementById('recipeItemsContainer').innerHTML = ''; // Clear existing recipe items for a fresh start
       populateRecipeIngredientSelect();
       updateRecipeItemUnit();
       populateCategoryDropdown();
@@ -1567,8 +1578,8 @@ async function uploadImage(base64Data, path) {
 
     // Detect circular dependencies to prevent stack overflow
     if (visited.has(dish.name)) {
-        console.error(`[STOCK] Circular dependency detected for item: ${dish.name}`);
-        return 0;
+        // Break cycle: Return physical stock if it's a direct self-reference or loop
+        return dish.stock !== undefined ? (parseFloat(dish.stock) || 0) : 0;
     }
     visited.add(dish.name);
 
@@ -1600,7 +1611,11 @@ async function uploadImage(base64Data, path) {
     if (!itemName || quantity <= 0) return;
 
     if (visited.has(itemName)) {
-        console.error(`[STOCK] Circular dependency detected while deducting stock for item: ${itemName}`);
+        // Break cycle: Deduct from physical stock directly
+        const dish = menu.find(d => d.name === itemName);
+        if (dish && dish.stock !== undefined) {
+            dish.stock = (parseFloat(dish.stock) || 0) - quantity;
+        }
         return;
     }
     visited.add(itemName);
@@ -1612,7 +1627,8 @@ async function uploadImage(base64Data, path) {
     if (!dish.recipe || dish.recipe.length === 0) {
         if (dish.stock !== undefined) {
             dish.stock = (parseFloat(dish.stock) || 0) - quantity;
-            if (dish.stock <= (settings.lowStockThreshold || 10)) {
+            const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
+            if (dish.stock <= threshold) {
                 sendLowStockNotification(dish.name, dish.stock);
             }
         }
@@ -1624,12 +1640,11 @@ async function uploadImage(base64Data, path) {
   function renderDishesTable() {
     const tbody = document.getElementById('dishesTableBody');
     tbody.innerHTML = '';
-    // Filter the menu to only show items that are actual dishes (i.e., have a recipe property).
-    // This separates sellable dishes from raw inventory items.
-    menu.filter(dish => dish.recipe).forEach((dish) => {
+    // Show items that either have a recipe OR have a selling price and category (sellable stock items)
+    menu.filter(dish => (dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0 && dish.category)).forEach((dish) => {
       const i = menu.indexOf(dish); // Get the original index for edit/delete functions
       const stock = calculateDishStock(dish);
-      const costPrice = dish.costPrice || 0;
+      const costPrice = calculateDishCost(dish);
       const sellingPrice = dish.price || 0;
       const profitValue = sellingPrice - costPrice;
       const tr = document.createElement('tr');
@@ -1659,12 +1674,6 @@ async function uploadImage(base64Data, path) {
     const index = Number(i); // Ensure index is a number
     const item = menu[index];
     if (!item) return;
-
-    // Protect against deleting items that are currently part of a product recipe
-    const isUsedInRecipe = menu.some(d => d.recipe && d.recipe.some(c => c.itemName === item.name));
-    if (isUsedInRecipe) {
-        return alert(`Cannot delete "${item.name}" because it is currently used as an ingredient in one or more products. Please remove it from all product recipes before deleting it from stock.`);
-    }
 
     if (confirm(`Are you sure you want to delete ${item.name}?`)) {
       menu.splice(index, 1);
@@ -2652,7 +2661,8 @@ async function uploadImage(base64Data, path) {
     settings.address = document.getElementById('companyAddress').value;
     settings.contact = document.getElementById('companyContact').value;
     settings.currency = document.getElementById('currency').value;
-    settings.lowStockThreshold = parseInt(document.getElementById('lowStockThreshold').value, 10) || 10;
+    const lowStockThresholdVal = parseInt(document.getElementById('lowStockThreshold').value, 10);
+    settings.lowStockThreshold = isNaN(lowStockThresholdVal) ? 10 : lowStockThresholdVal;
     settings.defaultMarkup = parseFloat(document.getElementById('defaultMarkup').value) || 200;
     settings.taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
     settings.managerPIN = pin;
@@ -2711,7 +2721,7 @@ async function uploadImage(base64Data, path) {
     setVal('companyAddress', settings.address || '');
     setVal('companyContact', settings.contact || '');
     setVal('currency', settings.currency || '$');
-    setVal('lowStockThreshold', settings.lowStockThreshold || 10);
+    setVal('lowStockThreshold', (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10);
     setVal('taxRate', settings.taxRate || 0);
     setVal('managerPIN', settings.managerPIN || "1234");
     setVal('confirmManagerPIN', settings.managerPIN || "1234");
@@ -3345,7 +3355,7 @@ async function uploadImage(base64Data, path) {
     const tbody = document.getElementById('lowStockReportBody');
     if (!tbody) return;
     tbody.innerHTML = '';
-    const threshold = settings.lowStockThreshold || 10;
+    const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
     
     // Only check primary ingredients (items with a stock property) for the low stock report.
     const lowStockItems = menu.filter(item => item.stock !== undefined && item.stock <= threshold);
@@ -3379,13 +3389,15 @@ async function uploadImage(base64Data, path) {
     stockItems.forEach((item) => {
       const index = menu.indexOf(item);
       const stock = calculateDishStock(item, true);
+      const isSellable = (item.recipe && item.recipe.length > 0) || (parseFloat(item.price) > 0 && item.category);
+      const sellableBadge = isSellable ? '<span style="color: #28a745; margin-left: 5px;" title="This item is active in the Shop">🛒</span>' : '';
       const costPrice = item.costPrice || 0;
       const totalCost = stock * costPrice;
       const tr = document.createElement('tr');
 
 
       tr.innerHTML = `
-        <td class="u-fs-08 u-text-break">${item.name}</td> 
+        <td class="u-fs-08 u-text-break">${item.name}${sellableBadge}</td> 
         <td class="u-fs-08">${(item.recipe && item.recipe.length > 0) ? 'Recipe' : (item.unit || 'N/A')}</td>
         <td class="u-fs-08 u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>
         <td class="u-fs-08 u-text-right">${Number(stock).toFixed(1)}</td>
@@ -3394,6 +3406,7 @@ async function uploadImage(base64Data, path) {
           <div class="u-flex-column-end">
             <button class="icon-btn" title="Adjust Stock" onclick="toggleStockAdjustmentForm(true, ${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413-1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/></svg></button>
             <button class="icon-btn" title="Edit Item" onclick="editStockItem(${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
+            <button class="icon-btn" title="Add to Shop" onclick="convertToProduct(${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#28a745" viewBox="0 0 16 16"><path d="M3 2v4.586l7 7L14.586 9l-7-7H3zM2 2a1 1 0 0 1 1-1h4.586a1 1 0 0 1 .707.293l7 7a1 1 0 0 1 0 1.414l-4.586 4.586a1 1 0 0 1-1.414 0l-7-7A1 1 0 0 1 2 6.586V2z"/><path d="M5.5 5a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1zm0 1a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg></button>
             <button class="icon-btn" title="Delete Item" onclick="deleteItem(${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
           </div>
         </td>
@@ -3421,6 +3434,30 @@ async function uploadImage(base64Data, path) {
     // Store the index of the item being edited
     const formContainer = document.getElementById('newStockItemFormContainer');
     formContainer.dataset.editingIndex = index;
+  }
+
+  function convertToProduct(index) {
+    const item = menu[index];
+    if (!item) return;
+    
+    // Switch to Products tab
+    const productsBtn = document.querySelector('nav button[onclick*="addDishTab"]');
+    if (productsBtn) showTab('addDishTab', productsBtn);
+    
+    // Open the form and pre-fill
+    toggleAddDishForm(true);
+    document.getElementById('dishIndex').value = index;
+    document.getElementById('dishName').value = item.name;
+    document.getElementById('dishBarcode').value = item.barcode || '';
+    document.getElementById('dishSellingPrice').value = parseFloat(item.price) || 0;
+    
+    // Automatically assign a category
+    const defaultCat = item.category || (dishCategories.length > 0 ? dishCategories[0] : "");
+    document.getElementById('dishCategory').value = defaultCat;
+    
+    document.getElementById('dishImageBase64').value = item.image || '';
+    document.getElementById('dishImagePreview').src = item.image || 'https://placehold.co/100';
+    updateRecipeTotals();
   }
 
   function toggleStockAdjustmentForm(show, index = null) {
@@ -5025,7 +5062,7 @@ Object.assign(window, {
   addSplitBill, removeSplitBill, moveItemToFirstBill, moveItemToUnassigned,
   processSplitPayments, addToOrder, decreaseQty, processBill, updatePaymentTotals,
   toggleCashPaymentFields, calculateChange, finalizePayment, printDishLabel, getCurrentServerName,
-  deleteItem, previewOrder, downloadCurrentReceiptAsPDF, shareReceipt,
+  deleteItem, previewOrder, downloadCurrentReceiptAsPDF, shareReceipt, convertToProduct,
   printReceipt, connectUSBScanner, connectBluetoothScanner,
   connectUSBPrinter, connectBluetoothPrinter, disconnectPrinter, testPrint,
   directPrint, renderTransactions, downloadBillAsPDF, deleteTransaction, handleChangePassword,
