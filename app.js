@@ -4094,7 +4094,10 @@ async function uploadImage(base64Data, path) {
           
           <div id="pin-login-container" style="display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 300px;">
             <p id="pin-instruction" style="margin-bottom: 5px; opacity: 0.9; text-align: center; font-weight: bold;">🔑 Enter PIN</p>
-            <input type="password" id="loginPIN" placeholder="PIN" maxlength="4" style="padding: 15px; border-radius: 8px; border: none; text-align: center; font-size: 1.5em; letter-spacing: 10px; width: 100%; color: var(--text);">
+            <div style="position: relative; display: flex; align-items: center;">
+              <input type="password" id="loginPIN" placeholder="PIN" maxlength="4" style="padding: 15px; border-radius: 8px; border: none; text-align: center; font-size: 1.5em; letter-spacing: 10px; width: 100%; color: var(--text);">
+              <button type="button" onclick="togglePINVisibility('loginPIN')" style="position: absolute; right: 10px; background: none; border: none; font-size: 1.2em; cursor: pointer; color: #888;">👁️</button>
+            </div>
             <button onclick="loginWithPIN()" class="btn" style="background: #28a745; color: white; padding: 12px; font-weight: bold; width: 100%; margin: 0; border-radius: 8px;">Unlock System</button>
             <div style="display: flex; justify-content: space-between; margin-top: 15px; width: 100%;">
                 <a href="#" onclick="forgotPIN()" style="color: white; font-size: 0.85em; text-decoration: underline; opacity: 0.8;">Forgot PIN?</a>
