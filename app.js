@@ -300,19 +300,38 @@ async function uploadImage(base64Data, path) {
       const usersSnap = await getDocs(collection(dbFirestore, "users"));
       let totalRevenue = 0;
       let totalTxCount = 0;
-      
-      if (displayShops) displayShops.textContent = usersSnap.size;
+      let validShopCount = 0;
+      const seenEmails = new Set();
 
-      // We iterate through all users to calculate totals
-      // Note: For very large numbers of shops, this should be moved to a Cloud Function
       for (const userDoc of usersSnap.docs) {
-        const txSnap = await getDocs(collection(dbFirestore, "users", userDoc.id, "transactions"));
+        const uid = userDoc.id;
+        
+        // 1. Fetch the specific shop data first to verify existence
+        const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "SHOP_DATA"));
+        if (!dataDoc.exists()) continue; 
+
+        const shopData = dataDoc.data();
+        const menuItems = shopData.menu || [];
+        if (uid === MASTER_APP_ADMIN_UID && menuItems.length === 0) continue;
+
+        // 2. Enforce email deduplication to match Directory logic
+        const userData = userDoc.data();
+        const userEmail = (userData.email || '').toLowerCase().trim();
+        const effectiveEmail = (uid.includes('@') && !userEmail) ? uid.toLowerCase().trim() : userEmail;
+
+        if (effectiveEmail && seenEmails.has(effectiveEmail)) continue;
+        if (effectiveEmail) seenEmails.add(effectiveEmail);
+
+        validShopCount++;
+
+        const txSnap = await getDocs(collection(dbFirestore, "users", uid, "transactions"));
         txSnap.forEach(doc => {
           totalRevenue += (doc.data().total || 0);
           totalTxCount++;
         });
       }
 
+      if (displayShops) displayShops.textContent = validShopCount;
       if (displayRevenue) displayRevenue.textContent = formatCurrency(totalRevenue);
       if (displayTx) displayTx.textContent = totalTxCount;
     } catch (error) {
@@ -334,6 +353,21 @@ async function uploadImage(base64Data, path) {
     if (pin !== appAdminSettings.pin && pin !== "Admin@1997") return alert("Incorrect PIN.");
 
     try {
+      // If the admin is deleting their OWN account's shop data, 
+      // we must clear local state first to prevent auto-resync from recreating it.
+      if (shopUid === currentUser?.uid) {
+        menu = [];
+        activeOrders = {};
+        transactions = [];
+        staff = [];
+        dishCategories = [];
+        customers = [];
+        restockHistory = [];
+        settings = { ...defaultSettings };
+        // Save cleared state locally only, do NOT sync yet
+        await saveData(false);
+      }
+
       // 1. Delete transactions sub-collection (all historical data)
       const txRef = collection(dbFirestore, "users", shopUid, "transactions");
       const txSnap = await getDocs(txRef);
@@ -342,8 +376,11 @@ async function uploadImage(base64Data, path) {
         await Promise.all(txDeletes);
       }
 
-      // 2. Delete the main SHOP_DATA document (Menu, Settings, Staff)
+      // 2. Delete the main SHOP_DATA document
       await deleteDoc(doc(dbFirestore, "users", shopUid, "data", "SHOP_DATA"));
+      
+      // Stop sync if we deleted our own data
+      if (shopUid === currentUser?.uid) isInitialLoadComplete = false;
       
       // 3. Delete the user metadata document
       await deleteDoc(doc(dbFirestore, "users", shopUid));
@@ -398,6 +435,12 @@ async function uploadImage(base64Data, path) {
         if (!dataDoc.exists()) continue; // Skip accounts that haven't initialized shop data
 
         const shopData = dataDoc.data();
+
+        // 1b. Filtering: If it's the Master Admin account, only show it if they actually have a menu
+        // This prevents the Admin's internal document from appearing as a "Shop".
+        const menuItems = shopData.menu || [];
+        if (uid === MASTER_APP_ADMIN_UID && menuItems.length === 0) continue;
+
         const shopSettings = shopData.settings || {};
         const shopName = (shopSettings.name || '').toLowerCase().trim();
 
