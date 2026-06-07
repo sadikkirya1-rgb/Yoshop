@@ -3033,32 +3033,52 @@ async function uploadImage(base64Data, path) {
         </div>`;
 
     } else if (reportType === 'itemSales') {
-      const itemSales = filteredTransactions.flatMap(t => t.items || []).reduce((acc, item) => {
-        if (!acc[item.name]) acc[item.name] = { qty: 0, revenue: 0, cost: 0, bp: 0, sp: 0, inStock: 0 };
-        const menuDish = menu.find(d => d.name === item.name);
-        const itemCost = menuDish ? calculateDishCost(menuDish) : (parseFloat(item.costPrice) || 0);
-        acc[item.name].qty += (item.qty || 0);
-        acc[item.name].revenue += (item.qty || 0) * (item.price || 0);
-        acc[item.name].cost += (item.qty || 0) * itemCost;
-        // Capture unit prices for display
-        acc[item.name].bp = itemCost;
-        acc[item.name].sp = item.price || 0;
-        // Calculate real-time stock levels
-        acc[item.name].inStock = menuDish ? calculateDishStock(menuDish, true) : 0;
-        return acc;
-      }, {});
+      const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
+      const itemSales = {};
+      
+      // Initialize with all sellable products from the menu to show products even with 0 sales
+      menu.forEach(dish => {
+        const isSellable = (dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0 && dish.category);
+        if (!isSellable) return;
+
+        const itemCost = calculateDishCost(dish);
+        itemSales[dish.name] = {
+          qty: 0, revenue: 0, cost: 0,
+          bp: itemCost, sp: dish.price || 0,
+          inStock: calculateDishStock(dish, true)
+        };
+      });
+
+      // Accumulate sales data from filtered transactions
+      filteredTransactions.flatMap(t => t.items || []).forEach(item => {
+        if (!itemSales[item.name]) {
+          const menuDish = menu.find(d => d.name === item.name);
+          const itemCost = menuDish ? calculateDishCost(menuDish) : (parseFloat(item.costPrice) || 0);
+          itemSales[item.name] = {
+            qty: 0, revenue: 0, cost: 0,
+            bp: itemCost, sp: item.price || 0,
+            inStock: menuDish ? calculateDishStock(menuDish, true) : 0
+          };
+        }
+        itemSales[item.name].qty += (item.qty || 0);
+        itemSales[item.name].revenue += (item.qty || 0) * (item.price || 0);
+        itemSales[item.name].cost += (item.qty || 0) * itemSales[item.name].bp;
+      });
 
       const sortedItems = Object.entries(itemSales).sort(([,a],[,b]) => b.revenue - a.revenue);
       let grossTotalTP = 0;
 
       const tableBody = sortedItems.map(([name, data], idx) => {
         grossTotalTP += data.revenue;
+        const isLowStock = data.inStock <= threshold;
+        const stockStyle = isLowStock ? 'color: #dc3545; font-weight: bold;' : '';
+        
         return `
           <tr>
             <td>${idx + 1}</td>
             <td>${name}</td>
             <td class="u-text-right">${data.qty}</td>
-            <td class="u-text-right">${data.inStock}</td>
+            <td class="u-text-right" style="${stockStyle}">${data.inStock}</td>
             <td class="u-text-right"><span class="currency-symbol">$</span>${formatCurrency(data.bp)}</td>
             <td class="u-text-right"><span class="currency-symbol">$</span>${formatCurrency(data.sp)}</td>
             <td class="u-text-right"><span class="currency-symbol">$</span>${formatCurrency(data.revenue)}</td>
