@@ -4090,12 +4090,13 @@ async function uploadImage(base64Data, path) {
     checkNotificationStatus();
   }
 
-  function togglePINVisibility() {
-    const pin = document.getElementById('managerPIN');
+  function togglePINVisibility(inputId = 'managerPIN') {
+    const pin = document.getElementById(inputId);
     const confirm = document.getElementById('confirmManagerPIN');
+    if (!pin) return;
     const type = pin.type === 'password' ? 'text' : 'password';
     pin.type = type;
-    if (confirm) confirm.type = type;
+    if (inputId === 'managerPIN' && confirm) confirm.type = type;
   }
 
   function previewLogo(input) {
@@ -5464,7 +5465,7 @@ async function uploadImage(base64Data, path) {
     if (!overlay) {
       overlay = document.createElement('div');
       overlay.id = 'login-overlay';
-      overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, var(--primary) 0%, #d35400 100%); z-index: 10000; display: flex; color: white; transition: opacity 0.5s;';
+      overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, var(--primary) 0%, #d35400 100%), repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 15px); z-index: 10000; display: flex; color: white; transition: opacity 0.5s;';
       document.body.appendChild(overlay);
     }
 
@@ -5555,6 +5556,52 @@ async function uploadImage(base64Data, path) {
           ${promoMsgHtml}
         </div>`;
 
+      const loginSubStage = sessionStorage.getItem('loginSubStage') || 'choice';
+      let pinStageHtml = '';
+
+      if (loginSubStage === 'choice') {
+        pinStageHtml = `
+          <div style="width: 100%; max-width: 300px; display: flex; flex-direction: column; align-items: center;">
+            <h2 style="margin-bottom: 25px;">Login as</h2>
+            <div style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+              <button onclick="prepareLogin('admin')" class="btn" style="background: rgba(255,255,255,0.15); border: 1px solid white; color: white; padding: 15px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 10px;">🛡️ Login as Admin</button>
+              <button onclick="prepareLogin('staff')" class="btn" style="background: rgba(255,255,255,0.15); border: 1px solid white; color: white; padding: 15px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 10px;">👥 Login as Staff</button>
+            </div>
+          </div>
+        `;
+      } else {
+        const isAdmin = loginSubStage === 'admin';
+        pinStageHtml = `
+          <div id="pin-entry-stage" style="display: flex; width: 100%; flex-direction: column; align-items: center; max-width: 320px;">
+            <p id="pin-instruction" style="margin-bottom: 15px; opacity: 0.9; text-align: center; font-weight: bold; width: 100%; font-size: 1.1em;">
+              ${isAdmin ? '🛡️ Admin Enter PIN' : '👥 Staff Enter Name & PIN'}
+            </p>
+            
+            <div style="display: flex; flex-direction: column; gap: 12px; width: 100%; margin-bottom: 20px;">
+              <div id="staff-name-container" style="width: 100%; ${isAdmin ? 'display: none;' : ''}">
+                <input type="text" id="loginStaffName" list="staffNamesList" value="${isAdmin ? 'Admin' : ''}" placeholder="Select Name" style="padding: 15px; border-radius: 8px; border: none; width: 100%; color: var(--text); background: white; font-size: 1.1em; height: 60px; box-sizing: border-box;">
+                <datalist id="staffNamesList">
+                  ${(staff || []).filter(s => s.isActive !== false).map(s => `<option value="${s.name}">`).join('')}
+                </datalist>
+              </div>
+              
+              <div style="width: 100%; position: relative; height: 60px;">
+                <input type="password" id="loginPIN" placeholder="PIN" maxlength="4" style="width: 100%; height: 100%; padding: 15px; border-radius: 8px; border: none; text-align: center; font-size: 1.5em; letter-spacing: 8px; color: var(--text); background: white; box-sizing: border-box;">
+                <button type="button" onclick="togglePINVisibility('loginPIN')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 1.2em; cursor: pointer; color: #888;">👁️</button>
+              </div>
+            </div>
+
+            <div id="pin-actions-container" style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
+              <button onclick="loginWithPIN()" class="btn" style="background: #28a745; color: white; padding: 15px; font-weight: bold; width: 100%; margin: 0; border-radius: 8px; font-size: 1.1em;">Unlock System</button>
+              <button onclick="resetLoginStage()" class="btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 12px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">🔙 Switch Account Type</button>
+              <div style="display: flex; justify-content: space-between; margin-top: 15px; width: 100%;">
+                  <a href="#" onclick="forgotPIN()" style="color: white; font-size: 0.85em; text-decoration: underline; opacity: 0.8;">Forgot PIN?</a>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+
       overlay.innerHTML = `
         ${deviceLabel}
         ${logoHtml}
@@ -5563,30 +5610,7 @@ async function uploadImage(base64Data, path) {
         
         ${statusDisplay}
 
-        <!-- Unified PIN Access -->
-        <div id="pin-entry-stage" style="display: flex; width: 100%; flex-direction: column; align-items: center;">
-          <div id="staff-name-container" style="width: 100%; max-width: 300px; margin-bottom: 15px;">
-            <p style="margin-bottom: 8px; font-size: 0.9em; opacity: 0.8; text-align: left; width: 100%;">Who are you?</p>
-            <input type="text" id="loginStaffName" list="staffNamesList" placeholder="Select or type your name" style="padding: 12px; border-radius: 8px; border: none; width: 100%; color: var(--text); background: white; font-size: 1.1em;">
-            <datalist id="staffNamesList">
-              <option value="${appAdminSettings.username}">
-              <option value="Admin">
-              ${(staff || []).filter(s => s.isActive !== false).map(s => `<option value="${s.name}">`).join('')}
-            </datalist>
-          </div>
-          
-          <div id="pin-login-container" style="display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 300px;">
-            <p id="pin-instruction" style="margin-bottom: 5px; opacity: 0.9; text-align: center; font-weight: bold;">🔑 Enter PIN</p>
-            <div style="position: relative; display: flex; align-items: center;">
-              <input type="password" id="loginPIN" placeholder="PIN" maxlength="4" style="padding: 15px; border-radius: 8px; border: none; text-align: center; font-size: 1.5em; letter-spacing: 10px; width: 100%; color: var(--text);">
-              <button type="button" onclick="togglePINVisibility('loginPIN')" style="position: absolute; right: 10px; background: none; border: none; font-size: 1.2em; cursor: pointer; color: #888;">👁️</button>
-            </div>
-            <button onclick="loginWithPIN()" class="btn" style="background: #28a745; color: white; padding: 12px; font-weight: bold; width: 100%; margin: 0; border-radius: 8px;">Unlock System</button>
-            <div style="display: flex; justify-content: space-between; margin-top: 15px; width: 100%;">
-                <a href="#" onclick="forgotPIN()" style="color: white; font-size: 0.85em; text-decoration: underline; opacity: 0.8;">Forgot PIN?</a>
-            </div>
-          </div>
-        </div>
+        ${pinStageHtml}
 
         <button onclick="logout()" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 10px; font-size: 0.9em; margin-top: 40px; margin-bottom: 60px; cursor: pointer; border-radius: 8px;">Logout from Google Account</button>
         <div style="position: absolute; bottom: 20px; font-size: 0.65em; opacity: 0.7; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
@@ -5603,6 +5627,11 @@ async function uploadImage(base64Data, path) {
         </div>
       `;
     }
+
+    // Auto-focus PIN field if on entry screen
+    const pinInput = document.getElementById('loginPIN');
+    if (pinInput) pinInput.focus();
+
     overlay.style.display = 'flex';
   }
 
@@ -5671,12 +5700,19 @@ async function uploadImage(base64Data, path) {
   function loginWithPIN() {
     const staffNameInput = document.getElementById('loginStaffName');
     const staffName = staffNameInput ? staffNameInput.value.trim() : '';
-    const enteredPin = document.getElementById('loginPIN')?.value || '';
+    const pinInput = document.getElementById('loginPIN');
+    const enteredPin = pinInput?.value || '';
     
     if (!staffName) {
-      alert("Please enter or select your name.");
+      alert("Identification Required: Please select a staff name or return to role selection.");
+      if (staffNameInput && staffNameInput.type !== 'hidden') {
+        staffNameInput.focus();
+        staffNameInput.style.boxShadow = '0 0 0 3px rgba(220, 53, 69, 0.5)';
+      }
       return;
     }
+    
+    if (staffNameInput) staffNameInput.style.boxShadow = 'none';
 
     // 1. Check App Admin (GOD MODE) 
     // This allows the master PIN to work for either the specific admin email OR the generic "Admin" name
@@ -5756,11 +5792,15 @@ async function uploadImage(base64Data, path) {
 
   // Placeholder functions for backward compatibility or future use
   function selectLoginRole(role) { console.log('selectLoginRole is deprecated'); }
+  
+  function prepareLogin(role) {
+    sessionStorage.setItem('loginSubStage', role);
+    showLoginOverlay();
+  }
+
   function resetLoginStage() { 
-    const nameInput = document.getElementById('loginStaffName');
-    const pinInput = document.getElementById('loginPIN');
-    if (nameInput) nameInput.value = '';
-    if (pinInput) pinInput.value = '';
+    sessionStorage.removeItem('loginSubStage');
+    showLoginOverlay();
   }
 
   async function forgotPIN() {
@@ -6650,7 +6690,7 @@ Object.assign(window, {
   toggleAddCustomerForm, addCustomer, editCustomer, deleteCustomer, toggleTheme, exportReportToCSV,
   renderStockListTable, editStockItem, toggleStockAdjustmentForm,
   saveStockAdjustment, toggleNewStockItemForm, saveNewStockItem,
-  triggerAppUpdate, exportTransactionsToCSV, backupAllData, restoreData,
+  triggerAppUpdate, exportTransactionsToCSV, backupAllData, restoreData, prepareLogin,
   manualBarcodeInput, startCameraScan, closeCameraScanner, startMobileConnection, login, loginWithEmail, registerWithEmail, handleForgotPassword, logout, syncNow,
   closeMobileConnectModal, generateAndPrintBarcodes, requestNotificationPermission,
   showLoginOverlay, testLocalNotification, toggleNotifications, dismissNotification, selectLoginRole, resetLoginStage,
