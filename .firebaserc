@@ -2,6 +2,14 @@
   "projects": {
     "default": "yoshop-b502f"
   },
-  "targets": {},
+  "targets": {
+    "yoshop-b502f": {
+      "hosting": {
+        "main-site": [
+          "yoshop"
+        ]
+      }
+    }
+  },
   "etags": {}
 }
