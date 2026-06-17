@@ -1542,6 +1542,12 @@ function getEffectiveUid() {
 
       const qtyEl = card.querySelector('.qty-display');
       if (qtyEl) qtyEl.textContent = quantity;
+      // Synchronize button disabled states so they update without a refresh
+      const minusBtn = card.querySelector('.item-controls button:first-child');
+      if (minusBtn) minusBtn.disabled = (quantity === 0);
+
+      const plusBtn = card.querySelector('.item-controls button:last-child');
+      if (plusBtn) plusBtn.disabled = isOutOfStock;
     });
   }
 
