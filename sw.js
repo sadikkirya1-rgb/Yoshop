@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v20'; // Increment this version number whenever you make changes!
+const CACHE_NAME = 'yoshop-v21'; // Increment this version number whenever you make changes!
 const urlsToCache = [
   '/',
   '/index.html',
@@ -44,8 +44,7 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('fetch', (event) => {
   // Bypass service worker for development server scripts to avoid 502/MIME errors
-  // Also bypass for Firebase Storage to prevent CORS cache conflicts
-  if (event.request.url.includes('fiveserver.js') || event.request.url.includes('livereload.js') || event.request.url.includes('firebasestorage.googleapis.com')) {
+  if (event.request.url.includes('fiveserver.js') || event.request.url.includes('livereload.js')) {
     return;
   }
 
@@ -58,15 +57,23 @@ self.addEventListener('fetch', (event) => {
         }
         
         return fetch(event.request)
+          .then((networkResponse) => {
+            // Cache images and Firebase Storage assets dynamically when they are successfully fetched
+            if (networkResponse && networkResponse.status === 200 && (event.request.destination === 'image' || event.request.url.includes('firebasestorage.googleapis.com'))) {
+              const responseToCache = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => {
+                cache.put(event.request, responseToCache);
+              });
+            }
+            return networkResponse;
+          })
           .catch((err) => {
             // If fetch fails (offline or blocked), and it's a navigation request, return index.html
             if (event.request.mode === 'navigate') {
               return caches.match('/index.html');
             }
-            // Return a standard error response to trigger the element's onerror handler without crashing the service worker
-            return new Response('Network error occurred', { status: 408, headers: { 'Content-Type': 'text/plain' } });
+            return new Response('Offline: Resource not available', { status: 408, headers: { 'Content-Type': 'text/plain' } });
           })
-          .then(res => res);
       })
   );
 });
