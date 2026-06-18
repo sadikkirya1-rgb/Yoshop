@@ -6,7 +6,7 @@
 <title>YoShop</title>
 <link rel="icon" type="image/png" href="assets/icons/android192x192.png"> <!-- Using android192x192.png as the default favicon -->
 <link rel="canonical" href="https://yoshop.netlify.app/"> <!-- Updated canonical URL -->
-<link rel="manifest" href="manifest.json">
+<link rel="manifest" href="manifest.json" onerror="console.warn('Manifest load failed - may be blocked by auth tunnel');">
 <!-- PWA Meta Tags -->
 <meta name="theme-color" content="#f82c33"/>
 <link rel="apple-touch-icon" href="assets/icons/ios192.png">
@@ -626,6 +626,7 @@
             <div class="input-row">
               <label for="confirmManagerPIN">Confirm PIN:</label>
               <input type="password" id="confirmManagerPIN" placeholder="Confirm PIN" maxlength="4">
+              <button type="button" onclick="togglePINVisibility('confirmManagerPIN')" class="btn" style="padding: 5px 10px; margin: 0;">👁️</button>
             </div>
             <button class="btn" onclick="saveSettings()">Update PIN</button>
             <div id="account-security-section" style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px; display: flex; flex-direction: column; gap: 10px;">
@@ -753,11 +754,20 @@
       
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <div id="currentPasswordField" style="display: none;">
-          <input type="password" id="authCurrentPassword" placeholder="Current Password" style="width: 100%; padding: 12px; border-radius: 8px;">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="password" id="authCurrentPassword" placeholder="Current Password" style="flex: 1; padding: 12px; border-radius: 8px;">
+            <button type="button" onclick="togglePINVisibility('authCurrentPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 1em;">👁️</button>
+          </div>
         </div>
         <div id="newPasswordFields" style="display: none;">
-          <input type="password" id="authNewPassword" placeholder="New Password" style="width: 100%; padding: 12px; border-radius: 8px;">
-          <input type="password" id="authConfirmNewPassword" placeholder="Confirm New Password" style="width: 100%; padding: 12px; border-radius: 8px; margin-top: 10px;">
+          <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px;">
+            <input type="password" id="authNewPassword" placeholder="New Password" style="flex: 1; padding: 12px; border-radius: 8px;">
+            <button type="button" onclick="togglePINVisibility('authNewPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 1em;">👁️</button>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <input type="password" id="authConfirmNewPassword" placeholder="Confirm New Password" style="flex: 1; padding: 12px; border-radius: 8px;">
+            <button type="button" onclick="togglePINVisibility('authConfirmNewPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 1em;">👁️</button>
+          </div>
         </div>
       </div>
 

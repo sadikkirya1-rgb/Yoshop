@@ -134,22 +134,44 @@ function getEffectiveUid() {
   function saveState(key, value) {
     return new Promise((resolve, reject) => {
       if (!db) return reject('DB not initialized');
-      const transaction = db.transaction([STORE_NAME], 'readwrite');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.put({ key, value });
-      request.onsuccess = () => resolve();
-      request.onerror = (event) => reject(event.target.error);
+      try {
+        const transaction = db.transaction([STORE_NAME], 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.put({ key, value });
+        request.onsuccess = () => resolve();
+        request.onerror = (event) => reject(event.target.error);
+        transaction.onerror = (event) => reject(event.target.error);
+      } catch (error) {
+        // Handle InvalidStateError when DB connection is closing
+        if (error.name === 'InvalidStateError') {
+          console.warn('[IndexedDB] Connection closing, skipping save:', key);
+          resolve(); // Non-critical, continue
+        } else {
+          reject(error);
+        }
+      }
     });
   }
 
   function loadState(key) {
     return new Promise((resolve, reject) => {
       if (!db) return reject('DB not initialized');
-      const transaction = db.transaction([STORE_NAME], 'readonly');
-      const store = transaction.objectStore(STORE_NAME);
-      const request = store.get(key);
-      request.onsuccess = (event) => resolve(event.target.result ? event.target.result.value : null);
-      request.onerror = (event) => reject(event.target.error);
+      try {
+        const transaction = db.transaction([STORE_NAME], 'readonly');
+        const store = transaction.objectStore(STORE_NAME);
+        const request = store.get(key);
+        request.onsuccess = (event) => resolve(event.target.result ? event.target.result.value : null);
+        request.onerror = (event) => reject(event.target.error);
+        transaction.onerror = (event) => reject(event.target.error);
+      } catch (error) {
+        // Handle InvalidStateError when DB connection is closing
+        if (error.name === 'InvalidStateError') {
+          console.warn('[IndexedDB] Connection closing, skipping load:', key);
+          resolve(null); // Return null if unable to load
+        } else {
+          reject(error);
+        }
+      }
     });
   }
 
@@ -900,7 +922,8 @@ function getEffectiveUid() {
   async function saveData(syncToCloud = true) {
     try {
       // Save to local IndexedDB immediately (always, synchronous)
-      await Promise.all([
+      // Use Promise.allSettled instead of Promise.all to handle individual errors gracefully
+      await Promise.allSettled([
         saveState('menu', menu || []),
         saveState('activeOrders', activeOrders || {}),
         saveState('transactions', transactions || []),
@@ -4329,11 +4352,27 @@ function getEffectiveUid() {
 
   function togglePINVisibility(inputId = 'managerPIN') {
     const pin = document.getElementById(inputId);
-    const confirm = document.getElementById('confirmManagerPIN');
     if (!pin) return;
     const type = pin.type === 'password' ? 'text' : 'password';
     pin.type = type;
-    if (inputId === 'managerPIN' && confirm) confirm.type = type;
+    
+    // Sync confirmation fields
+    if (inputId === 'managerPIN') {
+      const confirm = document.getElementById('confirmManagerPIN');
+      if (confirm) confirm.type = type;
+    }
+    
+    // Sync new password confirmation fields
+    if (inputId === 'authNewPassword') {
+      const confirm = document.getElementById('authConfirmNewPassword');
+      if (confirm) confirm.type = type;
+    }
+    
+    // Sync auth confirmation field
+    if (inputId === 'authPassword') {
+      const confirm = document.getElementById('authConfirmPassword');
+      if (confirm) confirm.type = type;
+    }
   }
 
   function previewLogo(input) {
@@ -5456,11 +5495,16 @@ function getEffectiveUid() {
     const displayEl = document.getElementById('app-version-display');
     if (!displayEl) return;
     try {
-      const response = await fetch('./sw.js');
-      const text = await response.text();
-      const match = text.match(/CACHE_NAME\s*=\s*['"]yoshop-(v\d+)['"]/);
-      if (match) displayEl.textContent = match[1].toUpperCase();
+      const response = await fetch('./sw.js', { cache: 'no-store' });
+      if (response.ok) {
+        const text = await response.text();
+        const match = text.match(/CACHE_NAME\s*=\s*['"]yoshop-(v\d+)['"]/);
+        if (match) displayEl.textContent = match[1].toUpperCase();
+      } else {
+        displayEl.textContent = '1.5.0'; // Fallback on non-200 response
+      }
     } catch (e) {
+      console.warn('[Version] Failed to fetch service worker version:', e.message);
       displayEl.textContent = '1.5.0'; // Fallback
     }
   }
@@ -5748,8 +5792,11 @@ function getEffectiveUid() {
             ${isRegister ? `<input type="text" id="authName" placeholder="Full Name" style="padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;">` : ''}
             ${isRegister ? `<input type="tel" id="authWhatsApp" placeholder="WhatsApp Number (e.g. +256...)" style="padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;">` : ''}
             <input type="email" id="authEmail" placeholder="Email Address" style="padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;">
-            <input type="password" id="authPassword" placeholder="Password" style="padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;">
-            ${isRegister ? `<input type="password" id="authConfirmPassword" placeholder="Confirm Password" style="padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;">` : ''}
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <input type="password" id="authPassword" placeholder="Password" style="flex: 1; padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;">
+              <button type="button" onclick="togglePINVisibility('authPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 1em;" title="Show/Hide Password">👁️</button>
+            </div>
+            ${isRegister ? `<div style="display: flex; gap: 8px; align-items: center;"><input type="password" id="authConfirmPassword" placeholder="Confirm Password" style="flex: 1; padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;"><button type="button" onclick="togglePINVisibility('authPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 1em;" title="Show/Hide Password">👁️</button></div>` : ''}
             <button onclick="${submitFn}" class="btn" style="background: #28a745; color: white; margin: 0; font-weight: bold; padding: 12px; border-radius: 8px; border: none; width: 100%;">${submitText}</button>
             
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
@@ -6158,14 +6205,23 @@ function getEffectiveUid() {
         });
 
         // Check for updates every 30 seconds for "instant" feel
-        setInterval(() => {
-          registration.update();
+        const updateInterval = setInterval(() => {
+          registration.update().catch(err => {
+            // Handle update errors gracefully (may occur when browser is offline or closing)
+            if (err.name !== 'InvalidStateError') {
+              console.warn('Service Worker update check failed:', err);
+            }
+          });
         }, 30 * 1000);
 
         // Immediately check for updates when the window is focused or tab becomes visible
         document.addEventListener('visibilitychange', () => {
           if (document.visibilityState === 'visible') {
-            registration.update();
+            registration.update().catch(err => {
+              if (err.name !== 'InvalidStateError') {
+                console.warn('Service Worker update check failed:', err);
+              }
+            });
           }
         });
       })
@@ -6177,6 +6233,7 @@ function getEffectiveUid() {
     let refreshing = false;
     navigator.serviceWorker.addEventListener('controllerchange', () => {
       if (!refreshing) {
+        refreshing = true;
         const overlay = document.getElementById('update-overlay');
         const progressBar = document.getElementById('update-progress-bar');
         if (overlay) overlay.style.display = 'flex';
@@ -6190,7 +6247,6 @@ function getEffectiveUid() {
         setTimeout(() => {
           window.location.reload();
         }, 1000);
-        refreshing = true;
       }
     });
   }
@@ -6308,6 +6364,8 @@ function getEffectiveUid() {
     installAppBtn.disabled = false;
     installAppBtn.textContent = 'Install App';
   });
+  
+  // Handle manifest loading errors gracefully (common in development/tunnels)\n  if (document.currentScript && document.currentScript.onerror === undefined) {\n    window.addEventListener('error', (event) => {\n      if (event.message && event.message.includes('manifest')) {\n        console.warn('[PWA] Manifest loading error - continuing without PWA manifest');\n      }\n    }, true);\n  }
 
   installAppBtn.addEventListener('click', async () => {
     // Case 1: `beforeinstallprompt` was fired (Chrome, Edge)
