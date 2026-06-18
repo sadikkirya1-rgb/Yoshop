@@ -6159,7 +6159,7 @@ function getEffectiveUid() {
     let overlay = document.getElementById('login-overlay');
     const logoUrl = sanitizeLogoUrl(settings?.logo);
     const displayLogo = logoUrl || 'assets/icons/icon.png';
-    const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width: 100px; height: 100px; object-fit: contain; margin-bottom: 20px;">`;
+    const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width: 100px; height: 100px; object-fit: contain; margin-top: -40px; margin-bottom: 12px;">`;
 
     if (!overlay) {
       overlay = document.createElement('div');
@@ -6253,7 +6253,7 @@ function getEffectiveUid() {
       const promoMsgHtml = (subInfo.label === "PROMO PLAN") ? `<div style="margin-top: 5px; color: #28a745; font-size: 0.8em; font-weight: bold;">Enjoy your promo plan!</div>` : '';
 
       const statusDisplay = `
-        <div style="background: rgba(255,255,255,0.1); padding: 8px 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid ${subInfo.color}; text-align: left; width: 100%; max-width: 300px;">
+        <div style="background: rgba(255,255,255,0.1); padding: 8px 15px; border-radius: 8px; margin-bottom: 12px; border-left: 4px solid ${subInfo.color}; text-align: left; width: 100%; max-width: 300px;">
           <span style="font-size: 0.7em; opacity: 0.8; text-transform: uppercase;">Shop Status:</span>
           <strong style="color: ${subInfo.color}; font-size: 0.9em; margin-left: 5px;">${subInfo.label}${promoEmoji}</strong>
           ${promoMsgHtml}
@@ -6280,26 +6280,26 @@ function getEffectiveUid() {
         const isAdmin = loginSubStage === 'admin';
         pinStageHtml = `
           <div id="pin-entry-stage" style="display: flex; width: 100%; flex-direction: column; align-items: center; max-width: 320px;">
-            <p id="pin-instruction" style="margin-bottom: 15px; opacity: 0.9; text-align: center; font-weight: bold; width: 100%; font-size: 1.1em;">
+            <p id="pin-instruction" style="margin-bottom: 12px; opacity: 0.9; text-align: center; font-weight: bold; width: 100%; font-size: 1.1em;">
               ${isAdmin ? '🛡️ Admin Login' : '👥 Staff Login'}
             </p>
             
-            <div style="display: flex; flex-direction: column; gap: 12px; width: 100%; margin-bottom: 20px;">
+            <div style="display: flex; flex-direction: column; gap: 12px; width: 100%; margin-bottom: 12px;">
               <div id="staff-name-container" style="width: 100%;">
-                <input type="text" id="loginStaffName" ${isAdmin ? 'readonly' : 'list="staffNamesList"'} value="${isAdmin ? 'Admin' : ''}" placeholder="Select Name" style="padding: 15px; border-radius: 8px; border: none; width: 100%; color: var(--text); background: white; font-size: 1.1em; height: 60px; box-sizing: border-box; ${isAdmin ? 'opacity: 0.8; cursor: default;' : ''}">
+                <input type="text" id="loginStaffName" ${isAdmin ? 'readonly' : 'list="staffNamesList"'} value="${isAdmin ? 'Admin' : ''}" placeholder="Select Name" style="padding: 10px; border-radius: 8px; border: none; width: 100%; color: var(--text); background: white; font-size: 1.1em; height: 45px; box-sizing: border-box; ${isAdmin ? 'opacity: 0.8; cursor: default;' : ''}">
                 <datalist id="staffNamesList">
                   ${isAdmin ? '' : (staff || []).filter(s => s.isActive !== false).map(s => `<option value="${s.name}">`).join('')}
                 </datalist>
               </div>
               
-              <div style="width: 100%; position: relative; height: 60px;">
-                <input type="password" id="loginPIN" placeholder="PIN" maxlength="4" style="width: 100%; height: 100%; padding: 15px; border-radius: 8px; border: none; text-align: center; font-size: 1.5em; letter-spacing: 8px; color: var(--text); background: white; box-sizing: border-box;">
+              <div style="width: 100%; position: relative; height: 45px;">
+                <input type="password" id="loginPIN" placeholder="PIN" maxlength="4" style="width: 100%; height: 100%; padding: 10px; border-radius: 8px; border: none; text-align: center; font-size: 1.5em; letter-spacing: 8px; color: var(--text); background: white; box-sizing: border-box;">
                 <button type="button" onclick="togglePINVisibility('loginPIN')" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); background: none; border: none; font-size: 1.2em; cursor: pointer; color: #888;">👁️</button>
               </div>
             </div>
 
-            <div id="pin-actions-container" style="display: flex; flex-direction: column; gap: 10px; width: 100%;">
-              <button onclick="loginWithPIN()" class="btn" style="background: #28a745; color: white; padding: 15px; font-weight: bold; width: 100%; margin: 0; border-radius: 8px; font-size: 1.1em;">Unlock System</button>
+            <div id="pin-actions-container" style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
+              <button onclick="loginWithPIN()" class="btn" style="background: #28a745; color: white; padding: 10px; font-weight: bold; width: 100%; margin: 0; border-radius: 8px; font-size: 1em;">Unlock System</button>
               <button onclick="resetLoginStage()" class="btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 12px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">🔙 Switch Account Type</button>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; width: 100%; gap: 10px;">
                   <a href="#" onclick="forgotPIN()" style="color: white; font-size: 0.85em; text-decoration: underline; opacity: 0.8;">Forgot PIN?</a>
@@ -6316,8 +6316,8 @@ function getEffectiveUid() {
       overlay.innerHTML = `
         ${deviceLabel}
         ${logoHtml}
-        <h1 style="font-size: 3em; margin-bottom: 10px;">${settings?.name || 'YoShop'}</h1>
-        <p style="font-size: 1.2em; margin-bottom: 20px;">Welcome, ${currentUser.displayName || currentUser.email.split('@')[0]}</p>
+        <h1 style="font-size: 3em; margin-top: 0px; margin-bottom: 12px;">${settings?.name || 'YoShop'}</h1>
+        <p style="font-size: 1.2em; margin-bottom: 12px;">Welcome, ${currentUser.displayName || currentUser.email.split('@')[0]}</p>
         
         ${statusDisplay}
 
