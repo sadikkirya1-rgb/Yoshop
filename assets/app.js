@@ -45,7 +45,7 @@ const analytics = getAnalytics(app);
       };
 
       request.onblocked = () => {
-        alert('Database is blocked. Please close other tabs of this app and refresh.');
+        appAlert('Database is blocked. Please close other tabs of this app and refresh.');
         reject('DB_BLOCKED');
       };
 
@@ -55,6 +55,27 @@ const analytics = getAnalytics(app);
       };
     });
   }
+
+
+function appAlert(message, title = 'Notice') {
+  if (typeof showAppAlert === 'function') return showAppAlert(message, title);
+  alert(message);
+}
+
+async function appConfirm(message, title = 'Confirm', confirmText = 'Yes', cancelText = 'Cancel') {
+  if (typeof showAppConfirm === 'function') {
+    const result = await showAppConfirm(message, title, confirmText, cancelText);
+    return !!(result && result.confirmed);
+  }
+  return confirm(message);
+}
+
+async function appPrompt(message, title = 'Enter value', placeholder = '', defaultValue = '') {
+  if (typeof showAppPrompt === 'function') {
+    return await showAppPrompt(message, title, placeholder, defaultValue);
+  }
+  return prompt(message, defaultValue);
+}
 
   function saveState(key, value) {
     return new Promise((resolve, reject) => {
@@ -113,7 +134,7 @@ const analytics = getAnalytics(app);
       ]);
     } catch (error) {
       console.error("Failed to save data to IndexedDB:", error);
-      alert("Error: Could not save data. Your changes might not persist.");
+      appAlert("Error: Could not save data. Your changes might not persist.");
     }
   }
 
@@ -130,7 +151,7 @@ const analytics = getAnalytics(app);
       location.reload();
     } catch (error) {
       console.error("Failed to save data before refresh:", error);
-      if (confirm("Could not save data before refreshing. You may lose unsaved changes. Do you still want to refresh?")) {
+      if (await appConfirm("Could not save data before refreshing. You may lose unsaved changes. Do you still want to refresh?")) {
         location.reload();
       }
     }
@@ -237,7 +258,7 @@ const analytics = getAnalytics(app);
 
             item.className = itemClasses;
             item.onclick = (e) => { // Allow adding item by clicking the card
-              if (isOutOfStock) return alert("Item is out of stock.");
+              if (isOutOfStock) return appAlert("Item is out of stock.");
               if (e.target.closest('.item-controls')) return;
               addToOrder(CART_ID, dish.name);
             };
@@ -307,11 +328,11 @@ const analytics = getAnalytics(app);
     const imageInput = document.getElementById('dishImage');
 
     if (!name) {
-      return alert("Please enter a valid name.");
+      return appAlert("Please enter a valid name.");
     }
 
     if (!category) {
-      return alert("Please select a category for the dish.");
+      return appAlert("Please select a category for the dish.");
     }
 
     if (buttonElement) {
@@ -378,7 +399,7 @@ const analytics = getAnalytics(app);
       toggleAddDishForm(false); // Hide form on save
     } catch (error) {
       console.error("Error adding dish:", error);
-      alert("Failed to save dish: " + error.message);
+      appAlert("Failed to save dish: " + error.message);
     } finally {
       if (buttonElement) {
         buttonElement.disabled = false;
@@ -433,7 +454,7 @@ const analytics = getAnalytics(app);
     if (!ingredient) return; 
 
     if (ingredient.stock !== undefined && ingredient.stock <= 0) {
-      alert(`"${ingredient.name}" is out of stock. Please add this item to your stock before using it in a recipe.`);
+      appAlert(`"${ingredient.name}" is out of stock. Please add this item to your stock before using it in a recipe.`);
       return;
     }
     
@@ -567,7 +588,7 @@ const analytics = getAnalytics(app);
         hiddenInput.value = base64; // Save base64 immediately to avoid re-reading file
       }).catch(e => {
         console.error(e);
-        alert("Could not preview image: " + e.message);
+        appAlert("Could not preview image: " + e.message);
         input.value = ''; // Clear input
         preview.src = 'https://placehold.co/100';
       });
@@ -622,7 +643,7 @@ const analytics = getAnalytics(app);
   function openBillSplitModal() {
     const currentOrder = activeOrders[CART_ID];
     if (!currentOrder || currentOrder.items.length === 0) {
-      return alert("No active order to split.");
+      return appAlert("No active order to split.");
     }
     // Ensure we have a server name linked to the order
     const serverDropdown = document.getElementById('servedBy');
@@ -720,7 +741,7 @@ const analytics = getAnalytics(app);
 
   async function processSplitPayments() {
     if (splitState.unassigned.length > 0) {
-      return alert("Please assign all items before processing payments.");
+      return appAlert("Please assign all items before processing payments.");
     }
 
     const serverName = activeOrders[CART_ID]?.server || document.getElementById('servedBy')?.value || 'N/A';
@@ -771,7 +792,7 @@ const analytics = getAnalytics(app);
         bill.items.forEach(item => deductStock(item.name, item.qty));
         document.getElementById('paymentModal').style.display = 'none';
       } else {
-        alert("Payment cancelled. Remaining split bills will not be processed.");
+        appAlert("Payment cancelled. Remaining split bills will not be processed.");
         saveData(); // Save any payments that were processed
         return; // Exit the loop
       }
@@ -787,7 +808,7 @@ const analytics = getAnalytics(app);
         renderReport();
     }
     document.getElementById('servedBy').value = '';
-    alert(`All split payments processed successfully!`);
+    appAlert(`All split payments processed successfully!`);
   }
 
   // ===== Orders =====
@@ -797,11 +818,11 @@ const analytics = getAnalytics(app);
     }
 
     const dish = menu.find(d => d.name === name);
-    if (!dish) return alert("Item not found.");
+    if (!dish) return appAlert("Item not found.");
 
     // If notes are being added, we always create a new item.
     if (notes !== null) {
-        const note = prompt(`Add special requests for ${name}:`, "");
+        const note = await appPrompt(`Add special requests for ${name}:`, "");
         if (note !== null) { // prompt not cancelled
             // Add as a new line item with a unique ID
             activeOrders[cartId].items.push({ ...dish, qty: 1, notes: note, id: Date.now() });
@@ -869,9 +890,9 @@ const analytics = getAnalytics(app);
   function clearCurrentOrder() {
     const currentOrder = activeOrders[CART_ID];
     if (!currentOrder || currentOrder.items.length === 0) {
-      return alert("No active order to clear.");
+      return appAlert("No active order to clear.");
     }
-    if (confirm("Are you sure you want to clear the current order?")) {
+    if (await appConfirm("Are you sure you want to clear the current order?")) {
       delete activeOrders[CART_ID];
       updateOrders(CART_ID);
       updateMenuUI();
@@ -881,7 +902,7 @@ const analytics = getAnalytics(app);
   function processBill() { // This now opens the payment modal
     const currentOrder = activeOrders[CART_ID];
     if (!currentOrder || currentOrder.items.length === 0) {
-      return alert("Cannot checkout an empty order.");
+      return appAlert("Cannot checkout an empty order.");
     }
     const totals = calculateTransactionTotals(currentOrder.items);
 
@@ -952,7 +973,7 @@ const analytics = getAnalytics(app);
     const finalTotal = totals.total - discountAmount;
 
     if (paymentMethod === 'Cash' && (isNaN(amountTendered) || amountTendered < finalTotal)) {
-      return alert("Amount tendered must be greater than or equal to the total due.");
+      return appAlert("Amount tendered must be greater than or equal to the total due.");
     }
 
     // Decrement stock
@@ -995,7 +1016,7 @@ const analytics = getAnalytics(app);
     if (document.getElementById('servedBy')) document.getElementById('servedBy').value = '';
     
     document.getElementById('paymentModal').style.display = 'none';
-    alert(`Sale processed successfully!`);
+    appAlert(`Sale processed successfully!`);
   }
 
   // Helper to calculate subtotal, tax, and total
@@ -1093,7 +1114,7 @@ const analytics = getAnalytics(app);
     const item = menu[index];
     if (!item) return;
 
-    if (confirm(`Are you sure you want to delete ${item.name}?`)) {
+    if (await appConfirm(`Are you sure you want to delete ${item.name}?`)) {
       menu.splice(index, 1);
       saveData(); // Persist the deletion
       
@@ -1137,7 +1158,7 @@ const analytics = getAnalytics(app);
     } else {
       const currentOrder = activeOrders[CART_ID];
       if (!currentOrder || currentOrder.items.length === 0) {
-        return alert("No active order to preview.");
+        return appAlert("No active order to preview.");
       } else {
         const totals = calculateTransactionTotals(currentOrder.items);
         const serverName = activeOrders[CART_ID]?.server || document.getElementById('servedBy')?.value || 'N/A';
@@ -1164,7 +1185,7 @@ const analytics = getAnalytics(app);
   
   async function downloadCurrentReceiptAsPDF() {
     if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {
-        alert("PDF generation libraries are not loaded. Please check your internet connection.");
+        appAlert("PDF generation libraries are not loaded. Please check your internet connection.");
         return;
     }
     const receiptContentEl = document.getElementById('receiptContent');
@@ -1186,14 +1207,14 @@ const analytics = getAnalytics(app);
 
     } catch (error) {
         console.error("Error generating PDF:", error);
-        alert("Could not generate PDF. There might be an issue with the receipt content.");
+        appAlert("Could not generate PDF. There might be an issue with the receipt content.");
     }
   }
 
   async function shareReceipt() {
     const receiptContentEl = document.getElementById('receiptContent');
     if (typeof html2canvas === 'undefined') {
-        alert("Library not loaded. Please check internet connection.");
+        appAlert("Library not loaded. Please check internet connection.");
         return;
     }
     try {
@@ -1211,12 +1232,12 @@ const analytics = getAnalytics(app);
                     console.error('Share failed:', err);
                 }
             } else {
-                alert("Sharing is not supported on this device/browser. You can save as PDF instead.");
+                appAlert("Sharing is not supported on this device/browser. You can save as PDF instead.");
             }
         });
     } catch (error) {
         console.error("Error sharing receipt:", error);
-        alert("Could not generate receipt image for sharing.");
+        appAlert("Could not generate receipt image for sharing.");
     }
   }
 
@@ -1231,7 +1252,7 @@ const analytics = getAnalytics(app);
   function printReceipt() {
     // If a device is connected, the user might want to use that instead.
     if (printerDevice) {
-      if (confirm("A thermal printer is connected. Do you want to print directly to the device instead of the browser's print dialog?")) {
+      if (await appConfirm("A thermal printer is connected. Do you want to print directly to the device instead of the browser's print dialog?")) {
         return directPrint();
       }
     }
@@ -1241,7 +1262,7 @@ const analytics = getAnalytics(app);
     if (!printTransaction) {
       // If no historical transaction is being viewed, get the active order
       const currentOrder = activeOrders[CART_ID];
-      if (!currentOrder || currentOrder.items.length === 0) return alert("No active order to print.");
+      if (!currentOrder || currentOrder.items.length === 0) return appAlert("No active order to print.");
       const totals = calculateTransactionTotals(currentOrder.items);
       printTransaction = {
         date: new Date().toLocaleString(),
@@ -1310,13 +1331,13 @@ const analytics = getAnalytics(app);
 
         document.getElementById('scannerConnectionStatus').textContent = 'Connected (Serial)';
         document.getElementById('scannerConnectionStatus').style.color = '#28a745';
-        alert("Connected to Serial Scanner.");
+        appAlert("Connected to Serial Scanner.");
       } catch (error) {
         console.error('Serial connection failed:', error);
-        alert('Failed to connect to serial scanner: ' + error.message);
+        appAlert('Failed to connect to serial scanner: ' + error.message);
       }
     } else {
-      alert("Web Serial API not supported. If your scanner is in HID mode, it works automatically.");
+      appAlert("Web Serial API not supported. If your scanner is in HID mode, it works automatically.");
     }
   }
 
@@ -1366,7 +1387,7 @@ const analytics = getAnalytics(app);
 
   async function connectBluetoothScanner() {
     if (!("bluetooth" in navigator)) {
-      return alert("Web Bluetooth is not supported in your browser.");
+      return appAlert("Web Bluetooth is not supported in your browser.");
     }
     try {
       const device = await navigator.bluetooth.requestDevice({ acceptAllDevices: true });
@@ -1384,7 +1405,7 @@ const analytics = getAnalytics(app);
 
   async function connectUSBPrinter() {
     if (!("usb" in navigator)) {
-      return alert(
+      return appAlert(
         "WebUSB API is not supported in your browser. Please use a recent version of Chrome or Edge."
       );
     }
@@ -1399,16 +1420,16 @@ const analytics = getAnalytics(app);
       printerDevice = device;
       printerType = 'USB';
       updatePrinterStatus(true, device.productName);
-      alert(`Connected to USB printer: ${device.productName}`);
+      appAlert(`Connected to USB printer: ${device.productName}`);
     } catch (error) {
       console.error('USB connection failed:', error);
-      alert('Failed to connect to USB printer. Make sure it is connected and you have granted permission.');
+      appAlert('Failed to connect to USB printer. Make sure it is connected and you have granted permission.');
     }
   }
 
   async function connectBluetoothPrinter() {
     if (!("bluetooth" in navigator)) {
-      return alert(
+      return appAlert(
         "Web Bluetooth is not supported in your browser. This feature works best in Chrome on Android, Windows, and macOS. It is NOT supported on iPhone or iPad."
       );
     }
@@ -1425,10 +1446,10 @@ const analytics = getAnalytics(app);
       printerDevice = server;
       printerType = 'BLUETOOTH';
       updatePrinterStatus(true, device.name);
-      alert(`Connected to Bluetooth printer: ${device.name}`);
+      appAlert(`Connected to Bluetooth printer: ${device.name}`);
     } catch (error) {
       console.error('Bluetooth connection failed:', error);
-      alert(
+      appAlert(
         "Failed to connect. Make sure the printer is on, discoverable (often a blinking blue light), and you grant permission. Note: This feature is not supported on iPhones/iPads."
       );
     }
@@ -1443,7 +1464,7 @@ const analytics = getAnalytics(app);
     printerDevice = null;
     printerType = null;
     updatePrinterStatus(false);
-    alert('Printer disconnected.');
+    appAlert('Printer disconnected.');
   }
 
   function updatePrinterStatus(isConnected, deviceName = '') {
@@ -1471,7 +1492,7 @@ const analytics = getAnalytics(app);
   }
 
   async function sendDataToPrinter(data) {
-    if (!printerDevice) return alert('No printer connected.');
+    if (!printerDevice) return appAlert('No printer connected.');
 
     const encoder = new TextEncoder();
     const encodedData = encoder.encode(data + '\n\n\n'); // Add newlines to feed paper
@@ -1512,7 +1533,7 @@ const analytics = getAnalytics(app);
       }
     } catch (error) {
       console.error('Failed to print:', error);
-      alert('Error sending data to printer. It may have been disconnected or is not compatible. ' + error.message);
+      appAlert('Error sending data to printer. It may have been disconnected or is not compatible. ' + error.message);
       disconnectPrinter();
     }
   }
@@ -1684,12 +1705,12 @@ const analytics = getAnalytics(app);
   }
 
   function deleteTransaction(index) {
-    if (confirm(`Are you sure you want to permanently delete this transaction? This action cannot be undone.`)) {
+    if (await appConfirm(`Are you sure you want to permanently delete this transaction? This action cannot be undone.`)) {
       transactions.splice(index, 1);
       saveData();
       renderTransactions();
       updateDashboard();
-      alert('Transaction deleted.');
+      appAlert('Transaction deleted.');
     }
   }
 
@@ -1697,10 +1718,10 @@ const analytics = getAnalytics(app);
     const transactionToEdit = transactions[index];
 
     if (activeOrders[CART_ID] && activeOrders[CART_ID].items.length > 0) {
-      return alert(`Cannot re-open this bill because the cart is currently occupied. Please clear the cart first.`);
+      return appAlert(`Cannot re-open this bill because the cart is currently occupied. Please clear the cart first.`);
     }
 
-    if (confirm(`This will move the transaction back to the active cart and delete the original bill record. Do you want to continue?`)) {
+    if (await appConfirm(`This will move the transaction back to the active cart and delete the original bill record. Do you want to continue?`)) {
       // Restore the order
       activeOrders[CART_ID] = { 
         items: transactionToEdit.items, 
@@ -1711,7 +1732,7 @@ const analytics = getAnalytics(app);
       transactions.splice(index, 1);
       saveData();
       updateDashboard();
-      alert(`Sale has been re-opened for editing.`);
+      appAlert(`Sale has been re-opened for editing.`);
       // Navigate user to the restored order
       showTab('menuTab', document.querySelector('nav button[onclick*="menuTab"]'));
     }
@@ -1838,7 +1859,7 @@ const analytics = getAnalytics(app);
 
   function downloadReportPDF() {
     if (typeof window.jspdf === 'undefined') {
-        alert("PDF generation libraries are not loaded. Please check your internet connection.");
+        appAlert("PDF generation libraries are not loaded. Please check your internet connection.");
         return;
     }
     const { jsPDF } = window.jspdf;
@@ -1848,7 +1869,7 @@ const analytics = getAnalytics(app);
     const reportTable = reportOutput.querySelector('table');
 
     if (!reportTitle) {
-      return alert("Please generate a report first before downloading.");
+      return appAlert("Please generate a report first before downloading.");
     }
 
     const titleText = reportTitle.innerText;
@@ -2047,7 +2068,7 @@ const analytics = getAnalytics(app);
     }
 
     saveData();
-    alert('Settings saved!');
+    appAlert('Settings saved!');
     loadSettings(); // Reload to show preview
 
     // --- Re-render all relevant sections to reflect currency change ---
@@ -2114,7 +2135,7 @@ const analytics = getAnalytics(app);
     const role = roleInput.value;
 
     if (!name) {
-      alert("Please enter a staff name.");
+      appAlert("Please enter a staff name.");
       return;
     }
 
@@ -2128,7 +2149,7 @@ const analytics = getAnalytics(app);
 
 
   function deleteStaff(index) {
-    if (confirm(`Are you sure you want to remove ${staff[index].name}?`)) {
+    if (await appConfirm(`Are you sure you want to remove ${staff[index].name}?`)) {
       staff.splice(index, 1);
       saveData();
       renderStaffList();
@@ -2136,7 +2157,7 @@ const analytics = getAnalytics(app);
   }
 
   async function resetApp() {
-    if (confirm("WARNING: This will permanently delete ALL application data, including your menu, transactions, and settings. This action cannot be undone. Are you sure?")) {
+    if (await appConfirm("WARNING: This will permanently delete ALL application data, including your menu, transactions, and settings. This action cannot be undone. Are you sure?")) {
       try {
         // If the database connection is open, we must close it before deleting.
         if (db) {
@@ -2145,15 +2166,15 @@ const analytics = getAnalytics(app);
         const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
 
         deleteRequest.onsuccess = () => {
-          alert("Application data has been reset. The application will now reload.");
+          appAlert("Application data has been reset. The application will now reload.");
           location.reload();
         };
         deleteRequest.onerror = (e) => {
           console.error("Error deleting database:", e);
-          alert("Could not reset application data. Please try clearing your browser's site data manually for this website.");
+          appAlert("Could not reset application data. Please try clearing your browser's site data manually for this website.");
         };
         deleteRequest.onblocked = () => {
-          alert("Could not reset application data because the database is in use. Please close all other tabs of this app and try again.");
+          appAlert("Could not reset application data because the database is in use. Please close all other tabs of this app and try again.");
         };
       } catch (error) {
         console.error("Error during app reset:", error);
@@ -2267,8 +2288,8 @@ const analytics = getAnalytics(app);
   function addCategory() {
     const nameInput = document.getElementById('categoryNameInput');
     const name = nameInput.value.trim();
-    if (!name) return alert("Category name cannot be empty.");
-    if (dishCategories.includes(name)) return alert("Category already exists.");
+    if (!name) return appAlert("Category name cannot be empty.");
+    if (dishCategories.includes(name)) return appAlert("Category already exists.");
 
     dishCategories.push(name);
     dishCategories.sort();
@@ -2282,7 +2303,7 @@ const analytics = getAnalytics(app);
 
   function editCategory(index) {
     const oldCategoryName = dishCategories[index];
-    const newCategoryName = prompt(`Enter new name for category "${oldCategoryName}":`, oldCategoryName);
+    const newCategoryName = await appPrompt(`Enter new name for category "${oldCategoryName}":`, oldCategoryName);
 
     if (!newCategoryName || newCategoryName.trim() === '') {
       return; // User cancelled or entered empty string
@@ -2294,7 +2315,7 @@ const analytics = getAnalytics(app);
     }
 
     if (dishCategories.includes(trimmedNewName)) {
-      return alert(`Category "${trimmedNewName}" already exists.`);
+      return appAlert(`Category "${trimmedNewName}" already exists.`);
     }
 
     // Update category in the list
@@ -2314,7 +2335,7 @@ const analytics = getAnalytics(app);
     populateCategoryDropdown();
     populateCategoryFilter();
     updateDashboard();
-    alert(`Category "${oldCategoryName}" was updated to "${trimmedNewName}".`);
+    appAlert(`Category "${oldCategoryName}" was updated to "${trimmedNewName}".`);
   }
 
   function deleteCategory(index) {
@@ -2326,7 +2347,7 @@ const analytics = getAnalytics(app);
       message += `\n\nWarning: This category contains ${itemsUsingCategory.length} items. They will be moved to "Uncategorized".`;
     }
 
-    if (confirm(message)) {
+    if (await appConfirm(message)) {
       // Update items to remove the category reference
       itemsUsingCategory.forEach(item => item.category = '');
 
@@ -2375,9 +2396,9 @@ const analytics = getAnalytics(app);
     const fullNameInput = document.getElementById('unitFullNameInput');
     const shortName = nameInput.value.trim();
     const fullName = fullNameInput.value.trim();
-    if (!shortName || !fullName) return alert("Both short name and full name are required.");
-    if (units.some(u => u.short.toLowerCase() === shortName.toLowerCase())) return alert("Unit short name already exists.");
-    if (units.some(u => u.full.toLowerCase() === fullName.toLowerCase())) return alert("Unit full name already exists.");
+    if (!shortName || !fullName) return appAlert("Both short name and full name are required.");
+    if (units.some(u => u.short.toLowerCase() === shortName.toLowerCase())) return appAlert("Unit short name already exists.");
+    if (units.some(u => u.full.toLowerCase() === fullName.toLowerCase())) return appAlert("Unit full name already exists.");
     units.push({ short: shortName, full: fullName });
     units.sort((a, b) => a.short.localeCompare(b.short));
     nameInput.value = '';
@@ -2389,7 +2410,7 @@ const analytics = getAnalytics(app);
 
   function deleteUnit(index) {
     const unit = units[index];
-    if (confirm(`Are you sure you want to delete the unit "${unit.short} (${unit.full})"?`)) {
+    if (await appConfirm(`Are you sure you want to delete the unit "${unit.short} (${unit.full})"?`)) {
       units.splice(index, 1);
       saveData();
       renderUnitList();
@@ -2435,7 +2456,7 @@ const analytics = getAnalytics(app);
     const addressInput = document.getElementById('customerAddressInput');
     const index = document.getElementById('customerIndex').value;
 
-    if (!nameInput.value.trim()) return alert("Customer name is required.");
+    if (!nameInput.value.trim()) return appAlert("Customer name is required.");
 
     const customerData = { 
         name: nameInput.value.trim(), 
@@ -2465,7 +2486,7 @@ const analytics = getAnalytics(app);
   }
 
   function deleteCustomer(index) {
-    if (confirm(`Are you sure you want to delete customer "${customers[index].name}"?`)) {
+    if (await appConfirm(`Are you sure you want to delete customer "${customers[index].name}"?`)) {
         customers.splice(index, 1);
         saveData();
         renderCustomerList();
@@ -2645,7 +2666,7 @@ const analytics = getAnalytics(app);
   function editStockItem(index) {
     const item = menu[index];
     if (!item || item.stock === undefined) {
-      return alert("This item cannot be edited here. Please edit it from the 'Products' section.");
+      return appAlert("This item cannot be edited here. Please edit it from the 'Products' section.");
     }
 
     // Show the form
@@ -2668,7 +2689,7 @@ const analytics = getAnalytics(app);
     if (show && index !== null) {
       const item = menu[index];
       if (item.stock === undefined) {
-        return alert(`Cannot directly adjust stock for "${item.name}" because it is a composite dish made from a recipe. Adjust the stock of its individual ingredients instead.`);
+        return appAlert(`Cannot directly adjust stock for "${item.name}" because it is a composite dish made from a recipe. Adjust the stock of its individual ingredients instead.`);
       }
       document.getElementById('stockItemIndex').value = index;
       document.getElementById('stockAdjustItemName').textContent = `Adjust Stock for: ${item.name} (Current: ${item.stock})`;
@@ -2687,7 +2708,7 @@ const analytics = getAnalytics(app);
     const newStock = parseInt(newStockInput.value, 10);
 
     if (index === '' || isNaN(newStock) || newStock < 0) {
-      return alert("Please enter a valid, non-negative number for the stock.");
+      return appAlert("Please enter a valid, non-negative number for the stock.");
     }
 
     menu[index].stock = newStock;
@@ -2729,16 +2750,16 @@ const analytics = getAnalytics(app);
     const stock = parseInt(document.getElementById('newStockItemStock').value, 10);
 
     if (!name) {
-      return alert("Please enter an item name.");
+      return appAlert("Please enter an item name.");
     }
     if (!unit) {
-      return alert("Please select a unit.");
+      return appAlert("Please select a unit.");
     }
     if (isNaN(costPrice) || costPrice < 0) {
-      return alert("Please enter a valid cost price.");
+      return appAlert("Please enter a valid cost price.");
     }
     if (isNaN(stock) || stock < 0) {
-      return alert("Please enter a valid stock quantity.");
+      return appAlert("Please enter a valid stock quantity.");
     }
 
     const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
@@ -2757,7 +2778,7 @@ const analytics = getAnalytics(app);
           // Recalculate price based on markup in case cost changed
           item.price = costPrice * (1 + ((settings.defaultMarkup || 200) / 100));
       }
-      alert(`Item "${name}" updated successfully.`);
+      appAlert(`Item "${name}" updated successfully.`);
     } else {
       // Add new item
       // It's a primary ingredient, so calculate its selling price based on markup
@@ -2778,7 +2799,7 @@ const analytics = getAnalytics(app);
         image: "https://placehold.co/100" // Default placeholder
       };
       menu.push(newItem);
-      alert(`Item "${name}" added successfully.`);
+      appAlert(`Item "${name}" added successfully.`);
     }
 
     saveData();
@@ -2996,7 +3017,7 @@ const analytics = getAnalytics(app);
         // Send message to SW to skip waiting and activate
         reg.waiting.postMessage({ type: 'SKIP_WAITING' });
       } else {
-        alert("Checking for updates...");
+        appAlert("Checking for updates...");
         if (reg) reg.update();
       }
     });
@@ -3021,7 +3042,17 @@ const analytics = getAnalytics(app);
     // Case 1: `beforeinstallprompt` was fired (Chrome, Edge)
     if (deferredPrompt) {
       console.log('📲 Triggering install prompt...');
-      deferredPrompt.prompt();
+      try {
+        await deferredPrompt.prompt();
+        const choice = await deferredPrompt.userChoice;
+        if (choice && choice.outcome === 'accepted') {
+          appAlert('Installation accepted.');
+        } else {
+          appAlert('Installation dismissed.');
+        }
+      } catch (e) {
+        console.warn('Install prompt failed or was not available', e);
+      }
       // The prompt can only be used once.
       deferredPrompt = null;
       return;
@@ -3029,16 +3060,16 @@ const analytics = getAnalytics(app);
 
     // Case 2: The app is already installed (check display mode)
     if (window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone) {
-      alert('This app is already installed on your device!');
+      appAlert('This app is already installed on your device!');
       return;
     }
 
     // Case 3: Fallback for browsers that don't support `beforeinstallprompt` (like Safari on iOS)
     const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
     if (isIOS) {
-      alert("To install this app on your iPhone or iPad:\n\n1. Tap the 'Share' button in the browser menu.\n2. Scroll down and tap 'Add to Home Screen'.");
+      appAlert("To install this app on your iPhone or iPad:\n\n1. Tap the 'Share' button in the browser menu.\n2. Scroll down and tap 'Add to Home Screen'.");
     } else {
-      alert("This app can be installed, but your browser doesn't support the automatic prompt. Please look for an 'Install' or 'Add to Home Screen' option in your browser's menu.");
+      appAlert("This app can be installed, but your browser doesn't support the automatic prompt. Please look for an 'Install' or 'Add to Home Screen' option in your browser's menu.");
     }
   });
 
@@ -3048,7 +3079,7 @@ const analytics = getAnalytics(app);
   });
   // ===== Data Export/Import =====
   function exportTransactionsToCSV() {
-    if (transactions.length === 0) return alert("No transactions to export.");
+    if (transactions.length === 0) return appAlert("No transactions to export.");
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Date,Server,Item Name,Quantity,Price,Total,Payment Method,Notes\r\n";
     transactions.forEach(t => {
@@ -3086,8 +3117,8 @@ const analytics = getAnalytics(app);
 
   async function restoreData() {
     const fileInput = document.getElementById('restoreFile');
-    if (fileInput.files.length === 0) return alert("Please select a backup file to restore.");
-    if (!confirm("This will overwrite all current data. Are you sure you want to continue?")) return;
+    if (fileInput.files.length === 0) return appAlert("Please select a backup file to restore.");
+    if (!await appConfirm("This will overwrite all current data. Are you sure you want to continue?")) return;
 
     const file = fileInput.files[0];
     const reader = new FileReader();
@@ -3124,9 +3155,9 @@ const analytics = getAnalytics(app);
           ])
         ]);
 
-        alert("Data restored successfully. The application will now reload.");
+        appAlert("Data restored successfully. The application will now reload.");
         location.reload();
-      } catch (e) { alert("Error reading or parsing the backup file. Please ensure it's a valid backup."); }
+      } catch (e) { appAlert("Error reading or parsing the backup file. Please ensure it's a valid backup."); }
     };
     reader.readAsText(file);
   }
@@ -3178,7 +3209,7 @@ const analytics = getAnalytics(app);
             addToOrder(CART_ID, dish.name);
             // Optional: Play a beep sound here
         } else {
-            alert(`Item with barcode "${code}" not found in menu.`);
+            appAlert(`Item with barcode "${code}" not found in menu.`);
         }
     }
     
@@ -3220,12 +3251,12 @@ const analytics = getAnalytics(app);
         document.getElementById('mobileScannerStatus').textContent = "Phone Connected";
         document.getElementById('mobileScannerStatus').style.color = "#28a745";
         closeMobileConnectModal();
-        alert("Mobile phone connected as scanner!");
+        appAlert("Mobile phone connected as scanner!");
     });
     
     peer.on('error', function(err) {
         console.error(err);
-        alert("Mobile connection error: " + err.type);
+        appAlert("Mobile connection error: " + err.type);
     });
   }
 
@@ -3313,7 +3344,7 @@ const analytics = getAnalytics(app);
         conn.on('close', function() {
             statusEl.textContent = "Disconnected from POS ❌";
             statusEl.style.color = "#dc3545";
-            alert("Disconnected from POS.");
+            appAlert("Disconnected from POS.");
         });
         
         conn.on('error', function(err) {
@@ -3344,7 +3375,7 @@ const analytics = getAnalytics(app);
   let html5QrcodeScanner = null;
 
   function manualBarcodeInput() {
-    const code = prompt("Enter Product Barcode:");
+    const code = await appPrompt("Enter Product Barcode:");
     if (code) {
         const trimmedCode = code.trim();
         if (document.getElementById('menuTab').classList.contains('active')) {
@@ -3393,7 +3424,7 @@ const analytics = getAnalytics(app);
 
   function generateAndPrintBarcodes() {
     if (typeof JsBarcode === 'undefined' || typeof window.jspdf === 'undefined') {
-        return alert("Barcode libraries not loaded. Please check internet connection.");
+        return appAlert("Barcode libraries not loaded. Please check internet connection.");
     }
 
     const { jsPDF } = window.jspdf;
@@ -3405,7 +3436,7 @@ const analytics = getAnalytics(app);
     // Filter items that have a barcode or name
     const itemsToPrint = menu.filter(item => item.barcode || item.name);
 
-    if (itemsToPrint.length === 0) return alert("No items to print.");
+    if (itemsToPrint.length === 0) return appAlert("No items to print.");
 
     itemsToPrint.forEach((item, index) => {
         const canvas = document.createElement('canvas');
@@ -3435,7 +3466,7 @@ const analytics = getAnalytics(app);
 
   function printDishLabel(index) {
     if (typeof JsBarcode === 'undefined' || typeof window.jspdf === 'undefined') {
-        return alert("Barcode libraries not loaded. Please check internet connection.");
+        return appAlert("Barcode libraries not loaded. Please check internet connection.");
     }
 
     const item = menu[index];
@@ -3498,7 +3529,7 @@ const analytics = getAnalytics(app);
   }
 
   async function requestNotificationPermission() {
-    if (!('Notification' in window)) return alert("Notifications not supported.");
+    if (!('Notification' in window)) return appAlert("Notifications not supported.");
     const permission = await Notification.requestPermission();
     checkNotificationStatus();
     if (permission === 'granted') {
@@ -3523,7 +3554,7 @@ const analytics = getAnalytics(app);
         });
       }
     } else {
-      alert("Please enable notifications first.");
+      appAlert("Please enable notifications first.");
     }
   }
 
