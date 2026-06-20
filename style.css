@@ -445,6 +445,20 @@
     box-shadow: inset 0 1px 3px rgba(0,0,0,0.3);
   }
 
+/* Ensure stock management action buttons are horizontal on wide screens
+   and stack vertically on small screens. More specific selector to override
+   other rules if necessary. */
+#stockTab .item-controls {
+  flex-direction: row;
+}
+@media (max-width: 600px) {
+  #stockTab .item-controls {
+    flex-direction: column;
+    gap: 6px;
+  }
+  #stockTab .item-controls button { width: 36px; height: 36px; }
+}
+
   /* Orders */
   table {
     width: 100%;
