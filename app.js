@@ -6866,8 +6866,13 @@ function getEffectiveUid() {
 
   mainInit();
 
-  // Register Service Worker for PWA
-  if ('serviceWorker' in navigator) {
+  // Register Service Worker for PWA (skip in preview tunnels where proxy may rewrite assets)
+  const previewTunnel = location.hostname.endsWith('.github.dev') || location.hostname.endsWith('.app.github.dev');
+  if (previewTunnel) {
+    console.info('Preview tunnel detected; skipping Service Worker registration.');
+  }
+
+  if ('serviceWorker' in navigator && !previewTunnel) {
     window.addEventListener('load', () => {
       // updateViaCache: 'none' forces the browser to check the server for sw.js changes on every check
       navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
@@ -7064,6 +7069,12 @@ function getEffectiveUid() {
     installAppBtn.disabled = false;
     installAppBtn.textContent = 'Install App';
   });
+
+  // If preview tunnel, ensure version display doesn't try to fetch sw.js (which may 404)
+  if (previewTunnel) {
+    const displayEl = document.getElementById('app-version-display');
+    if (displayEl) displayEl.textContent = 'preview';
+  }
   
   // Handle manifest loading errors gracefully (common in development/tunnels)
   if (document.currentScript && document.currentScript.onerror === undefined) {
