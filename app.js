@@ -135,6 +135,25 @@ async function getShopsPageOptimized(pageNumber = 0) {
     
     // For production with 100+ shops, use aggregation queries when available
     // or fetch with pagination cursor
+    // ENFORCE TENANT ISOLATION: Only Master Admin may query global users list
+    const effectiveUid = getEffectiveUid();
+    const isMasterAdmin = (effectiveUid === MASTER_APP_ADMIN_UID || (currentUser && currentUser.email === 'sadikkirya@gmail.com'));
+
+    if (!isMasterAdmin) {
+      // Normal tenant: load only their private profile document
+      if (!effectiveUid) return { docs: [], pageNumber, pageSize, total: 0, hasMore: false };
+      const docRef = doc(dbFirestore, 'users', effectiveUid);
+      const single = await getDoc(docRef);
+      return {
+        docs: single.exists() ? [single] : [],
+        pageNumber,
+        pageSize: 1,
+        total: single.exists() ? 1 : 0,
+        hasMore: false
+      };
+    }
+
+    // Master admin: allowed to query global users with pagination
     const usersSnap = await getCachedQuery(
       `shops_page_${pageNumber}`,
       async () => {
@@ -146,7 +165,7 @@ async function getShopsPageOptimized(pageNumber = 0) {
       },
       60000 // Cache for 1 minute
     );
-    
+
     return {
       docs: usersSnap.docs,
       pageNumber,
@@ -158,6 +177,66 @@ async function getShopsPageOptimized(pageNumber = 0) {
     console.error('[QUERY] Shops page fetch failed:', error);
     return { docs: [], error: error.message };
   }
+}
+
+/**
+ * Ensure tenant's local and cloud parameters are initialized after login/registration
+ */
+async function setupTenantShopParameters(uid) {
+  try {
+    if (!uid) return;
+    // Initialize IndexedDB for this user (namespaced)
+    await initDB(uid);
+
+    // Ensure cloud profile document exists with sane defaults
+    const profileRef = doc(dbFirestore, 'users', uid, 'data', 'shop_profile');
+    const snap = await getDoc(profileRef);
+    if (!snap.exists()) {
+      await setDoc(profileRef, {
+        settings: { name: 'My Business', currency: '$' },
+        menu: [],
+        staff: [],
+        customers: [],
+        dishCategories: [],
+        units: [],
+        restockHistory: [],
+        lastUpdated: new Date().toISOString()
+      });
+    }
+
+    // Load initial tenant data into memory and mark ready
+    await setupRealTimeSync(uid);
+  } catch (error) {
+    console.warn('setupTenantShopParameters error:', error);
+  }
+}
+
+/**
+ * Register a new tenant shop programmatically with immediate tenant initialization
+ */
+async function registerNewTenantShop(email, password, businessName) {
+  if (!email || !password) throw new Error('Email and password required');
+  const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+  if (businessName) await updateProfile(userCredential.user, { displayName: businessName });
+
+  // Root metadata
+  await setDoc(doc(dbFirestore, 'users', userCredential.user.uid), {
+    email: email,
+    name: businessName || null,
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  }, { merge: true });
+
+  // Tenant private profile
+  await setDoc(doc(dbFirestore, 'users', userCredential.user.uid, 'data', 'shop_profile'), {
+    settings: { name: businessName || 'My Business' },
+    menu: [],
+    lastUpdated: new Date().toISOString()
+  }, { merge: true });
+
+  // Initialize local DB and run first sync
+  await setupTenantShopParameters(userCredential.user.uid);
+  return userCredential.user;
 }
 
 // ===== PRODUCTION ERROR MONITORING =====
@@ -237,11 +316,8 @@ function getAppHealthStatus() {
 async function uploadImage(base64Data, path) {
   try {
     if (!base64Data || !base64Data.startsWith('data:image')) return base64Data;
-    let userIdentifier = 'anonymous'; // Default for public uploads
-    if (currentUser) {
-      userIdentifier = currentUser.email || currentUser.uid; // Use email as primary identifier as requested
-    }
-    const userPath = `users/${userIdentifier}/${path}`;
+    let uid = getEffectiveUid() || 'anonymous';
+    const userPath = `users/${uid}/${path}`;
     const storageRef = ref(storage, userPath);
     await uploadString(storageRef, base64Data, 'data_url');
     return await getDownloadURL(storageRef);
@@ -598,7 +674,7 @@ function getEffectiveUid() {
         }
         
         // 1. Fetch the specific shop data first to verify existence
-        const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "SHOP_DATA"));
+        const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "shop_profile"));
         if (!dataDoc.exists()) continue; 
 
         const shopData = dataDoc.data();
@@ -689,8 +765,8 @@ function getEffectiveUid() {
         await Promise.all(txDeletes);
       }
 
-      // 2. Delete the main SHOP_DATA document
-      await deleteDoc(doc(dbFirestore, "users", shopUid, "data", "SHOP_DATA"));
+      // 2. Delete the main shop_profile document
+      await deleteDoc(doc(dbFirestore, "users", shopUid, "data", "shop_profile"));
       
       // Stop sync if we deleted our own data
       if (shopUid === currentUser?.uid) isInitialLoadComplete = false;
@@ -752,7 +828,7 @@ function getEffectiveUid() {
         const uid = userDoc.id;
 
         // 1. Fetch the specific shop data first to verify existence and name
-        const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "SHOP_DATA"));
+        const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "shop_profile"));
         if (!dataDoc.exists()) continue; // Skip accounts that haven't initialized shop data
 
         const shopData = dataDoc.data();
@@ -928,7 +1004,7 @@ function getEffectiveUid() {
         if (currentRefreshId !== lastShopsTableRefreshId) return;
 
         const uid = userDoc.id;
-        const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "SHOP_DATA"));
+        const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "shop_profile"));
         if (!dataDoc.exists()) continue;
 
         const shopData = dataDoc.data();
@@ -1085,15 +1161,15 @@ function getEffectiveUid() {
     } else if (!confirm(`Are you sure you want to set this shop status to ${status.toUpperCase()}?`)) return;
     
     try {
-      // Update the SHOP_DATA configuration for the target user
-      const shopRef = doc(dbFirestore, "users", uid, "data", "SHOP_DATA");
+      // Update the shop_profile configuration for the target user
+      const shopRef = doc(dbFirestore, "users", uid, "data", "shop_profile");
       await setDoc(shopRef, { 
         appAdminSettings: { shopStatus: status } 
       }, { merge: true });
       
       refreshAppAdminShops(); // Refresh UI to show updated badge
     } catch (error) {
-      handleFirebaseError(error, "Update Shop Status", `users/${uid}/data/SHOP_DATA`);
+      handleFirebaseError(error, "Update Shop Status", `users/${uid}/data/shop_profile`);
     }
   }
 
@@ -1269,7 +1345,7 @@ function getEffectiveUid() {
             }
 
             // Perform actual cloud sync using merge to avoid overwriting other fields
-            await setDoc(doc(dbFirestore, "users", effectiveUid, "data", "SHOP_DATA"), shopData, { merge: true });
+            await setDoc(doc(dbFirestore, "users", effectiveUid, "data", "shop_profile"), shopData, { merge: true });
             lastSyncTime = Date.now();
             syncFailureCount = 0; // Reset on success
 
@@ -1288,7 +1364,7 @@ function getEffectiveUid() {
             console.log('[SYNC] ✅ Cloud data synced successfully');
           } catch (firestoreError) {
             syncFailureCount++;
-            handleFirebaseError(firestoreError, "Firestore Sync", `users/${effectiveUid}/data/SHOP_DATA`);
+            handleFirebaseError(firestoreError, "Firestore Sync", `users/${effectiveUid}/data/shop_profile`);
           } finally {
             isDebouncing = false;
           }
@@ -1640,13 +1716,26 @@ function getEffectiveUid() {
         if (name) {
           await updateProfile(userCredential.user, { displayName: name });
         }
-        
-        // Save additional registration info immediately to Firestore
+
+        // Save root user metadata using their UID as document ID
         await setDoc(doc(dbFirestore, "users", userCredential.user.uid), {
-          whatsapp: whatsapp,
-          name: name,
-          status: 'pending'
+          whatsapp: whatsapp || null,
+          name: name || null,
+          email: email,
+          status: 'pending',
+          createdAt: new Date().toISOString()
         }, { merge: true });
+
+        // Initialize the tenant's private shop profile under /users/{uid}/data/shop_profile
+        await setDoc(doc(dbFirestore, "users", userCredential.user.uid, "data", "shop_profile"), {
+          settings: { name: name || 'My Business' },
+          menu: [],
+          transactions: [],
+          lastUpdated: new Date().toISOString()
+        }, { merge: true });
+
+        // Run tenant initialization locally (IndexedDB, caches)
+        try { await setupTenantShopParameters(userCredential.user.uid); } catch (e) { console.warn('Tenant init warning', e); }
 
         alert("Registration successful! You are now logged in.");
       }
@@ -6001,7 +6090,7 @@ function getEffectiveUid() {
       let updateTimer = null;
       
       unsubscribeSync = onSnapshot(
-        doc(dbFirestore, "users", uid, "data", "SHOP_DATA"),
+        doc(dbFirestore, "users", uid, "data", "shop_profile"),
         { includeMetadataChanges: true },
         (docSnap) => {
           if (docSnap.exists()) {
@@ -6130,10 +6219,10 @@ function getEffectiveUid() {
             console.log('📝 [SYNC] No cloud data found, user can create new data');
             isInitialLoadComplete = true;
           }
-        },
+          },
         (error) => {
           captureError('SYNC_LISTENER', error, { uid });
-          handleFirebaseError(error, "Real-Time Sync Listener", `users/${uid}/data/SHOP_DATA`);
+          handleFirebaseError(error, "Real-Time Sync Listener", `users/${uid}/data/shop_profile`);
           console.log('Falling back to local-only mode. You can still use the app offline.');
           isInitialLoadComplete = true; // Don't block local work if cloud fails
         }
@@ -6298,17 +6387,17 @@ function getEffectiveUid() {
 
         if (user) {
           console.log("Logged in, syncing cloud data in background...");
-          
+
           // Initialize root user document with PENDING status for new users
           try {
             const userRef = doc(dbFirestore, "users", user.uid);
             const userSnap = await getDoc(userRef);
-            
+
             const data = userSnap.exists() ? userSnap.data() : {};
             const status = data.status || 'pending';
 
             // Save metadata locally for permission checks
-            userMetadata = { ...data, status };
+            userMetadata = { ...data, status, uid: user.uid };
 
             await setDoc(doc(dbFirestore, "users", user.uid), {
               email: user.email,
@@ -6319,18 +6408,62 @@ function getEffectiveUid() {
             handleFirebaseError(e, "User Metadata Sync", `users/${user.uid}`);
           }
 
-          // If the user just logged in and it's different from the guest/previous DB,
-          // we update the session and reload to ensure clean initialization.
+          // Persist current UID in session for cross-tab checks
           if (sessionStorage.getItem('currentUserUid') !== user.uid) {
             sessionStorage.setItem('currentUserUid', user.uid);
-            // We don't reload here if this is the initial load triggered by login()
-            // but we ensure future initializations use this UID.
           }
-          
-          setupRealTimeSync(user.uid);
+
+          // Run tenant initialization for normal users to ensure private data exists
+          try {
+            if (!(user.uid === MASTER_APP_ADMIN_UID || user.email === 'sadikkirya@gmail.com')) {
+              await setupTenantShopParameters(user.uid);
+            } else {
+              // Admins may still need real-time sync for monitoring
+              await setupRealTimeSync(user.uid);
+            }
+          } catch (e) {
+            console.warn('Error during tenant initialization:', e);
+          }
         } else {
-          sessionStorage.removeItem('currentUserUid');
-          isInitialLoadComplete = true; // Enable saving for local guests
+          // User signed out: fully flush session-local state to prevent cross-contamination
+          try {
+            // Clear session and local storage items used for identity and caches
+            sessionStorage.removeItem('currentUserUid');
+            sessionStorage.removeItem('currentUserRole');
+            sessionStorage.removeItem('currentUserPermissions');
+            sessionStorage.removeItem('isPinVerified');
+            sessionStorage.removeItem('currentLoggedInStaffName');
+            sessionStorage.clear();
+            // Reset in-memory state
+            currentUser = null;
+            userMetadata = null;
+            currentUserRole = null;
+            currentUserPermissions = [];
+            isPinVerified = false;
+            currentLoggedInStaffName = '';
+            menu = [];
+            activeOrders = {};
+            transactions = [];
+            staff = [];
+            dishCategories = [];
+            customers = [];
+            restockHistory = [];
+            settings = { ...defaultSettings };
+
+            // Close IndexedDB connection and delete DB to avoid reuse across accounts
+            try {
+              db && db.close();
+              indexedDB.deleteDatabase('posDB_' + (sessionStorage.getItem('currentUserUid') || 'guest'));
+            } catch (e) {
+              console.warn('IndexedDB cleanup failed:', e);
+            }
+
+            // Reset flags
+            isInitialLoadComplete = false;
+            isMonitoringMode = false;
+          } catch (e) {
+            console.warn('Error flushing session state on logout:', e);
+          }
         }
       });
 

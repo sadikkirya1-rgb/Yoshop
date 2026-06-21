@@ -67,7 +67,7 @@ healthMetrics.firebaseCalls    // Total API calls
 // Fetches all users (100+), then queries each individually
 const users = await getDocs(collection(dbFirestore, "users"));
 for (const user of users) {
-  const data = await getDoc(doc(dbFirestore, "users", user.id, "data", "SHOP_DATA"));
+   const data = await getDoc(doc(dbFirestore, "users", user.id, "data", "shop_profile"));
 }
 ```
 

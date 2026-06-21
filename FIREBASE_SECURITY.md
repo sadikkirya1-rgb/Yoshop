@@ -14,63 +14,60 @@ These rules ensure:
 
 ```firestore
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // ===== USERS COLLECTION =====
-    // App Admin can read/write all users
-    // Users can read/write their own data
-    match /users/{userId} {
-      allow create: if isAuthenticated();
-      allow read: if isOwner(userId) || isAdmin();
-      allow update: if isOwner(userId) || isAdmin();
-      allow delete: if isAdmin();
-      
-      // Nested data collection (menu, settings, etc.)
-      match /data/{document=**} {
-        allow read, write: if isOwner(userId) || isAdmin();
-      }
-      
-      // Transactions sub-collection
-      match /transactions/{transactionId} {
-        allow read, write: if isOwner(userId) || isAdmin();
-      }
-      
-      // Analytics sub-collection
-      match /analytics/{analyticsId} {
-        allow read, write: if isOwner(userId) || isAdmin();
-      }
-    }
-    
-    // ===== SHARED RESOURCES (if any) =====
-    match /public/{document=**} {
-      allow read: if true; // Public read access
-      allow write: if isAdmin(); // Only admin can write
-    }
-    
-    // ===== HELPER FUNCTIONS =====
-    function isAuthenticated() {
-      return request.auth != null;
-    }
-    
-    function isOwner(userId) {
-      return request.auth.uid == userId;
-    }
-    
     function isAdmin() {
-      // Master admin UID - UPDATE THIS TO YOUR ADMIN UID
-      return request.auth.uid == 'Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2';
+      return request.auth != null && (
+        request.auth.uid == 'Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2' ||
+        (request.auth.token.email != null && request.auth.token.email == 'sadikkirya@gmail.com')
+      );
     }
-    
-    function hasValidCredentials() {
-      return request.auth.token.email_verified == true;
+
+    // Deny by default
+    match /{document=**} {
+      allow read, write: if false;
     }
-    
-    function isRateLimited(userId) {
-      // Prevent rapid fire requests
-      let lastWrite = resource.data.lastUpdated;
-      return request.time < timestamp.value(lastWrite) + duration.value(1s);
+
+    // Users collection: strict per-tenant isolation
+    match /users/{userId} {
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow get, update, delete: if request.auth != null && request.auth.uid == userId;
+      allow list: if isAdmin();
+
+      // Private shop assets
+      match /data/{document=**} {
+        allow read, write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      }
+
+      // Transactions subcollection
+      match /transactions/{transactionId} {
+        allow read, write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      }
     }
+  }
+}
+```
+
+### Firebase Storage Rules (recommended snippet)
+
+```storage
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null && (
+        request.auth.uid == 'Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2' ||
+        (request.auth.token.email != null && request.auth.token.email == 'sadikkirya@gmail.com')
+      );
+    }
+
+    match /users/{userId}/{allPaths=**} {
+      allow read, write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    }
+
+    match /{allPaths=**} { allow read, write: if false; }
   }
 }
 ```
