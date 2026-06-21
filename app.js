@@ -2339,11 +2339,11 @@ function getEffectiveUid() {
     const price = parseFloat(document.getElementById('dishSellingPrice').value) || 0;
 
     try {
-      let image = document.getElementById('dishImageBase64').value || "https://placehold.co/100";
+      let image = document.getElementById('dishImageBase64').value || null;
       const dishIndex = document.getElementById('dishIndex').value;
 
       // If image is local Base64, upload to Fire Storage
-      if (image.startsWith('data:image')) {
+      if (typeof image === 'string' && image.startsWith('data:image')) {
         image = await uploadImage(image, `dishes/${Date.now()}.jpg`);
       }
 
@@ -2358,9 +2358,10 @@ function getEffectiveUid() {
         }
 
         // Preserve existing fields not managed by this form (like physical stock and units)
+        const imageToSave = isValidMenuImage(image) ? image : menu[index].image;
         let dishData = { 
           ...menu[index], 
-          name, barcode, category, recipe, costPrice, price, image: image 
+          name, barcode, category, recipe, costPrice, price, image: imageToSave 
         };
         menu[index] = dishData;
 
@@ -2381,7 +2382,7 @@ function getEffectiveUid() {
                         item.name = name;
                         item.price = price;
                         item.costPrice = costPrice;
-                        item.image = image;
+                        item.image = isValidMenuImage(image) ? image : item.image;
                     }
                 });
             }
@@ -2389,7 +2390,7 @@ function getEffectiveUid() {
 
       } else {
         // It's a new dish
-        let dishData = { name, barcode, category, recipe, costPrice, price, image: image };
+        let dishData = { name, barcode, category, recipe, costPrice, price, image: isValidMenuImage(image) ? image : undefined };
         // Clear form only for new dishes
         document.getElementById('dishName').value = '';
         document.getElementById('dishBarcode').value = '';
@@ -2430,8 +2431,8 @@ function getEffectiveUid() {
     document.getElementById('dishBarcode').value = dish.barcode || '';
     document.getElementById('dishCategory').value = dish.category;
     
-    document.getElementById('dishImageBase64').value = dish.image || ''; // Store current image
-    document.getElementById('dishImagePreview').src = dish.image || 'https://placehold.co/100'; // Show current image in preview
+    document.getElementById('dishImageBase64').value = isValidMenuImage(dish.image) ? dish.image : ''; // Store current image
+    document.getElementById('dishImagePreview').src = isValidMenuImage(dish.image) ? dish.image : PLACEHOLDER_IMAGE; // Show current image in preview
     document.getElementById('dishSellingPrice').value = (dish.price || 0);
 
     // Show the form first to ensure all elements are visible and ready.
@@ -5965,7 +5966,7 @@ function getEffectiveUid() {
         stock,
         unit,
         price,
-        image: "https://placehold.co/100" // Default placeholder
+        image: undefined
       };
 
       restockHistory.unshift({
@@ -6192,29 +6193,34 @@ function getEffectiveUid() {
               // This is intentionally faster so other devices feel instant.
               const applyDelay = isNewRemoteData ? 50 : 200;
               updateTimer = setTimeout(async () => {
+                const updateData = pendingUpdate;
+                if (!updateData) {
+                  return;
+                }
                 try {
                   // Identify and clear changed images/logos from cache
-                  if (pendingUpdate.menu) {
-                    pendingUpdate.menu.forEach(cloudDish => {
-                      const localDish = menu.find(d => d.name === cloudDish.name);
+                  if (Array.isArray(updateData.menu)) {
+                    updateData.menu.forEach(cloudDish => {
+                      if (!cloudDish || !cloudDish.name || !Array.isArray(menu)) return;
+                      const localDish = menu.find(d => d && d.name === cloudDish.name);
                       if (localDish && localDish.image && cloudDish.image && localDish.image !== cloudDish.image) {
                         clearImageFromCache(localDish.image);
                         clearImageFromCache(cloudDish.image);
                       }
                     });
                   }
-                  if (pendingUpdate.settings && settings.logo && pendingUpdate.settings.logo && settings.logo !== pendingUpdate.settings.logo) {
+                  if (updateData.settings && settings && updateData.settings.logo && settings.logo && settings.logo !== updateData.settings.logo) {
                     clearImageFromCache(settings.logo);
-                    clearImageFromCache(pendingUpdate.settings.logo);
+                    clearImageFromCache(updateData.settings.logo);
                   }
 
                   // Update global state with cloud data
                   // Preserve locally-known images when cloud entries lack them
-                  if (pendingUpdate.menu && Array.isArray(pendingUpdate.menu) && Array.isArray(menu)) {
-                    pendingUpdate.menu = pendingUpdate.menu.map(pd => {
+                  if (Array.isArray(updateData.menu) && Array.isArray(menu)) {
+                    updateData.menu = updateData.menu.map(pd => {
                       try {
                         const isPlaceholderImage = !isValidMenuImage(pd.image);
-                        if (isPlaceholderImage && menu) {
+                        if (isPlaceholderImage) {
                           const localDish = menu.find(m => m && m.name === pd.name);
                           if (localDish && isValidMenuImage(localDish.image)) {
                             pd.image = localDish.image;
@@ -6227,15 +6233,15 @@ function getEffectiveUid() {
                       return pd;
                     });
                   }
-                  menu = pendingUpdate.menu;
-                  activeOrders = pendingUpdate.activeOrders;
-                  settings = pendingUpdate.settings;
-                  staff = pendingUpdate.staff;
-                  dishCategories = pendingUpdate.dishCategories;
-                  customers = pendingUpdate.customers;
-                  units = pendingUpdate.units;
-                  restockHistory = pendingUpdate.restockHistory;
-                  appAdminSettings = pendingUpdate.appAdminSettings;
+                  menu = updateData.menu;
+                  activeOrders = updateData.activeOrders;
+                  settings = updateData.settings;
+                  staff = updateData.staff;
+                  dishCategories = updateData.dishCategories;
+                  customers = updateData.customers;
+                  units = updateData.units;
+                  restockHistory = updateData.restockHistory;
+                  appAdminSettings = updateData.appAdminSettings;
 
                   // Fetch transactions separately from sub-collection
                   await loadTransactionsFromCloud(uid);
