@@ -1638,6 +1638,12 @@ function getEffectiveUid() {
     sessionStorage.removeItem('currentUserPermissions');
     currentLoggedInStaffName = '';
     sessionStorage.removeItem('currentLoggedInStaffName');
+
+    const statusOverlay = document.getElementById('shop-status-overlay');
+    if (statusOverlay) {
+      statusOverlay.style.display = 'none';
+    }
+
     showLoginOverlay();
     const lockBtn = document.getElementById('nav-lock-btn');
     if (lockBtn) lockBtn.style.display = 'none';
@@ -6648,6 +6654,10 @@ function getEffectiveUid() {
 
     if (!currentUser) {
       if (window._marketingInterval) clearInterval(window._marketingInterval);
+      const statusOverlay = document.getElementById('shop-status-overlay');
+      if (statusOverlay) {
+        statusOverlay.style.display = 'none';
+      }
 
       const deviceId = new URLSearchParams(window.location.search).get('device');
       const deviceLabel = deviceId ? `<div style="position: absolute; top: 10px; left: 10px; background: rgba(0,0,0,0.5); padding: 4px 10px; border-radius: 4px; font-size: 0.7em;">Device: ${deviceId}</div>` : '';
