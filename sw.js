@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v24'; // Increment this version number whenever you make changes!
+const CACHE_NAME = 'yoshop-v25'; // Increment this version number whenever you make changes!
 const urlsToCache = [
   '/',
   '/index.html',
@@ -54,7 +54,7 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(event.request, { ignoreSearch: true })
+    caches.match(event.request, { ignoreSearch: false })
       .then((response) => {
         // Cache hit - return response
         if (response) {

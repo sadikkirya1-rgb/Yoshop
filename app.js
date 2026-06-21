@@ -455,6 +455,7 @@ function getEffectiveUid() {
   }
 
   // ===== Data Handling =====
+  const PLACEHOLDER_IMAGE = 'https://placehold.co/100';
   let defaultMenu = [];
   let menu = [];
   let activeOrders = {};
@@ -463,6 +464,7 @@ function getEffectiveUid() {
   let dishCategories = [];
   let customers = [];
   let restockHistory = [];
+  let lastKnownDishImages = {}; // Cache the last valid image URL for each product name
 
   const defaultDishCategories = [];
   const defaultSettings = { 
@@ -2128,10 +2130,10 @@ function getEffectiveUid() {
 
     // Filter for the search term AND ensure the item is a sellable dish (has a recipe).
     // Also filter out items that don't have a category.
-    const filteredMenu = menu.filter(dish => {
-      const matchesSearch = dish.category && (dish.name.toLowerCase().includes(searchTerm) || (dish.barcode && dish.barcode.toLowerCase().includes(searchTerm)));
-      const isSellable = (dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0);
-      const matchesCategory = categoryFilter === '' || dish.category === categoryFilter;
+      const filteredMenu = (Array.isArray(menu) ? menu : []).filter(dish => {
+        const matchesSearch = dish && dish.category && (dish.name.toLowerCase().includes(searchTerm) || (dish.barcode && dish.barcode.toLowerCase().includes(searchTerm)));
+        const isSellable = dish && ((dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0));
+        const matchesCategory = categoryFilter === '' || (dish && dish.category === categoryFilter);
       return matchesSearch && matchesCategory && isSellable;
     });
 
@@ -2175,10 +2177,14 @@ function getEffectiveUid() {
             
             // Use the dish image directly - do NOT append cache-busters to Firebase Storage
             // URLs because Storage URLs are HMAC-signed and extra params break them
-            let displayImage = dish.image || "https://placehold.co/100";
+            let displayImage = isValidMenuImage(dish.image) ? dish.image : getCachedDishImage(dish.name) || PLACEHOLDER_IMAGE;
+            if (!isValidMenuImage(dish.image) && getCachedDishImage(dish.name)) {
+              dish.image = getCachedDishImage(dish.name);
+            }
+            cacheDishImage(dish.name, dish.image);
 
             item.innerHTML = `
-              <img src="${displayImage}" alt="" onerror="this.src='https://placehold.co/100';">
+              <img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.src='https://placehold.co/100';">
               <div class="menu-item-body">
                 <div class="menu-item-header">
                   <h4>${dish.name}</h4>
@@ -2192,6 +2198,17 @@ function getEffectiveUid() {
                 </div>
               </div>`;
             grid.appendChild(item);
+            // Add runtime diagnostic for image loading failures
+            try {
+              const cardImg = item.querySelector('img');
+              if (cardImg) {
+                cardImg.crossOrigin = 'anonymous';
+                cardImg.onerror = function() {
+                  console.warn('[IMG_LOAD_FAIL] ', dish.name, '->', cardImg.src);
+                  cardImg.src = 'https://placehold.co/100';
+                };
+              }
+            } catch (e) { console.warn('Failed to attach img diagnostics', e); }
           });
       catDiv.appendChild(grid);
       container.appendChild(catDiv);
@@ -2205,20 +2222,45 @@ function getEffectiveUid() {
    * Lightly updates the existing menu cards without re-rendering the whole grid.
    * This prevents "shaking" and image reloads when adding/removing items from cart.
    */
+  function isValidMenuImage(image) {
+    return typeof image === 'string' && image.trim() !== '' && image !== PLACEHOLDER_IMAGE;
+  }
+
+  function cacheDishImage(name, image) {
+    if (name && isValidMenuImage(image)) {
+      lastKnownDishImages[name] = image;
+    }
+  }
+
+  function getCachedDishImage(name) {
+    return lastKnownDishImages[name] || null;
+  }
+
   function updateMenuUI() {
     const currentOrder = activeOrders[CART_ID] || { items: [] };
     const cards = document.querySelectorAll('.menu-item[data-product-name]');
-    
+      const localMenu = Array.isArray(menu) ? menu : [];
+
     cards.forEach(card => {
       const name = card.getAttribute('data-product-name');
-      const dish = menu.find(d => d.name === name);
+        const dish = localMenu.find(d => d && d.name === name);
       if (!dish) return;
 
-      // Surgically update the image if it changed
+      // Surgically update the image if it changed. Do not overwrite existing images with placeholders.
       const img = card.querySelector('img');
-      const expectedImg = dish.image || "https://placehold.co/100";
-      if (img && img.getAttribute('src') !== expectedImg) {
+      const expectedImg = isValidMenuImage(dish.image) ? dish.image : null;
+      if (img && expectedImg && img.getAttribute('src') !== expectedImg) {
+        try {
+          img.crossOrigin = 'anonymous';
+          img.onerror = function() { console.warn('[IMG_LOAD_FAIL]', name, '->', img.src); img.src = PLACEHOLDER_IMAGE; };
+        } catch (e) { /* ignore */ }
         img.src = expectedImg;
+        cacheDishImage(name, expectedImg);
+        console.log('[IMG_UPDATE]', name, '->', expectedImg);
+      }
+      if (img && !isValidMenuImage(dish.image) && img.getAttribute('src') === PLACEHOLDER_IMAGE && !card.dataset.imgDebugged) {
+        console.warn('[IMG_DEBUG] missing menu image for', name, 'menu.image=', dish.image, 'cached=', getCachedDishImage(name), 'card.src=', img.src);
+        card.dataset.imgDebugged = '1';
       }
 
       // Surgically update the price if it changed
@@ -6167,6 +6209,24 @@ function getEffectiveUid() {
                   }
 
                   // Update global state with cloud data
+                  // Preserve locally-known images when cloud entries lack them
+                  if (pendingUpdate.menu && Array.isArray(pendingUpdate.menu) && Array.isArray(menu)) {
+                    pendingUpdate.menu = pendingUpdate.menu.map(pd => {
+                      try {
+                        const isPlaceholderImage = !isValidMenuImage(pd.image);
+                        if (isPlaceholderImage && menu) {
+                          const localDish = menu.find(m => m && m.name === pd.name);
+                          if (localDish && isValidMenuImage(localDish.image)) {
+                            pd.image = localDish.image;
+                          } else {
+                            const cachedImage = getCachedDishImage(pd.name);
+                            if (cachedImage) pd.image = cachedImage;
+                          }
+                        }
+                      } catch (e) { /* ignore */ }
+                      return pd;
+                    });
+                  }
                   menu = pendingUpdate.menu;
                   activeOrders = pendingUpdate.activeOrders;
                   settings = pendingUpdate.settings;
@@ -6187,8 +6247,21 @@ function getEffectiveUid() {
                   await saveData(false); 
 
                   // Force a complete refresh of the current view so changes show immediately
-                  if (document.querySelector('section.active')) {
-                    refreshCurrentView();
+                    // CRITICAL FIX: Prevent image flashing in ALL categories by using surgical updates
+                    const activeTab = document.querySelector('section.active');
+                    if (activeTab) {
+                      if (activeTab.id === 'menuTab') {
+                        // For menu tab: ALWAYS use surgical update instead of full refresh
+                        // This works for ALL categories (Accessories, Electronics, Beverages, Dairy, etc)
+                        if (document.querySelector('.menu-item[data-product-name]')) {
+                          updateMenuUI(); // Surgical update - only updates changed properties, images stay visible
+                        } else {
+                          renderMenu(); // First time rendering
+                        }
+                      } else {
+                        // For other tabs: normal refresh
+                        refreshCurrentView();
+                      }
                   }
                   updateDashboard();
                   applyTheme();
@@ -6196,7 +6269,7 @@ function getEffectiveUid() {
                   // Update login staff list if snapshot arrives while overlay is up
                   const list = document.getElementById('staffNamesList');
                   if (list) {
-                    list.innerHTML = '<option value="Admin">' + (staff || []).filter(s => s.isActive !== false).map(s => `<option value="${s.name}">`).join('');
+                      list.innerHTML = '<option value="Admin">' + (Array.isArray(staff) ? staff : []).filter(s => s && s.isActive !== false).map(s => `<option value="${s.name || ''}">`).join('');
                   }
 
                   // Visual feedback on the sync button
