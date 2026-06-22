@@ -372,6 +372,10 @@ function getEffectiveUid() {
   return null;
 }
 
+function isMasterAdminUser() {
+  return currentUser && (currentUser.uid === MASTER_APP_ADMIN_UID || currentUser.email === 'sadikkirya@gmail.com');
+}
+
 // ===== IndexedDB Setup =====
   let db;
   const DB_VERSION = 1;
@@ -6718,7 +6722,7 @@ function getEffectiveUid() {
             </div>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 10px; line-height: 1.4; text-align: center;">
               <span>📍 Uganda, Mbale Republic street</span>
-              <span>📞 watsap/call +256754350502</span>
+              <span>📞 watsap/call +971562889428</span>
               <span>📧 sadikkirya@gmail.com</span>
             </div>
             <div style="margin-top: 5px; opacity: 0.8;">&copy; ${new Date().getFullYear()} ${settings?.name || 'YoShop'}. All rights reserved.</div>
