@@ -1051,7 +1051,7 @@
       try { updateDashboard(); } catch (e) { console.error("Error updating dashboard:", e); }
       saveData(); // Persist the deletion
     }
-  }
+
 
   // ===== Receipt =====
   function previewOrder(transactionData = null) {

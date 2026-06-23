@@ -29,7 +29,7 @@ const analytics = getAnalytics(app);
 let dbFirestore;
 try { 
   // Connecting to the named database "yoshop" which contains your data and rules
-  dbFirestore = getFirestore(app, "yoshop");
+  dbFirestore = initializeFirestore(app, {localCache: persistentLocalCache({tabManager: persistentMultipleTabManager()})}, "yoshop");
   console.log("Firestore (yoshop) initialized successfully");
 } catch (error) {
   // Firestore will be re-initialized on demand if needed
