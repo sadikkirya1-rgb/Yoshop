@@ -4,7 +4,7 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, initializeFirestore, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { getFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot, initializeFirestore, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 
