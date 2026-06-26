@@ -3526,7 +3526,7 @@ async function deleteItem(i) {
   }
 
   menu.splice(index, 1);
-  saveData(); // Persist the deletion
+
 
   // Safely update all views with error handling to prevent one failure from stopping the rest
   // Update UI components immediately
@@ -5572,11 +5572,19 @@ async function resetApp() {
   if (!confirmed) return;
 
   try {
+    const dbNameToDelete = localRepository?.getDbName?.() || DB_NAME;
     // If the database connection is open, we must close it before deleting.
     if (db) {
       db.close();
+      db = null;
     }
-    const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+    if (localRepository) {
+      await localRepository.close();
+      localRepository = null;
+    }
+    repositoryService = null;
+    localRepositoryReady = false;
+    const deleteRequest = indexedDB.deleteDatabase(dbNameToDelete);
 
     deleteRequest.onsuccess = () => {
       alert("Application data has been reset. The application will now reload.");
@@ -6422,12 +6430,12 @@ function getCloudDataHash(data) {
   return JSON.stringify({
     // NOTE: lastUpdated is intentionally excluded from the hash.
     // We only want to detect real data changes (counts, settings) not timestamp noise.
-    menuCount: Array.isArray(data.menu) ? data.menu.length : 0,
+    menuCount: getCloudMenuItems(data).length,
     activeOrdersCount: data.activeOrders && typeof data.activeOrders === 'object' ? Object.keys(data.activeOrders).length : 0,
     settings: data.settings || {},
     staffCount: Array.isArray(data.staff) ? data.staff.length : 0,
     customerCount: Array.isArray(data.customers) ? data.customers.length : 0,
-    categoryCount: Array.isArray(data.dishCategories) ? data.dishCategories.length : 0,
+    categoryCount: getCloudCategoryList(data).length,
     unitsCount: Array.isArray(data.units) ? data.units.length : 0,
     restockCount: Array.isArray(data.restockHistory) ? data.restockHistory.length : 0,
     appAdminSettings: data.appAdminSettings || {}
@@ -6843,6 +6851,16 @@ async function mainInit() {
 
         // Persist current UID in session for cross-tab checks
         if (sessionStorage.getItem('currentUserUid') !== user.uid) {
+          isInitialLoadComplete = false;
+          menu = [];
+          activeOrders = {};
+          transactions = [];
+          staff = [];
+          dishCategories = [];
+          customers = [];
+          restockHistory = [];
+          settings = { ...defaultSettings };
+          auditTrail = [];
           sessionStorage.setItem('currentUserUid', user.uid);
         }
 
