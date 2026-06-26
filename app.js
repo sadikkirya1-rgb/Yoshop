@@ -563,8 +563,7 @@ function isMasterAdminUser() {
       case 'appAdminSettings': return { appAdminSettings: value || {} };
       case 'subscription': return { subscription: value || {} };
       case 'businessProfile': return { businessProfile: value || {} };
-      case 'appAdminSettings': return { appAdminSettings: value || {} };
-      case 'productImages': return { productImages: value?.images || {} };
+      // NOTE: productImages is intentionally excluded — image cache is local-only
       default: return null;
     }
   }
@@ -639,12 +638,13 @@ function isMasterAdminUser() {
   async function persistImageCache() {
     if (!localRepositoryReady || !localRepository) return;
     try {
+      // enqueueSync: false — image cache is local-only, never sync to cloud
       await localRepository.saveEntity('productImages', {
         id: 'dish-image-cache',
         images: lastKnownDishImages || {},
         updatedAt: new Date().toISOString(),
-        syncStatus: 'pending'
-      });
+        syncStatus: 'local'
+      }, { enqueueSync: false });
     } catch (error) {
       console.warn('[IMG_CACHE] Unable to persist image cache:', error);
     }
@@ -1493,11 +1493,11 @@ function isMasterAdminUser() {
         saveState('settings', settings || defaultSettings, { enqueueSync: syncToCloud }),
         saveState('staff', staff || [], { enqueueSync: syncToCloud }),
         saveState('dishCategories', dishCategories || [], { enqueueSync: syncToCloud }),
-        saveState('customers', customers || []),
-        saveState('units', units || []),
+        saveState('customers', customers || [], { enqueueSync: syncToCloud }),
+        saveState('units', units || [], { enqueueSync: syncToCloud }),
         saveState('restockHistory', restockHistory || [], { enqueueSync: syncToCloud }),
         saveState('appAdminSettings', appAdminSettings || defaultAppAdminSettings, { enqueueSync: syncToCloud }),
-        saveState('auditTrail', auditTrail || [])
+        saveState('auditTrail', auditTrail || [], { enqueueSync: syncToCloud })
       ]);
       await persistImageCache();
 
@@ -1545,7 +1545,7 @@ function isMasterAdminUser() {
         }, SYNC_DEBOUNCE_DELAY);
       }
 
-      if (navigator.onLine) {
+      if (syncToCloud && navigator.onLine) {
         scheduleBackgroundSync();
       }
       updateOnlineStatus();
@@ -6347,7 +6347,8 @@ function isMasterAdminUser() {
   function getCloudDataHash(data) {
     if (!data) return '';
     return JSON.stringify({
-      lastUpdated: data.lastUpdated || '',
+      // NOTE: lastUpdated is intentionally excluded from the hash.
+      // We only want to detect real data changes (counts, settings) not timestamp noise.
       menuCount: Array.isArray(data.menu) ? data.menu.length : 0,
       activeOrdersCount: data.activeOrders && typeof data.activeOrders === 'object' ? Object.keys(data.activeOrders).length : 0,
       settings: data.settings || {},
@@ -6426,109 +6427,108 @@ function isMasterAdminUser() {
               if (isNewRemoteData) {
                 console.log('🔄 [SYNC] ✅ Immediate refresh triggered by new cloud data');
                 notifyOtherTabsAboutCloudChange(uid);
-              }
-              
-              // DEBOUNCE: Collect updates and apply them in batch to prevent UI thrashing
-              if (updateTimer) clearTimeout(updateTimer);
-              
-              // SAFE MERGE: Prefer cloud data only when it has actual content.
-              // Never let an empty/null cloud field overwrite non-empty local data.
-              // This prevents backgrounding sync races from wiping local state.
-              const safeArray = (cloudVal, localVal) => {
-                if (Array.isArray(cloudVal) && cloudVal.length > 0) return cloudVal;
-                if (Array.isArray(cloudVal) && cloudVal.length === 0 && Array.isArray(localVal) && localVal.length === 0) return cloudVal;
-                return Array.isArray(localVal) && localVal.length > 0 ? localVal : (cloudVal || localVal || []);
-              };
-              const safeObj = (cloudVal, localVal) => {
-                if (cloudVal && typeof cloudVal === 'object' && Object.keys(cloudVal).length > 0) return cloudVal;
-                return localVal || cloudVal || {};
-              };
-              pendingUpdate = {
-                menu: safeArray(cloudData.menu, menu),
-                activeOrders: safeObj(cloudData.activeOrders, activeOrders),
-                settings: cloudData.settings ? { ...defaultSettings, ...cloudData.settings } : settings,
-                staff: safeArray(cloudData.staff, staff),
-                dishCategories: safeArray(cloudData.dishCategories, dishCategories),
-                customers: safeArray(cloudData.customers, customers),
-                units: safeArray(cloudData.units, units),
-                restockHistory: safeArray(cloudData.restockHistory, restockHistory),
-                appAdminSettings: {
-                  ...defaultAppAdminSettings,
-                  ...(cloudData.appAdminSettings || {})
-                }
-              };
-              
-              // ANTI-DATA-LOSS GUARD: If cloud has significantly fewer menu items than
-              // current memory, it may be a stale/corrupted write. Log and skip.
-              if (menu.length > 0 && pendingUpdate.menu.length === 0) {
-                console.warn('[SYNC] ⚠️ Cloud has 0 menu items but local has', menu.length, '- skipping menu update to prevent data loss');
-                pendingUpdate.menu = menu;
-              }
-              
-              // Apply batched updates as soon as new remote data is detected.
-              // This is intentionally faster so other devices feel instant.
-              const applyDelay = isNewRemoteData ? 50 : 200;
-              updateTimer = setTimeout(async () => {
-                const updateData = pendingUpdate;
-                if (!updateData) {
-                  return;
-                }
-                try {
-                  // Identify and clear changed images/logos from cache
-                  if (Array.isArray(updateData.menu)) {
-                    updateData.menu.forEach(cloudDish => {
-                      if (!cloudDish || !cloudDish.name || !Array.isArray(menu)) return;
-                      const localDish = menu.find(d => d && d.name === cloudDish.name);
-                      if (localDish && localDish.image && cloudDish.image && localDish.image !== cloudDish.image) {
-                        clearImageFromCache(localDish.image);
-                        clearImageFromCache(cloudDish.image);
-                      }
-                    });
-                  }
-                  if (updateData.settings && settings && updateData.settings.logo && settings.logo && settings.logo !== updateData.settings.logo) {
-                    clearImageFromCache(settings.logo);
-                    clearImageFromCache(updateData.settings.logo);
-                  }
 
-                  // Update global state with cloud data
-                  // Preserve locally-known images when cloud entries lack them
-                  if (Array.isArray(updateData.menu) && Array.isArray(menu)) {
-                    updateData.menu = updateData.menu.map(pd => {
-                      try {
-                        const isPlaceholderImage = !isValidMenuImage(pd.image);
-                        if (isPlaceholderImage) {
-                          const localDish = menu.find(m => m && m.name === pd.name);
-                          if (localDish && isValidMenuImage(localDish.image)) {
-                            pd.image = localDish.image;
-                          } else {
-                            const cachedImage = getCachedDishImage(pd.name);
-                            if (cachedImage) pd.image = cachedImage;
-                          }
+                // DEBOUNCE: Collect updates and apply them in batch to prevent UI thrashing
+                if (updateTimer) clearTimeout(updateTimer);
+
+                // SAFE MERGE: Prefer cloud data only when it has actual content.
+                // Never let an empty/null cloud field overwrite non-empty local data.
+                // This prevents backgrounding sync races from wiping local state.
+                const safeArray = (cloudVal, localVal) => {
+                  if (Array.isArray(cloudVal) && cloudVal.length > 0) return cloudVal;
+                  if (Array.isArray(cloudVal) && cloudVal.length === 0 && Array.isArray(localVal) && localVal.length === 0) return cloudVal;
+                  return Array.isArray(localVal) && localVal.length > 0 ? localVal : (cloudVal || localVal || []);
+                };
+                const safeObj = (cloudVal, localVal) => {
+                  if (cloudVal && typeof cloudVal === 'object' && Object.keys(cloudVal).length > 0) return cloudVal;
+                  return localVal || cloudVal || {};
+                };
+                pendingUpdate = {
+                  menu: safeArray(cloudData.menu, menu),
+                  activeOrders: safeObj(cloudData.activeOrders, activeOrders),
+                  settings: cloudData.settings ? { ...defaultSettings, ...cloudData.settings } : settings,
+                  staff: safeArray(cloudData.staff, staff),
+                  dishCategories: safeArray(cloudData.dishCategories, dishCategories),
+                  customers: safeArray(cloudData.customers, customers),
+                  units: safeArray(cloudData.units, units),
+                  restockHistory: safeArray(cloudData.restockHistory, restockHistory),
+                  appAdminSettings: {
+                    ...defaultAppAdminSettings,
+                    ...(cloudData.appAdminSettings || {})
+                  }
+                };
+
+                // ANTI-DATA-LOSS GUARD: If cloud has significantly fewer menu items than
+                // current memory, it may be a stale/corrupted write. Log and skip.
+                if (menu.length > 0 && pendingUpdate.menu.length === 0) {
+                  console.warn('[SYNC] ⚠️ Cloud has 0 menu items but local has', menu.length, '- skipping menu update to prevent data loss');
+                  pendingUpdate.menu = menu;
+                }
+
+                // Apply batched updates as soon as new remote data is detected.
+                // This is intentionally faster so other devices feel instant.
+                const applyDelay = 50;
+                updateTimer = setTimeout(async () => {
+                  const updateData = pendingUpdate;
+                  if (!updateData) {
+                    return;
+                  }
+                  try {
+                    // Identify and clear changed images/logos from cache
+                    if (Array.isArray(updateData.menu)) {
+                      updateData.menu.forEach(cloudDish => {
+                        if (!cloudDish || !cloudDish.name || !Array.isArray(menu)) return;
+                        const localDish = menu.find(d => d && d.name === cloudDish.name);
+                        if (localDish && localDish.image && cloudDish.image && localDish.image !== cloudDish.image) {
+                          clearImageFromCache(localDish.image);
+                          clearImageFromCache(cloudDish.image);
                         }
-                      } catch (e) { /* ignore */ }
-                      return pd;
-                    });
-                  }
-                  menu = updateData.menu;
-                  activeOrders = updateData.activeOrders;
-                  settings = updateData.settings;
-                  staff = updateData.staff;
-                  dishCategories = updateData.dishCategories;
-                  customers = updateData.customers;
-                  units = updateData.units;
-                  restockHistory = updateData.restockHistory;
-                  appAdminSettings = updateData.appAdminSettings;
+                      });
+                    }
+                    if (updateData.settings && settings && updateData.settings.logo && settings.logo && settings.logo !== updateData.settings.logo) {
+                      clearImageFromCache(settings.logo);
+                      clearImageFromCache(updateData.settings.logo);
+                    }
 
-                  // Fetch transactions separately from sub-collection
-                  await loadTransactionsFromCloud(uid);
+                    // Update global state with cloud data
+                    // Preserve locally-known images when cloud entries lack them
+                    if (Array.isArray(updateData.menu) && Array.isArray(menu)) {
+                      updateData.menu = updateData.menu.map(pd => {
+                        try {
+                          const isPlaceholderImage = !isValidMenuImage(pd.image);
+                          if (isPlaceholderImage) {
+                            const localDish = menu.find(m => m && m.name === pd.name);
+                            if (localDish && isValidMenuImage(localDish.image)) {
+                              pd.image = localDish.image;
+                            } else {
+                              const cachedImage = getCachedDishImage(pd.name);
+                              if (cachedImage) pd.image = cachedImage;
+                            }
+                          }
+                        } catch (e) { /* ignore */ }
+                        return pd;
+                      });
+                    }
+                    menu = updateData.menu;
+                    activeOrders = updateData.activeOrders;
+                    settings = updateData.settings;
+                    staff = updateData.staff;
+                    dishCategories = updateData.dishCategories;
+                    customers = updateData.customers;
+                    units = updateData.units;
+                    restockHistory = updateData.restockHistory;
+                    appAdminSettings = updateData.appAdminSettings;
 
-                  // Mark initial load as complete
-                  isInitialLoadComplete = true;
+                    // Fetch transactions separately from sub-collection
+                    await loadTransactionsFromCloud(uid);
 
-                  // Persist cloud data to local IndexedDB only (skip cloud push to avoid loops)
-                  await saveData(false); 
+                    // Mark initial load as complete
+                    isInitialLoadComplete = true;
 
-                  // Force a complete refresh of the current view so changes show immediately
+                    // Persist cloud data to local IndexedDB only (skip cloud push to avoid loops)
+                    await saveData(false); 
+
+                    // Force a complete refresh of the current view so changes show immediately
                     // CRITICAL FIX: Prevent image flashing in ALL categories by using surgical updates
                     const activeTab = document.querySelector('section.active');
                     if (activeTab) {
@@ -6544,30 +6544,32 @@ function isMasterAdminUser() {
                         // For other tabs: normal refresh
                         refreshCurrentView();
                       }
-                  }
-                  updateDashboard();
-                  applyTheme();
+                    }
+                    updateDashboard();
+                    applyTheme();
 
-                  // Update login staff list if snapshot arrives while overlay is up
-                  const list = document.getElementById('staffNamesList');
-                  if (list) {
+                    // Update login staff list if snapshot arrives while overlay is up
+                    const list = document.getElementById('staffNamesList');
+                    if (list) {
                       list.innerHTML = '<option value="Admin">' + (Array.isArray(staff) ? staff : []).filter(s => s && s.isActive !== false).map(s => `<option value="${s.name || ''}">`).join('');
-                  }
+                    }
 
-                  // Visual feedback on the sync button
-                  const statusEl = document.getElementById('connectivity-status');
-                  if (statusEl && statusEl.classList) {
-                    statusEl.classList.add('sync-pulse');
-                    setTimeout(() => statusEl.classList.remove('sync-pulse'), 600);
+                    // Visual feedback on the sync button
+                    const statusEl = document.getElementById('connectivity-status');
+                    if (statusEl && statusEl.classList) {
+                      statusEl.classList.add('sync-pulse');
+                      setTimeout(() => statusEl.classList.remove('sync-pulse'), 600);
+                    }
+                    
+                    pendingUpdate = null;
+                  } catch (error) {
+                    captureError('SYNC_UPDATE', error, { uid });
                   }
-                  
-                  pendingUpdate = null;
-                } catch (error) {
-                  captureError('SYNC_UPDATE', error, { uid });
-                }
-              }, applyDelay);
+                }, applyDelay);
+              }
             } else {
-              console.log('📤 [SYNC] Local changes acknowledged by cloud');
+              console.log('📤 [SYNC] Local write pending server acknowledgement');
+              lastRemoteDataHash = cloudHash;
             }
           } else {
             // Document doesn't exist on cloud yet
