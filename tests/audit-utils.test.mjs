@@ -21,3 +21,20 @@ test('limitAuditTrail trims older entries to the configured maximum', () => {
   assert.equal(limited.length, 3);
   assert.deepEqual(limited.map(item => item.id), [2, 3, 4]);
 });
+
+test('createAuditEvent stores enterprise audit metadata for offline sync', () => {
+  const trail = [];
+  const nextTrail = createAuditEvent(trail, 'sale_completed', { total: 12.5 }, {
+    businessId: 'biz-1',
+    userId: 'user-1',
+    staffId: 'staff-1',
+    deviceId: 'device-1'
+  });
+
+  assert.equal(nextTrail[0].eventType, 'sale_completed');
+  assert.equal(nextTrail[0].businessId, 'biz-1');
+  assert.equal(nextTrail[0].userId, 'user-1');
+  assert.equal(nextTrail[0].staffId, 'staff-1');
+  assert.equal(nextTrail[0].deviceId, 'device-1');
+  assert.equal(nextTrail[0].syncStatus, 'pending');
+});

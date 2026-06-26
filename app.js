@@ -4,12 +4,16 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
-import { getFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot, initializeFirestore, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { getFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot, initializeFirestore, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
-import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData } from './offline-architecture.mjs';
+import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
 import { getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-utils.mjs';
+import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
+import { createRepositoryService } from './repository-service.mjs';
+import { createCloudRepositoryService } from './cloud-service.mjs';
+import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -48,8 +52,10 @@ let userMetadata = null; // Stores status and subscription info
 let currentUserRole = sessionStorage.getItem('currentUserRole');
 let localRepository = null;
 let localRepositoryReady = false;
+let repositoryService = null;
+let cloudRepositoryService = null;
 let pendingSyncQueue = [];
-let currentUserPermissions = JSON.parse(sessionStorage.getItem('currentUserPermissions') || '[]');
+let currentUserPermissions = normalizePermissions(JSON.parse(sessionStorage.getItem('currentUserPermissions') || '[]'));
 let isPinVerified = sessionStorage.getItem('isPinVerified') === 'true' && !!currentUserRole;
 let auditTrail = [];
 
@@ -407,12 +413,48 @@ function isMasterAdminUser() {
     const deviceId = new URLSearchParams(window.location.search).get('device') || '';
     const effectiveUserId = userId || 'guest';
     localRepository = createBusinessRepository({ userId: effectiveUserId, deviceId });
+    repositoryService = createRepositoryService({
+      repository: localRepository,
+      userId: effectiveUserId,
+      deviceId,
+      cloudSyncHandler: async (action) => {
+        if (!currentUser || !dbFirestore) return;
+        await syncCloudAction(action);
+      }
+    });
+    cloudRepositoryService = createCloudRepositoryService({
+      setDocFn: async (ref, data, options) => {
+        if (!dbFirestore) return;
+        await setDoc(ref, data, options);
+      },
+      getDocFn: async (ref) => {
+        if (!dbFirestore) return { exists: () => false };
+        return getDoc(ref);
+      },
+      docFn: (...segments) => {
+        if (segments.length === 1 && Array.isArray(segments[0])) {
+          return doc(...segments[0]);
+        }
+        return doc(...segments);
+      },
+      collectionFn: (...segments) => {
+        if (segments.length === 1 && Array.isArray(segments[0])) {
+          return collection(...segments[0]);
+        }
+        return collection(...segments);
+      },
+      deleteDocFn: async (ref) => {
+        if (!dbFirestore) return;
+        await deleteDoc(ref);
+      }
+    });
     localRepositoryReady = true;
-    await localRepository.initialize();
+    await repositoryService.initialize();
     db = await localRepository.initialize();
     if (db && typeof db === 'object') {
       console.log(`[LOCAL] Repository ready for ${localRepository.getDbName()}`);
     }
+    await restoreImageCache();
     return db;
   }
 
@@ -448,47 +490,163 @@ function isMasterAdminUser() {
     });
   }
 
-  async function saveState(key, value) {
-    if (!localRepositoryReady || !localRepository) {
-      return initDB(sessionStorage.getItem('currentUserUid') || 'guest').then(() => localRepository.saveState(key, value));
+  const enterpriseStateMap = {
+    menu: { entityType: 'products', id: 'menu' },
+    activeOrders: { entityType: 'dashboardCache', id: 'activeOrders' },
+    transactions: { entityType: 'sales', id: 'transactions' },
+    settings: { entityType: 'settings', id: 'settings' },
+    staff: { entityType: 'staff', id: 'staff' },
+    dishCategories: { entityType: 'categories', id: 'dishCategories' },
+    customers: { entityType: 'customers', id: 'customers' },
+    units: { entityType: 'units', id: 'units' },
+    restockHistory: { entityType: 'inventoryHistory', id: 'restockHistory' },
+    appAdminSettings: { entityType: 'settings', id: 'appAdminSettings' },
+    auditTrail: { entityType: 'auditLog', id: 'auditTrail' },
+    notifications: { entityType: 'notifications', id: 'notifications' },
+    suppliers: { entityType: 'suppliers', id: 'suppliers' },
+    purchaseOrders: { entityType: 'purchaseOrders', id: 'purchaseOrders' },
+    purchaseItems: { entityType: 'purchaseItems', id: 'purchaseItems' },
+    expenses: { entityType: 'expenses', id: 'expenses' },
+    payments: { entityType: 'payments', id: 'payments' },
+    receipts: { entityType: 'receipts', id: 'receipts' },
+    reports: { entityType: 'reports', id: 'reports' },
+    roles: { entityType: 'roles', id: 'roles' },
+    permissions: { entityType: 'permissions', id: 'permissions' },
+    subscription: { entityType: 'subscription', id: 'subscription' },
+    businessProfile: { entityType: 'businessProfile', id: 'businessProfile' },
+    metadata: { entityType: 'metadata', id: 'metadata' },
+    databaseVersion: { entityType: 'databaseVersion', id: 'databaseVersion' },
+    productImages: { entityType: 'productImages', id: 'productImages' },
+    activityLog: { entityType: 'activityLog', id: 'activityLog' }
+  };
+
+  async function saveState(key, value, options = { enqueueSync: true }) {
+    if (!localRepositoryReady || !repositoryService) {
+      return initDB(sessionStorage.getItem('currentUserUid') || 'guest').then(() => saveState(key, value, options));
     }
-    return localRepository.saveState(key, value);
+
+    return repositoryService.saveState(key, value, options);
   }
 
   async function loadState(key) {
-    if (!localRepositoryReady || !localRepository) {
-      return initDB(sessionStorage.getItem('currentUserUid') || 'guest').then(() => localRepository.loadState(key));
+    if (!localRepositoryReady || !repositoryService) {
+      return initDB(sessionStorage.getItem('currentUserUid') || 'guest').then(() => loadState(key));
     }
-    return localRepository.loadState(key);
+
+    return repositoryService.loadState(key);
   }
 
   async function enqueueLocalSyncAction(action) {
-    if (!localRepositoryReady || !localRepository) {
+    if (!localRepositoryReady || !repositoryService) {
       await initDB(sessionStorage.getItem('currentUserUid') || 'guest');
     }
-    const envelope = await localRepository.enqueueSyncAction(action);
-    pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
+    const envelope = await repositoryService.enqueueSyncAction(action);
+    if (envelope) {
+      pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
+    }
     return envelope;
   }
 
-  async function flushLocalSyncQueue() {
-    if (!currentUser || !dbFirestore || !navigator.onLine) return;
-    const queue = await localRepository.getSyncQueue();
-    if (!queue || queue.length === 0) return;
+  function getCloudPayloadForSyncAction(action) {
+    if (!action || !action.entityType || !action.payload) return null;
+    const value = action.payload.value ?? action.payload;
+    switch (action.entityType) {
+      case 'products': return { menu: Array.isArray(value) ? value : [] };
+      case 'categories': return { dishCategories: Array.isArray(value) ? value : [] };
+      case 'brands': return { brands: Array.isArray(value) ? value : [] };
+      case 'units': return { units: Array.isArray(value) ? value : [] };
+      case 'customers': return { customers: Array.isArray(value) ? value : [] };
+      case 'suppliers': return { suppliers: Array.isArray(value) ? value : [] };
+      case 'inventoryHistory': return { restockHistory: Array.isArray(value) ? value : [] };
+      case 'dashboardCache': return { activeOrders: value || {} };
+      case 'settings': return { settings: value || {} };
+      case 'appAdminSettings': return { appAdminSettings: value || {} };
+      case 'subscription': return { subscription: value || {} };
+      case 'businessProfile': return { businessProfile: value || {} };
+      case 'appAdminSettings': return { appAdminSettings: value || {} };
+      case 'productImages': return { productImages: value?.images || {} };
+      default: return null;
+    }
+  }
 
-    for (const action of queue) {
+  async function syncCloudAction(action) {
+    const queueCollectionPath = getSyncQueueCollectionPath(currentUser.uid);
+    const queueDocRef = doc(collection(dbFirestore, ...queueCollectionPath), action.id);
+    await setDoc(queueDocRef, { ...action, syncStatus: 'synced', lastSyncAt: new Date().toISOString() }, { merge: true });
+
+    const cloudPayload = getCloudPayloadForSyncAction(action);
+    if (cloudPayload) {
+      const shopDocRef = doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile');
+      await setDoc(shopDocRef, cloudPayload, { merge: true });
+      return;
+    }
+
+    if (action.entityType === 'sales' || action.entityType === 'transactions') {
+      const txRef = collection(dbFirestore, 'users', currentUser.uid, 'transactions');
+      const payload = action.payload || {};
+      const txId = payload.id || action.id;
+      await setDoc(doc(txRef, txId), { ...payload, synced: true, lastSyncedAt: new Date().toISOString() }, { merge: true });
+      return;
+    }
+
+    if (action.entityType === 'auditLog') {
+      const auditRef = collection(dbFirestore, 'users', currentUser.uid, 'audit_log');
+      const payload = action.payload || {};
+      const auditId = payload.id || action.id;
+      await setDoc(doc(auditRef, auditId), { ...payload, lastSyncedAt: new Date().toISOString() }, { merge: true });
+      return;
+    }
+
+    if (action.entityType === 'notifications') {
+      const notificationRef = collection(dbFirestore, 'users', currentUser.uid, 'notifications');
+      const payload = action.payload || {};
+      const notificationId = payload.id || action.id;
+      await setDoc(doc(notificationRef, notificationId), { ...payload, lastSyncedAt: new Date().toISOString() }, { merge: true });
+      return;
+    }
+  }
+
+  async function flushLocalSyncQueue() {
+    if (!currentUser || !dbFirestore || !navigator.onLine || !localRepositoryReady || !repositoryService) return;
+    await repositoryService.flushSyncQueue();
+  }
+
+  async function scheduleBackgroundSync() {
+    if (!localRepositoryReady || !localRepository || !navigator.onLine || !currentUser) return;
+    if (syncDebounceTimer) return;
+    syncDebounceTimer = setTimeout(async () => {
+      syncDebounceTimer = null;
       try {
-        const payload = action.payload && typeof action.payload === 'object' && !Array.isArray(action.payload)
-          ? action.payload
-          : { value: action.payload };
-        const queueCollectionPath = getSyncQueueCollectionPath(currentUser.uid);
-        const docRef = doc(collection(dbFirestore, ...queueCollectionPath), action.id);
-        await setDoc(docRef, { ...action, syncStatus: 'synced', lastSyncAt: new Date().toISOString() }, { merge: true });
-        await localRepository.markSyncActionProcessed(action.id);
+        await flushLocalSyncQueue();
       } catch (error) {
-        console.warn('[SYNC] Queue item failed to sync:', error);
-        await localRepository.markSyncActionFailed(action.id, error.message || 'Sync failed');
+        console.warn('[SYNC] Background sync failed:', error);
       }
+    }, 2000);
+  }
+
+  async function restoreImageCache() {
+    if (!localRepositoryReady || !localRepository) return;
+    try {
+      const cachedImages = await localRepository.getEntity('productImages', 'dish-image-cache');
+      if (cachedImages && cachedImages.images) {
+        lastKnownDishImages = { ...cachedImages.images };
+      }
+    } catch (error) {
+      console.warn('[IMG_CACHE] Unable to restore image cache:', error);
+    }
+  }
+
+  async function persistImageCache() {
+    if (!localRepositoryReady || !localRepository) return;
+    try {
+      await localRepository.saveEntity('productImages', {
+        id: 'dish-image-cache',
+        images: lastKnownDishImages || {},
+        updatedAt: new Date().toISOString(),
+        syncStatus: 'pending'
+      });
+    } catch (error) {
+      console.warn('[IMG_CACHE] Unable to persist image cache:', error);
     }
   }
 
@@ -1329,90 +1487,55 @@ function isMasterAdminUser() {
       // Save to local IndexedDB immediately (always, synchronous)
       // Use Promise.allSettled instead of Promise.all to handle individual errors gracefully
       await Promise.allSettled([
-        saveState('menu', menu || []),
-        saveState('activeOrders', activeOrders || {}),
-        saveState('transactions', transactions || []),
-        saveState('settings', settings || defaultSettings),
-        saveState('staff', staff || []),
-        saveState('dishCategories', dishCategories || []),
+        saveState('menu', menu || [], { enqueueSync: syncToCloud }),
+        saveState('activeOrders', activeOrders || {}, { enqueueSync: syncToCloud }),
+        saveState('transactions', transactions || [], { enqueueSync: false }),
+        saveState('settings', settings || defaultSettings, { enqueueSync: syncToCloud }),
+        saveState('staff', staff || [], { enqueueSync: syncToCloud }),
+        saveState('dishCategories', dishCategories || [], { enqueueSync: syncToCloud }),
         saveState('customers', customers || []),
         saveState('units', units || []),
-        saveState('restockHistory', restockHistory || []),
-        saveState('appAdminSettings', appAdminSettings || defaultAppAdminSettings),
+        saveState('restockHistory', restockHistory || [], { enqueueSync: syncToCloud }),
+        saveState('appAdminSettings', appAdminSettings || defaultAppAdminSettings, { enqueueSync: syncToCloud }),
         saveState('auditTrail', auditTrail || [])
       ]);
+      await persistImageCache();
 
       // Debounce cloud sync to prevent excessive Firebase writes
       const effectiveUid = getEffectiveUid();
       if (syncToCloud && effectiveUid && isInitialLoadComplete && dbFirestore) {
-        // Clear existing debounce timer
         if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-        
-        // Set new debounce timer for cloud sync
         syncDebounceTimer = setTimeout(async () => {
           syncDebounceTimer = null;
-          
-          // Check minimum interval to respect Firebase limits
           const now = Date.now();
-          if (now - lastSyncTime < MIN_SYNC_INTERVAL) {
-            return; // Skip this sync, reschedule
-          }
-          
+          if (now - lastSyncTime < MIN_SYNC_INTERVAL) return;
+
           try {
             isDebouncing = true;
             const statusEl = document.getElementById('connectivity-status');
-            if (statusEl) statusEl.style.opacity = '0.5'; // Dim to indicate sync in progress
+            if (statusEl) statusEl.style.opacity = '0.5';
 
-            // Prepare data for Firestore
-            // JSON.stringify/parse is used to strip any 'undefined' properties which Firestore forbids.
-            const shopData = JSON.parse(JSON.stringify({
-              menu: menu || [],
-              activeOrders: activeOrders || {},
-              settings: settings || defaultSettings,
-              staff: staff || [],
-              dishCategories: dishCategories || [],
-              customers: customers || [],
-              units: units || [],
-              restockHistory: restockHistory || [],
-              appAdminSettings: appAdminSettings || defaultAppAdminSettings,
-              lastUpdated: new Date().toISOString()
-            }));
-
-            // If we have many consecutive failures, stop trying until manual sync or reload
             if (syncFailureCount > 5) {
               console.warn("Sync suspended due to repeated failures. Check Firebase Console configuration.");
               isDebouncing = false;
               return;
             }
 
-            await enqueueLocalSyncAction({
-              entityType: 'shop_profile',
-              payload: shopData,
-              businessId: effectiveUid,
-              userId: effectiveUid,
-              staffId: currentLoggedInStaffName || currentUser?.uid || 'system',
-              updatedBy: currentUser?.uid || effectiveUid,
-              deviceId: new URLSearchParams(window.location.search).get('device') || 'browser'
-            });
-
-            // Perform actual cloud sync using merge to avoid overwriting other fields
-            await setDoc(doc(dbFirestore, "users", effectiveUid, "data", "shop_profile"), shopData, { merge: true });
+            await flushLocalSyncQueue();
             lastSyncTime = Date.now();
-            syncFailureCount = 0; // Reset on success
+            syncFailureCount = 0;
 
-            // Real-time pulse animation for visual feedback
             if (statusEl) {
                 statusEl.style.opacity = '1';
                 statusEl.classList.add('sync-pulse');
                 setTimeout(() => statusEl.classList.remove('sync-pulse'), 600);
             }
 
-            // Update Last Synced UI Tooltip
             const syncBtn = document.getElementById('header-sync-status');
             if (syncBtn) {
               syncBtn.setAttribute('data-tooltip', 'Last synced: ' + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}));
             }
-            console.log('[SYNC] ✅ Cloud data synced successfully');
+            console.log('[SYNC] ✅ Local queue flushed to cloud successfully');
           } catch (firestoreError) {
             syncFailureCount++;
             handleFirebaseError(firestoreError, "Firestore Sync", `users/${effectiveUid}/data/shop_profile`);
@@ -1421,7 +1544,10 @@ function isMasterAdminUser() {
           }
         }, SYNC_DEBOUNCE_DELAY);
       }
-      
+
+      if (navigator.onLine) {
+        scheduleBackgroundSync();
+      }
       updateOnlineStatus();
     } catch (error) {
       console.error("[SYNC] ❌ Local save failed:", error);
@@ -1447,34 +1573,24 @@ function isMasterAdminUser() {
     // Keep local list at reasonable size for performance
     if (transactions.length > 1000) transactions.pop();
     
-    // 2. Save locally to IndexedDB
-    await saveState('transactions', transactions);
+    // 2. Save locally to IndexedDB without re-enqueueing the entire transactions list
+    await saveState('transactions', transactions, { enqueueSync: false });
 
-    // 3. Save to Cloud Sub-collection if online
     const effectiveUid = getEffectiveUid();
-    if (effectiveUid && dbFirestore && navigator.onLine) {
-      try {
-        await enqueueLocalSyncAction({
-          entityType: 'transaction',
-          payload: transaction,
-          businessId: effectiveUid,
-          userId: effectiveUid,
-          staffId: currentLoggedInStaffName || currentUser?.uid || 'system',
-          updatedBy: currentUser?.uid || effectiveUid,
-          deviceId: new URLSearchParams(window.location.search).get('device') || 'browser'
-        });
-        const txRef = collection(dbFirestore, "users", effectiveUid, "transactions");
-        // Strip the local 'synced' flag before sending to Firestore
-        const { synced, ...txData } = transaction;
-        await addDoc(txRef, txData);
-        
-        // Update local state to marked as synced
-        transaction.synced = true;
-        await saveState('transactions', transactions);
-        console.log('[SYNC] Transaction saved to cloud collection');
-      } catch (e) {
-        handleFirebaseError(e, "Cloud Transaction Record", `users/${effectiveUid}/transactions`);
-      }
+    if (effectiveUid && dbFirestore) {
+      await enqueueLocalSyncAction({
+        entityType: 'sales',
+        payload: transaction,
+        businessId: effectiveUid,
+        userId: effectiveUid,
+        staffId: currentLoggedInStaffName || currentUser?.uid || 'system',
+        updatedBy: currentUser?.uid || effectiveUid,
+        deviceId: new URLSearchParams(window.location.search).get('device') || 'browser'
+      });
+    }
+
+    if (navigator.onLine) {
+      scheduleBackgroundSync();
     }
 
     // 4. Show notification for this transaction on current device immediately (offline & online support)
@@ -1488,21 +1604,9 @@ function isMasterAdminUser() {
    * Pushes transactions created while offline to the cloud sub-collection
    */
   async function syncOfflineTransactions() {
-    const effectiveUid = getEffectiveUid();
-    if (!effectiveUid || !dbFirestore || !navigator.onLine) return;
-    const unsynced = transactions.filter(t => !t.synced);
-    if (unsynced.length === 0) return;
-
-    console.log(`[SYNC] Found ${unsynced.length} offline transactions. Syncing...`);
-    for (let tx of unsynced) {
-      try {
-        const txRef = collection(dbFirestore, "users", effectiveUid, "transactions");
-        const { synced, ...txData } = tx;
-        await addDoc(txRef, txData);
-        tx.synced = true; // Update reference in the 'transactions' array
-      } catch (e) { break; } // Stop if we hit API errors
-    }
-    await saveState('transactions', transactions);
+    if (!navigator.onLine) return;
+    if (!currentUser || !dbFirestore || !localRepositoryReady) return;
+    await flushLocalSyncQueue();
     renderTransactions();
   }
 
@@ -1559,7 +1663,7 @@ function isMasterAdminUser() {
             .sort((a, b) => new Date(b.date) - new Date(a.date))
             .slice(0, 1000); // Keep a healthy local archive for offline reports
 
-        saveState('transactions', transactions);
+        await saveState('transactions', transactions, { enqueueSync: false });
         renderTransactions();
         updateDashboard();
       }
@@ -2124,6 +2228,8 @@ function isMasterAdminUser() {
         await localRepository.close();
         localRepository = null;
       }
+      repositoryService = null;
+      cloudRepositoryService = null;
       localRepositoryReady = false;
       if (db) {
         db.close();
@@ -2351,6 +2457,7 @@ function isMasterAdminUser() {
   function cacheDishImage(name, image) {
     if (name && isValidMenuImage(image)) {
       lastKnownDishImages[name] = image;
+      persistImageCache().catch(() => {});
     }
   }
 
@@ -5754,10 +5861,15 @@ function isMasterAdminUser() {
 
   function applyTheme() {
     const themeIcon = document.getElementById('theme-icon');
-    if (settings.theme === 'dark') {
+    const resolvedSettings = normalizeSettings(settings, defaultSettings);
+    settings = resolvedSettings;
+    const isDark = getThemePreference(resolvedSettings, 'light') === 'dark';
+
+    if (isDark) {
       document.body.classList.add('dark-mode');
       if (themeIcon) themeIcon.textContent = '🌙'; // Moon icon
     } else {
+      document.body.classList.remove('dark-mode');
       if (themeIcon) themeIcon.textContent = '☀️'; // Sun icon
     }
   }
@@ -6560,7 +6672,7 @@ function isMasterAdminUser() {
       window.addEventListener('offline', updateOnlineStatus);
 
       // Assign local settings immediately so login overlay can use them for branding
-      settings = (localData[3] !== null) ? localData[3] : defaultSettings;
+      settings = normalizeSettings(localData[3], defaultSettings);
 
       // Populate state from local storage immediately
       menu = localData[0] || defaultMenu;
@@ -6595,6 +6707,7 @@ function isMasterAdminUser() {
       auditTrail = Array.isArray(localData[10]) ? localData[10] : [];
 
       // START UI IMMEDIATELY
+      settings = normalizeSettings(settings, defaultSettings);
       applyTheme();
       handleSplashScreen();
       populateCurrencies();
@@ -6668,6 +6781,7 @@ function isMasterAdminUser() {
             }
             if (navigator.onLine) {
               await flushLocalSyncQueue();
+              await scheduleBackgroundSync();
             }
           } catch (e) {
             console.warn('Error during tenant initialization:', e);
@@ -6709,6 +6823,7 @@ function isMasterAdminUser() {
                 await localRepository.close();
                 localRepository = null;
               }
+              repositoryService = null;
               localRepositoryReady = false;
               indexedDB.deleteDatabase(previousDbName);
             } catch (e) {
@@ -7009,6 +7124,7 @@ function isMasterAdminUser() {
   function applyRolePermissions() {
     const isManager = currentUserRole === 'manager';
     const isAppAdmin = currentUserRole === 'appAdmin';
+    const normalizedPermissions = getEffectivePermissions(currentUserRole, currentUserPermissions);
     const nav = document.querySelector('nav');
     if (!nav) return;
     
@@ -7039,8 +7155,7 @@ function isMasterAdminUser() {
         } else if (isManager) {
           btn.style.display = tabId === 'appAdminTab' ? 'none' : 'flex';
         } else {
-          // Always show Shop and Refresh if not explicitly restricted
-          btn.style.display = currentUserPermissions.includes(tabId) ? 'flex' : 'none';
+          btn.style.display = normalizedPermissions.includes(tabId) ? 'flex' : 'none';
         }
       }
     });
@@ -7057,9 +7172,8 @@ function isMasterAdminUser() {
       // Force App Admin back to management screen if they attempt to view a shop tab without monitoring
       const adminBtn = document.getElementById('nav-app-admin-btn');
       if (adminBtn) showTab('appAdminTab', adminBtn);
-    } else if (!isManager && !isAppAdmin && activeTab && !currentUserPermissions.includes(activeTab.id)) {
-      // If staff is accidentally on an unauthorized tab, kick them to their first allowed tab
-      const targetTab = currentUserPermissions.includes('menuTab') ? 'menuTab' : currentUserPermissions[0];
+    } else if (!isManager && !isAppAdmin && activeTab && !normalizedPermissions.includes(activeTab.id)) {
+      const targetTab = getFirstAllowedTab(currentUserRole, normalizedPermissions, 'menuTab');
       if (targetTab) {
         const targetBtn = nav.querySelector(`button[onclick*="${targetTab}"]`);
         if (targetBtn) showTab(targetTab, targetBtn);
@@ -7141,8 +7255,8 @@ function isMasterAdminUser() {
           currentUserPermissions = []; // Managers bypass individual checks
           sessionStorage.removeItem('currentUserPermissions');
       } else {
-          currentUserPermissions = permissions;
-          sessionStorage.setItem('currentUserPermissions', JSON.stringify(permissions));
+          currentUserPermissions = normalizePermissions(permissions);
+          sessionStorage.setItem('currentUserPermissions', JSON.stringify(currentUserPermissions));
       }
 
       currentLoggedInStaffName = staffName;

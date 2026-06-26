@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createEntityId, createSyncEnvelope, mergeSnapshotData } from '../offline-architecture.mjs';
+import { createBusinessRepository, createEntityId, createSyncEnvelope, mergeSnapshotData } from '../offline-architecture.mjs';
 
 test('createEntityId is stable for the same payload', () => {
   const first = createEntityId('transaction', { date: '2026-06-26T00:00:00.000Z', total: 25.5, items: [{ name: 'Coffee', qty: 2 }] });
@@ -28,4 +28,21 @@ test('createSyncEnvelope tags pending actions with metadata', () => {
   assert.equal(envelope.syncStatus, 'pending');
   assert.equal(envelope.businessId, 'biz-1');
   assert.equal(envelope.payload.foo, 'bar');
+});
+
+test('createBusinessRepository persists entities and sync queue across repository instances', async () => {
+  const repoA = createBusinessRepository({ userId: 'user-1', deviceId: 'device-1', dbName: 'enterprise-test' });
+  await repoA.initialize();
+  await repoA.saveEntity('products', { id: 'p-1', name: 'Coffee', stock: 10 });
+  await repoA.enqueueSyncAction({ entityType: 'products', payload: { id: 'p-1', stock: 9 } });
+
+  const repoB = createBusinessRepository({ userId: 'user-1', deviceId: 'device-1', dbName: 'enterprise-test' });
+  await repoB.initialize();
+  const product = await repoB.getEntity('products', 'p-1');
+  const queue = await repoB.getSyncQueue();
+
+  assert.ok(product);
+  assert.equal(product.name, 'Coffee');
+  assert.equal(queue.length, 1);
+  assert.equal(queue[0].entityType, 'products');
 });
