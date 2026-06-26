@@ -22,11 +22,8 @@
 
   document.addEventListener('DOMContentLoaded', () => {
     if (previewTunnel) {
-      const banner = document.createElement('div');
-      banner.id = 'preview-warning-banner';
-      banner.className = 'preview-warning-banner';
-      banner.textContent = 'Preview mode: manifest load is skipped in GitHub.dev. PWA install features are unavailable in this preview.';
-      document.body.insertBefore(banner, document.body.firstChild);
+      const existing = document.getElementById('preview-warning-banner');
+      if (existing) existing.remove();
     }
   });
 </script>
@@ -67,6 +64,7 @@
     </button>
     <button id="header-sync-status" class="icon-btn" onclick="syncNow()" title="Cloud Sync">
       <span id="connectivity-status"></span>
+      <span id="sync-badge" class="sync-badge" style="display:none;">Pending</span>
     </button>
     <button id="update-notification-btn" class="icon-btn" onclick="toggleNotifications()" title="Notifications">
       <span>🔔</span>
@@ -146,6 +144,7 @@
         <div id="splitPaymentContainer">
             <!-- Split payment details will be injected here -->
         </div>
+        <div id="paymentStatusMessage" style="display:none; margin-top:10px; padding:8px 12px; border-radius:6px; background:#f4f7fb; color:#334155; font-size:0.9em;"></div>
         <div class="receipt-actions"><button class="btn" id="confirmPaymentBtn" onclick="finalizePayment()" class="confirm-payment-btn">Confirm Payment</button><button class="btn" onclick="document.getElementById('paymentModal').style.display='none'" class="cancel-btn">Cancel</button></div>
     </div></div>
 
@@ -239,6 +238,7 @@
           <span>Amount Paid:</span>
           <strong id="successTotalAmount">$0.00</strong>
         </div>
+        <div id="successSyncNotice" style="margin-top:8px; font-size:0.9em; color:#b45309; display:none;"></div>
         <div class="success-row" id="successChangeRow">
           <span>Change Due:</span>
           <strong id="successChangeDue">$0.00</strong>

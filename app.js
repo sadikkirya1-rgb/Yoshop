@@ -7,6 +7,9 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 import { getFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot, initializeFirestore, collection, addDoc, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
+import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData } from './offline-architecture.mjs';
+import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
+import { getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -43,8 +46,26 @@ const auth = getAuth(app);
 let currentUser = null;
 let userMetadata = null; // Stores status and subscription info
 let currentUserRole = sessionStorage.getItem('currentUserRole');
+let localRepository = null;
+let localRepositoryReady = false;
+let pendingSyncQueue = [];
 let currentUserPermissions = JSON.parse(sessionStorage.getItem('currentUserPermissions') || '[]');
 let isPinVerified = sessionStorage.getItem('isPinVerified') === 'true' && !!currentUserRole;
+let auditTrail = [];
+
+function appendAuditEvent(type, details = {}) {
+  const nextTrail = createAuditEvent(auditTrail, type, details);
+  auditTrail = limitAuditTrail(nextTrail, 500);
+  return auditTrail;
+}
+
+async function persistAuditTrail() {
+  try {
+    await saveState('auditTrail', auditTrail || []);
+  } catch (error) {
+    console.warn('Audit trail persistence failed:', error);
+  }
+}
 let currentLoggedInStaffName = sessionStorage.getItem('currentLoggedInStaffName') || '';
 let isInitialLoadComplete = false; // Safety flag to prevent overwriting cloud data on startup
 let isMonitoringMode = false; // Tracks if App Admin has activated monitoring context
@@ -382,7 +403,20 @@ function isMasterAdminUser() {
   const STORE_NAME = 'appState';
   const CART_ID = 'SHOP_CART';
 
-  function initDB(userId = 'guest') {
+  async function initDB(userId = 'guest') {
+    const deviceId = new URLSearchParams(window.location.search).get('device') || '';
+    const effectiveUserId = userId || 'guest';
+    localRepository = createBusinessRepository({ userId: effectiveUserId, deviceId });
+    localRepositoryReady = true;
+    await localRepository.initialize();
+    db = await localRepository.initialize();
+    if (db && typeof db === 'object') {
+      console.log(`[LOCAL] Repository ready for ${localRepository.getDbName()}`);
+    }
+    return db;
+  }
+
+  function initDBLegacy(userId = 'guest') {
     return new Promise((resolve, reject) => {
       const deviceId = new URLSearchParams(window.location.search).get('device') || '';
       const dbName = `posDB_${userId}${deviceId ? '_' + deviceId : ''}`;
@@ -414,48 +448,48 @@ function isMasterAdminUser() {
     });
   }
 
-  function saveState(key, value) {
-    return new Promise((resolve, reject) => {
-      if (!db) return reject('DB not initialized');
-      try {
-        const transaction = db.transaction([STORE_NAME], 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.put({ key, value });
-        request.onsuccess = () => resolve();
-        request.onerror = (event) => reject(event.target.error);
-        transaction.onerror = (event) => reject(event.target.error);
-      } catch (error) {
-        // Handle InvalidStateError when DB connection is closing
-        if (error.name === 'InvalidStateError') {
-          console.warn('[IndexedDB] Connection closing, skipping save:', key);
-          resolve(); // Non-critical, continue
-        } else {
-          reject(error);
-        }
-      }
-    });
+  async function saveState(key, value) {
+    if (!localRepositoryReady || !localRepository) {
+      return initDB(sessionStorage.getItem('currentUserUid') || 'guest').then(() => localRepository.saveState(key, value));
+    }
+    return localRepository.saveState(key, value);
   }
 
-  function loadState(key) {
-    return new Promise((resolve, reject) => {
-      if (!db) return reject('DB not initialized');
+  async function loadState(key) {
+    if (!localRepositoryReady || !localRepository) {
+      return initDB(sessionStorage.getItem('currentUserUid') || 'guest').then(() => localRepository.loadState(key));
+    }
+    return localRepository.loadState(key);
+  }
+
+  async function enqueueLocalSyncAction(action) {
+    if (!localRepositoryReady || !localRepository) {
+      await initDB(sessionStorage.getItem('currentUserUid') || 'guest');
+    }
+    const envelope = await localRepository.enqueueSyncAction(action);
+    pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
+    return envelope;
+  }
+
+  async function flushLocalSyncQueue() {
+    if (!currentUser || !dbFirestore || !navigator.onLine) return;
+    const queue = await localRepository.getSyncQueue();
+    if (!queue || queue.length === 0) return;
+
+    for (const action of queue) {
       try {
-        const transaction = db.transaction([STORE_NAME], 'readonly');
-        const store = transaction.objectStore(STORE_NAME);
-        const request = store.get(key);
-        request.onsuccess = (event) => resolve(event.target.result ? event.target.result.value : null);
-        request.onerror = (event) => reject(event.target.error);
-        transaction.onerror = (event) => reject(event.target.error);
+        const payload = action.payload && typeof action.payload === 'object' && !Array.isArray(action.payload)
+          ? action.payload
+          : { value: action.payload };
+        const queueCollectionPath = getSyncQueueCollectionPath(currentUser.uid);
+        const docRef = doc(collection(dbFirestore, ...queueCollectionPath), action.id);
+        await setDoc(docRef, { ...action, syncStatus: 'synced', lastSyncAt: new Date().toISOString() }, { merge: true });
+        await localRepository.markSyncActionProcessed(action.id);
       } catch (error) {
-        // Handle InvalidStateError when DB connection is closing
-        if (error.name === 'InvalidStateError') {
-          console.warn('[IndexedDB] Connection closing, skipping load:', key);
-          resolve(null); // Return null if unable to load
-        } else {
-          reject(error);
-        }
+        console.warn('[SYNC] Queue item failed to sync:', error);
+        await localRepository.markSyncActionFailed(action.id, error.message || 'Sync failed');
       }
-    });
+    }
   }
 
   // ===== Data Handling =====
@@ -1304,7 +1338,8 @@ function isMasterAdminUser() {
         saveState('customers', customers || []),
         saveState('units', units || []),
         saveState('restockHistory', restockHistory || []),
-        saveState('appAdminSettings', appAdminSettings || defaultAppAdminSettings)
+        saveState('appAdminSettings', appAdminSettings || defaultAppAdminSettings),
+        saveState('auditTrail', auditTrail || [])
       ]);
 
       // Debounce cloud sync to prevent excessive Firebase writes
@@ -1350,6 +1385,16 @@ function isMasterAdminUser() {
               return;
             }
 
+            await enqueueLocalSyncAction({
+              entityType: 'shop_profile',
+              payload: shopData,
+              businessId: effectiveUid,
+              userId: effectiveUid,
+              staffId: currentLoggedInStaffName || currentUser?.uid || 'system',
+              updatedBy: currentUser?.uid || effectiveUid,
+              deviceId: new URLSearchParams(window.location.search).get('device') || 'browser'
+            });
+
             // Perform actual cloud sync using merge to avoid overwriting other fields
             await setDoc(doc(dbFirestore, "users", effectiveUid, "data", "shop_profile"), shopData, { merge: true });
             lastSyncTime = Date.now();
@@ -1392,6 +1437,12 @@ function isMasterAdminUser() {
     // 1. Mark as not synced initially and add to local state for immediate UI update
     transaction.synced = false;
     transactions.unshift(transaction);
+    appendAuditEvent('sale_completed', {
+      total: transaction.total || 0,
+      paymentMethod: transaction.paymentMethod || 'Cash',
+      itemCount: Array.isArray(transaction.items) ? transaction.items.length : 0
+    });
+    await persistAuditTrail();
     
     // Keep local list at reasonable size for performance
     if (transactions.length > 1000) transactions.pop();
@@ -1403,6 +1454,15 @@ function isMasterAdminUser() {
     const effectiveUid = getEffectiveUid();
     if (effectiveUid && dbFirestore && navigator.onLine) {
       try {
+        await enqueueLocalSyncAction({
+          entityType: 'transaction',
+          payload: transaction,
+          businessId: effectiveUid,
+          userId: effectiveUid,
+          staffId: currentLoggedInStaffName || currentUser?.uid || 'system',
+          updatedBy: currentUser?.uid || effectiveUid,
+          deviceId: new URLSearchParams(window.location.search).get('device') || 'browser'
+        });
         const txRef = collection(dbFirestore, "users", effectiveUid, "transactions");
         // Strip the local 'synced' flag before sending to Firestore
         const { synced, ...txData } = transaction;
@@ -1526,18 +1586,36 @@ function isMasterAdminUser() {
 
   function updateOnlineStatus() {
     const statusEl = document.getElementById('connectivity-status');
+    const syncBadgeEl = document.getElementById('sync-badge');
     if (!statusEl) return;
+
+    const hasPendingSync = pendingSyncQueue.length > 0 || transactions.some(tx => !tx.synced);
 
     if (navigator.onLine && syncFailureCount === 0) {
       statusEl.textContent = '🟢';
-      statusEl.title = 'Online & Synced';
+      statusEl.title = hasPendingSync ? 'Online • Sync pending' : 'Online & Synced';
+      if (syncBadgeEl) {
+        syncBadgeEl.textContent = hasPendingSync ? 'Pending' : 'Synced';
+        syncBadgeEl.style.display = hasPendingSync ? 'inline-flex' : 'none';
+        syncBadgeEl.style.background = hasPendingSync ? '#f59e0b' : '#16a34a';
+      }
       syncOfflineTransactions();
     } else if (navigator.onLine && syncFailureCount > 0) {
       statusEl.textContent = '🔴';
       statusEl.title = `Sync error (${syncFailureCount} failures)`;
+      if (syncBadgeEl) {
+        syncBadgeEl.textContent = 'Error';
+        syncBadgeEl.style.display = 'inline-flex';
+        syncBadgeEl.style.background = '#dc2626';
+      }
     } else {
       statusEl.textContent = '🔴';
       statusEl.title = 'Offline';
+      if (syncBadgeEl) {
+        syncBadgeEl.textContent = 'Offline';
+        syncBadgeEl.style.display = 'inline-flex';
+        syncBadgeEl.style.background = '#6b7280';
+      }
     }
   }
 
@@ -2018,9 +2096,43 @@ function isMasterAdminUser() {
     const shouldLogout = await showAppConfirm("Are you sure you want to log out?", "Logout", "Logout", "Cancel");
     if (!shouldLogout) return;
 
+    appendAuditEvent('logout', { message: 'User logged out' });
+    await persistAuditTrail();
+    await saveData(false);
+
     sessionStorage.removeItem('currentUserRole');
     sessionStorage.removeItem('currentUserPermissions');
     sessionStorage.removeItem('isPinVerified');
+    sessionStorage.removeItem('currentLoggedInStaffName');
+    sessionStorage.removeItem('currentUserUid');
+    currentUserRole = null;
+    currentUserPermissions = [];
+    isPinVerified = false;
+    currentLoggedInStaffName = '';
+    menu = [];
+    activeOrders = {};
+    transactions = [];
+    staff = [];
+    dishCategories = [];
+    customers = [];
+    restockHistory = [];
+    settings = { ...defaultSettings };
+    auditTrail = [];
+
+    try {
+      if (localRepository) {
+        await localRepository.close();
+        localRepository = null;
+      }
+      localRepositoryReady = false;
+      if (db) {
+        db.close();
+        db = null;
+      }
+    } catch (error) {
+      console.warn('Logout cleanup warning:', error);
+    }
+
     await signOut(auth);
     location.reload();
   }
@@ -2944,6 +3056,32 @@ function isMasterAdminUser() {
     }
   }
 
+  function setPaymentProcessingState(isProcessing, message = '', tone = 'info') {
+    const confirmBtn = document.getElementById('confirmPaymentBtn');
+    const statusEl = document.getElementById('paymentStatusMessage');
+    if (confirmBtn) {
+      confirmBtn.disabled = isProcessing;
+      if (isProcessing) {
+        const originalText = confirmBtn.dataset.originalText || confirmBtn.textContent;
+        confirmBtn.dataset.originalText = originalText;
+        confirmBtn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;margin:0;"></span> Processing...';
+      } else {
+        confirmBtn.innerHTML = confirmBtn.dataset.originalText || 'Confirm Payment';
+      }
+    }
+    if (statusEl) {
+      if (message) {
+        statusEl.textContent = message;
+        statusEl.style.display = 'block';
+        statusEl.style.background = tone === 'success' ? '#e8f8ee' : tone === 'error' ? '#fde8e8' : '#f4f7fb';
+        statusEl.style.color = tone === 'success' ? '#166534' : tone === 'error' ? '#b91c1c' : '#334155';
+      } else {
+        statusEl.textContent = '';
+        statusEl.style.display = 'none';
+      }
+    }
+  }
+
   function processBill() { // This now opens the payment modal
     const currentOrder = activeOrders[CART_ID];
     if (!currentOrder || currentOrder.items.length === 0) {
@@ -2966,6 +3104,7 @@ function isMasterAdminUser() {
     document.getElementById('paymentDetails').style.display = 'block'; // Show single payment view
     document.getElementById('confirmPaymentBtn').onclick = () => finalizePayment(); // Set correct handler
     document.getElementById('paymentModal').style.display = 'flex';
+    setPaymentProcessingState(false, 'Review the total and confirm payment.', 'info');
     toggleCashPaymentFields(); // Initialize view based on default selection
     calculateChange(); // Initialize change calculation
   }
@@ -3005,11 +3144,15 @@ function isMasterAdminUser() {
 
   async function finalizePayment(isSplit = false) {
     const currentOrder = activeOrders[CART_ID];
+    if (!currentOrder || !Array.isArray(currentOrder.items) || currentOrder.items.length === 0) {
+      await showAppAlert("There is no active order to complete.", "Nothing to Pay");
+      return;
+    }
+
     const paymentMethod = document.getElementById('paymentMethod').value;
     const amountTendered = parseFloat(document.getElementById('amountTendered').value);
     const totals = calculateTransactionTotals(currentOrder.items);
-    
-    // Apply Discount
+
     const discountInput = parseFloat(document.getElementById('discountInput').value) || 0;
     let discountAmount = discountInput;
 
@@ -3022,41 +3165,46 @@ function isMasterAdminUser() {
       return;
     }
 
-    // Decrement stock
-    currentOrder.items.forEach(orderItem => {
+    setPaymentProcessingState(true, navigator.onLine ? 'Processing payment…' : 'Offline mode: saving your sale locally and syncing it when the connection returns.', navigator.onLine ? 'info' : 'success');
+
+    try {
+      currentOrder.items.forEach(orderItem => {
         const dish = menu.find(d => d.name === orderItem.name);
-        if (dish && dish.name) { // Ensure dish and its name exist before deducting
-            // This function will recursively deduct stock
-            deductStock(dish.name, orderItem.qty);
+        if (dish && dish.name) {
+          deductStock(dish.name, orderItem.qty);
         }
-    });
-    
+      });
 
-    const transaction = {
-      date: new Date().toISOString(),
-      customerName: getCurrentServerName(), // Use the logged-in user's name
-      tableNo: 'Shop',
-      items: [...currentOrder.items],
-      total: finalTotal,
-      subtotal: totals.subtotal,
-      tax: totals.tax,
-      paymentMethod: paymentMethod,
-      discount: { value: discountInput, type: 'fixed', amount: discountAmount }
-    };
-    if (isSplit) {
-        // If it's a split payment, we just add the transaction and return.
-        // The calling function will handle UI and data clearing.
+      const transaction = {
+        date: new Date().toISOString(),
+        customerName: getCurrentServerName(),
+        tableNo: 'Shop',
+        items: [...currentOrder.items],
+        total: finalTotal,
+        subtotal: totals.subtotal,
+        tax: totals.tax,
+        paymentMethod: paymentMethod,
+        discount: { value: discountInput, type: 'fixed', amount: discountAmount }
+      };
+
+      if (isSplit) {
+        setPaymentProcessingState(false, 'Split payment prepared.', 'success');
         return transaction;
-    }
-    
-    await recordTransaction(transaction); // Use individual record helper
+      }
 
-    const changeDue = amountTendered - finalTotal;
-    delete activeOrders[CART_ID]; // Clear the order for the table
-    await saveData();
-    renderMenu();
-    document.getElementById('paymentModal').style.display = 'none';
-    showSaleSuccessCelebration(transaction, changeDue > 0 ? changeDue : 0);
+      await recordTransaction(transaction);
+      const changeDue = amountTendered - finalTotal;
+      delete activeOrders[CART_ID];
+      await saveData();
+      renderMenu();
+      document.getElementById('paymentModal').style.display = 'none';
+      setPaymentProcessingState(false);
+      showSaleSuccessCelebration(transaction, changeDue > 0 ? changeDue : 0);
+    } catch (error) {
+      console.error('[PAYMENT] Checkout failed:', error);
+      setPaymentProcessingState(false, 'Payment could not be completed. Please try again.', 'error');
+      await showAppAlert("We could not complete the sale. The order is still available and you can try again.", "Payment Issue");
+    }
   }
 
   // Helper to calculate subtotal, tax, and total
@@ -3125,29 +3273,27 @@ function isMasterAdminUser() {
     if (!itemName || quantity <= 0) return;
 
     if (visited.has(itemName)) {
-        // Break cycle: Deduct from physical stock directly
-        const dish = menu.find(d => d.name === itemName);
-        if (dish && dish.stock !== undefined) {
-            dish.stock = (parseFloat(dish.stock) || 0) - quantity;
-        }
-        return;
+      const dish = menu.find(d => d.name === itemName);
+      if (dish && dish.stock !== undefined) {
+        dish.stock = Math.max(0, (parseFloat(dish.stock) || 0) - quantity);
+      }
+      return;
     }
     visited.add(itemName);
 
     const dish = menu.find(d => d.name === itemName);
     if (!dish) return;
 
-    // Base case: Item is a primary ingredient, deduct from its own stock.
     if (!dish.recipe || dish.recipe.length === 0) {
-        if (dish.stock !== undefined) {
-            dish.stock = (parseFloat(dish.stock) || 0) - quantity;
-            const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
-            if (dish.stock <= threshold) {
-                sendLowStockNotification(dish.name, dish.stock);
-            }
+      if (dish.stock !== undefined) {
+        dish.stock = Math.max(0, (parseFloat(dish.stock) || 0) - quantity);
+        const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
+        if (dish.stock <= threshold) {
+          sendLowStockNotification(dish.name, dish.stock);
         }
-    } else { // Recursive case: Item is a composite dish, deduct from its components.
-        dish.recipe.forEach(component => deductStock(component.itemName, component.quantity * quantity, new Set(visited)));
+      }
+    } else {
+      dish.recipe.forEach(component => deductStock(component.itemName, component.quantity * quantity, new Set(visited)));
     }
   }
   // ===== Dishes Table =====
@@ -3799,6 +3945,7 @@ function isMasterAdminUser() {
    */
   function populateReceiptContent(transaction) {
       const { date, customerName, tableNo, items, total, subtotal, tax, discount } = transaction;
+      const syncLabel = navigator.onLine ? 'Synced' : 'Saved offline • will sync later';
       const transactionId = new Date(date).getTime();
       const currencySymbol = settings.currency || '$';
       
@@ -3856,6 +4003,7 @@ function isMasterAdminUser() {
         </div>
         <div class="receipt-summary">
           <div class="summary-line"><span>Subtotal</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(displaySubtotal)}</span></div>
+          <div class="summary-line" style="font-size:0.9em; color:${navigator.onLine ? '#166534' : '#b45309'};"><span>Status</span> <span>${syncLabel}</span></div>
           ${taxHtml}
           ${discountHtml}
           <div class="summary-line total"><span>TOTAL</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(total)}</span></div>
@@ -3961,6 +4109,9 @@ function isMasterAdminUser() {
     const showCharts = document.getElementById('showReportCharts')?.checked ?? true;
     let postRender = null;
     const now = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const reportFreshnessNote = navigator.onLine
+      ? 'Report reflects current local sales and any synced cloud data.'
+      : 'Report reflects local sales stored offline and may sync later when the connection returns.';
 
     let filteredTransactions = transactions.filter(t => {
       if (reportDate) {
@@ -4088,6 +4239,7 @@ function isMasterAdminUser() {
         <div class="report-header-info u-mb-20">
           <h4 class="u-m-0">Financial Performance Summary</h4>
           <p class="u-fs-08 u-text-muted">Data Range: ${reportDate || 'All Time'} | ${totalBills} Transactions</p>
+          <p class="u-fs-08 u-mt-5" style="color:${navigator.onLine ? '#166534' : '#b45309'};">${reportFreshnessNote}</p>
           ${topStaffInfo}
         </div>
         ${cardsHtml}
@@ -4242,6 +4394,7 @@ function isMasterAdminUser() {
         <div class="report-header-info u-mb-20">
           <h4 class="u-m-0">Product Sales vs Inventory</h4>
           <p class="u-fs-08 u-text-muted">Tracking quantities sold against remaining stock levels</p>
+          <p class="u-fs-08 u-mt-5" style="color:${navigator.onLine ? '#166534' : '#b45309'};">${reportFreshnessNote}</p>
         </div>
         ${cardsHtml}
         ${chartsHtml}
@@ -4313,6 +4466,7 @@ function isMasterAdminUser() {
         <div class="report-header-info u-mb-20">
           <h4 class="u-m-0">Category Sales & Profitability</h4>
           <p class="u-fs-08 u-text-muted">Performance breakdown per category</p>
+          <p class="u-fs-08 u-mt-5" style="color:${navigator.onLine ? '#166534' : '#b45309'};">${reportFreshnessNote}</p>
         </div>
         <table id="reportTable">
           <thead>
@@ -6396,7 +6550,8 @@ function isMasterAdminUser() {
         loadState('customers'),
         loadState('units'),
         loadState('restockHistory'),
-        loadState('appAdminSettings')
+        loadState('appAdminSettings'),
+        loadState('auditTrail')
       ]);
 
       // Initialize Connectivity Status Indicator
@@ -6437,6 +6592,7 @@ function isMasterAdminUser() {
         ...defaultAppAdminSettings,
         ...(localData[9] || {})
       };
+      auditTrail = Array.isArray(localData[10]) ? localData[10] : [];
 
       // START UI IMMEDIATELY
       applyTheme();
@@ -6510,6 +6666,9 @@ function isMasterAdminUser() {
               // Admins may still need real-time sync for monitoring
               await setupRealTimeSync(user.uid);
             }
+            if (navigator.onLine) {
+              await flushLocalSyncQueue();
+            }
           } catch (e) {
             console.warn('Error during tenant initialization:', e);
           }
@@ -6539,10 +6698,19 @@ function isMasterAdminUser() {
             restockHistory = [];
             settings = { ...defaultSettings };
 
-            // Close IndexedDB connection and delete DB to avoid reuse across accounts
+            // Close IndexedDB connection and delete the user-specific repository DB to avoid reuse across accounts
             try {
-              db && db.close();
-              indexedDB.deleteDatabase('posDB_' + (sessionStorage.getItem('currentUserUid') || 'guest'));
+              const previousDbName = localRepository?.getDbName?.() || 'posDB_' + (sessionStorage.getItem('currentUserUid') || 'guest');
+              if (db) {
+                db.close();
+                db = null;
+              }
+              if (localRepository) {
+                await localRepository.close();
+                localRepository = null;
+              }
+              localRepositoryReady = false;
+              indexedDB.deleteDatabase(previousDbName);
             } catch (e) {
               console.warn('IndexedDB cleanup failed:', e);
             }
@@ -6611,6 +6779,7 @@ function isMasterAdminUser() {
           syncDebounceTimer = null;
           lastSyncTime = 0; // Reset to allow immediate sync
           saveData();
+          flushLocalSyncQueue().catch((error) => console.warn('[SYNC] Queue flush failed:', error));
         }
       });
       
@@ -6939,6 +7108,9 @@ function isMasterAdminUser() {
             return;
         }
 
+        appendAuditEvent('staff_login', { staffName: staffMember.name, role: (staffMember.role || 'staff').toLowerCase() });
+        persistAuditTrail().catch(() => {});
+
         // Determine Role (grant Manager role based on role field or if it's admin)
         const definedRole = (staffMember.role || 'staff').toLowerCase();
         const isManager = definedRole === 'manager' || definedRole === 'admin';
@@ -6975,6 +7147,8 @@ function isMasterAdminUser() {
 
       currentLoggedInStaffName = staffName;
       sessionStorage.setItem('currentLoggedInStaffName', staffName);
+      appendAuditEvent('pin_login', { role, staffName });
+      persistAuditTrail().catch(() => {});
 
       const overlay = document.getElementById('login-overlay');
       if (overlay) overlay.style.display = 'none';
@@ -7900,6 +8074,14 @@ function isMasterAdminUser() {
 
   function showSaleSuccessCelebration(transaction, changeDue = 0) {
     lastProcessedTransaction = transaction;
+
+    const syncState = navigator.onLine ? 'Synced to cloud when connection is available.' : 'Saved offline and will sync when the connection returns.';
+    const syncNoticeEl = document.getElementById('successSyncNotice');
+    if (syncNoticeEl) {
+      syncNoticeEl.textContent = syncState;
+      syncNoticeEl.style.display = 'block';
+      syncNoticeEl.style.color = navigator.onLine ? '#166534' : '#b45309';
+    }
     
     document.getElementById('successTotalAmount').textContent = formatCurrency(transaction.total);
     const changeRow = document.getElementById('successChangeRow');

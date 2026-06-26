@@ -1,8 +1,9 @@
-const CACHE_NAME = 'yoshop-v25'; // Increment this version number whenever you make changes!
+const CACHE_NAME = 'yoshop-v26'; // Increment this version number whenever you make changes!
 const urlsToCache = [
   '/',
   '/index.html',
   '/app.js',
+  '/offline-architecture.mjs',
   '/style.css',
   '/assets/icons/android192x192.png',
   '/assets/icons/android512x512.png',
