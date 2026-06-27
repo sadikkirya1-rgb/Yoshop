@@ -149,6 +149,27 @@ function hydrateEnterpriseRecords(entityType, records = []) {
     .filter(record => record && typeof record === 'object')
     .map((record, index) => hydrateEnterpriseRecord(entityType, record, index));
 }
+async function mirrorEnterpriseRecordsToLocalStores() {
+  if (!localRepositoryReady || !localRepository || typeof localRepository.saveEntity !== 'function') {
+    return;
+  }
+
+  const mirrorJobs = [
+    ...(Array.isArray(menu) ? menu.map(record => ['products', record]) : []),
+    ...(Array.isArray(transactions) ? transactions.map(record => ['sales', record]) : []),
+    ...(Array.isArray(staff) ? staff.map(record => ['staff', record]) : []),
+    ...(Array.isArray(customers) ? customers.map(record => ['customers', record]) : []),
+    ...(Array.isArray(units) ? units.map(record => ['units', record]) : []),
+    ...(Array.isArray(restockHistory) ? restockHistory.map(record => ['inventoryHistory', record]) : [])
+  ];
+
+  await Promise.allSettled(
+    mirrorJobs
+      .filter(([, record]) => record && typeof record === 'object')
+      .map(([entityType, record]) => localRepository.saveEntity(entityType, record, { enqueueSync: false }))
+  );
+}
+
 let isInitialLoadComplete = false; // Safety flag to prevent overwriting cloud data on startup
 let isMonitoringMode = false; // Tracks if App Admin has activated monitoring context
 
@@ -1795,6 +1816,7 @@ async function saveData(syncToCloud = true, options = {}) {
         allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
       })
     ]);
+    await mirrorEnterpriseRecordsToLocalStores();
     await persistImageCache();
 
     // Debounce cloud sync to prevent excessive Firebase writes
