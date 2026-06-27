@@ -7531,12 +7531,6 @@ async function mainInit() {
           } else {
             // Admins may still need real-time sync for monitoring
             await setupRealTimeSync(user.uid);
-          }
-          if (navigator.onLine) {
-            await flushLocalSyncQueue();
-            if (typeof localRepository?.setMetadata === 'function') {
-              await localRepository.setMetadata('restoredBackupPendingCloudSync', null);
-            }
             await scheduleBackgroundSync();
           }
         } catch (e) {
@@ -8562,6 +8556,9 @@ async function syncRestoredBackupToCloud() {
     });
 
     await flushLocalSyncQueue();
+    if (typeof localRepository?.setMetadata === 'function') {
+      await localRepository.setMetadata('restoredBackupPendingCloudSync', null);
+    }
 
     appendAuditEvent('restored_backup_synced_to_cloud', {
       syncedAt: new Date().toISOString()
