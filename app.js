@@ -49,15 +49,59 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 let currentUser = null;
 let userMetadata = null; // Stores status and subscription info
-let currentUserRole = sessionStorage.getItem('currentUserRole');
+let currentUserRole = sessionStorage.getItem('currentUserRole') || localStorage.getItem('currentUserRole');
 let localRepository = null;
 let localRepositoryReady = false;
 let repositoryService = null;
 let cloudRepositoryService = null;
 let pendingSyncQueue = [];
-let currentUserPermissions = normalizePermissions(JSON.parse(sessionStorage.getItem('currentUserPermissions') || '[]'));
-let isPinVerified = sessionStorage.getItem('isPinVerified') === 'true' && !!currentUserRole;
+let currentUserPermissions = normalizePermissions(JSON.parse(sessionStorage.getItem('currentUserPermissions') || localStorage.getItem('currentUserPermissions') || '[]'));
+let isPinVerified = (sessionStorage.getItem('isPinVerified') || localStorage.getItem('isPinVerified')) === 'true' && !!currentUserRole;
 let auditTrail = [];
+
+function getNormalizedRole(role = currentUserRole) {
+  return String(role || '').trim().toLowerCase();
+}
+
+function isManagerRole(role = currentUserRole) {
+  return getNormalizedRole(role) === 'manager';
+}
+
+function isAppAdminRole(role = currentUserRole) {
+  return getNormalizedRole(role) === 'appadmin';
+}
+
+function savePinSession(role, permissions = [], staffName = '') {
+  const normalizedPermissions = normalizePermissions(permissions);
+
+  sessionStorage.setItem('isPinVerified', 'true');
+  localStorage.setItem('isPinVerified', 'true');
+
+  sessionStorage.setItem('currentUserRole', role);
+  localStorage.setItem('currentUserRole', role);
+
+  sessionStorage.setItem('currentLoggedInStaffName', staffName);
+  localStorage.setItem('currentLoggedInStaffName', staffName);
+
+  if (role === 'manager' || role === 'appAdmin') {
+    sessionStorage.removeItem('currentUserPermissions');
+    localStorage.removeItem('currentUserPermissions');
+  } else {
+    sessionStorage.setItem('currentUserPermissions', JSON.stringify(normalizedPermissions));
+    localStorage.setItem('currentUserPermissions', JSON.stringify(normalizedPermissions));
+  }
+}
+
+function clearPinSession() {
+  sessionStorage.removeItem('isPinVerified');
+  localStorage.removeItem('isPinVerified');
+  sessionStorage.removeItem('currentUserRole');
+  localStorage.removeItem('currentUserRole');
+  sessionStorage.removeItem('currentUserPermissions');
+  localStorage.removeItem('currentUserPermissions');
+  sessionStorage.removeItem('currentLoggedInStaffName');
+  localStorage.removeItem('currentLoggedInStaffName');
+}
 
 function appendAuditEvent(type, details = {}) {
   const context = getSyncMetadataContext();
@@ -79,7 +123,7 @@ async function persistAuditTrail() {
     console.warn('Audit trail persistence failed:', error);
   }
 }
-let currentLoggedInStaffName = sessionStorage.getItem('currentLoggedInStaffName') || '';
+let currentLoggedInStaffName = sessionStorage.getItem('currentLoggedInStaffName') || localStorage.getItem('currentLoggedInStaffName') || '';
 function getCurrentDeviceId() {
   return new URLSearchParams(window.location.search).get('device') || 'browser';
 }
@@ -2298,13 +2342,10 @@ function updateAuthUI(user) {
 
 function lockApp() {
   isPinVerified = false;
-  sessionStorage.removeItem('isPinVerified');
+  clearPinSession();
   currentUserRole = null;
-  sessionStorage.removeItem('currentUserRole');
-  sessionStorage.removeItem('currentUserPermissions');
+  currentUserPermissions = [];
   currentLoggedInStaffName = '';
-  sessionStorage.removeItem('currentLoggedInStaffName');
-
   const statusOverlay = document.getElementById('shop-status-overlay');
   if (statusOverlay) {
     statusOverlay.style.display = 'none';
@@ -2689,6 +2730,7 @@ async function logout() {
   sessionStorage.removeItem('isPinVerified');
   sessionStorage.removeItem('currentLoggedInStaffName');
   sessionStorage.removeItem('currentUserUid');
+  clearPinSession();
   currentUserRole = null;
   currentUserPermissions = [];
   isPinVerified = false;
@@ -2750,8 +2792,8 @@ function updateCurrencyDisplay() {
 
 // ===== Tabs =====
 function showTab(tabId, btn) {
-  const isManager = currentUserRole === 'manager';
-  const isAppAdmin = currentUserRole === 'appAdmin';
+  const isManager = isManagerRole();
+  const isAppAdmin = isAppAdminRole();
   if (!isManager && !isAppAdmin && !currentUserPermissions.includes(tabId)) {
     return alert("Access Denied: This section is restricted to Managers.");
   }
@@ -7991,8 +8033,8 @@ function showLoginOverlay(mode = 'login') {
 }
 
 function applyRolePermissions() {
-  const isManager = currentUserRole === 'manager';
-  const isAppAdmin = currentUserRole === 'appAdmin';
+  const isManager = isManagerRole();
+  const isAppAdmin = isAppAdminRole();
   const normalizedPermissions = getEffectivePermissions(currentUserRole, currentUserPermissions);
   const nav = document.querySelector('nav');
   if (!nav) return;
@@ -8115,21 +8157,17 @@ function loginWithPIN() {
  */
 function completePinLogin(role, permissions, staffName) {
   isPinVerified = true;
-  sessionStorage.setItem('isPinVerified', 'true');
-
   currentUserRole = role;
-  sessionStorage.setItem('currentUserRole', role);
 
   if (role === 'manager' || role === 'appAdmin') {
-    currentUserPermissions = []; // Managers bypass individual checks
-    sessionStorage.removeItem('currentUserPermissions');
+    currentUserPermissions = [];
   } else {
     currentUserPermissions = normalizePermissions(permissions);
-    sessionStorage.setItem('currentUserPermissions', JSON.stringify(currentUserPermissions));
   }
 
   currentLoggedInStaffName = staffName;
-  sessionStorage.setItem('currentLoggedInStaffName', staffName);
+  savePinSession(role, currentUserPermissions, staffName);
+
   appendAuditEvent('pin_login', { role, staffName });
   persistAuditTrail().catch(() => { });
 
@@ -8139,7 +8177,9 @@ function completePinLogin(role, permissions, staffName) {
   const lockBtn = document.getElementById('nav-lock-btn');
   if (lockBtn) lockBtn.style.display = 'inline-block';
 
+  updateAuthUI(currentUser);
   applyRolePermissions();
+  checkShopStatus();
 }
 
 // Placeholder functions for backward compatibility or future use
