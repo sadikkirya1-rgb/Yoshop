@@ -149,9 +149,42 @@ function hydrateEnterpriseRecords(entityType, records = []) {
     .filter(record => record && typeof record === 'object')
     .map((record, index) => hydrateEnterpriseRecord(entityType, record, index));
 }
-async function mirrorEnterpriseRecordsToLocalStores() {
+function getEnterpriseMirrorSignature() {
+  const summarize = (records = []) => {
+    if (!Array.isArray(records)) return '0';
+    return records
+      .filter(record => record && typeof record === 'object')
+      .map(record => [
+        record.recordId || record.id || record.name || '',
+        record.version || 1,
+        record.updatedAt || record.date || ''
+      ].join(':'))
+      .join('|');
+  };
+
+  return JSON.stringify({
+    products: summarize(menu),
+    sales: summarize(transactions),
+    staff: summarize(staff),
+    customers: summarize(customers),
+    units: summarize(units),
+    inventoryHistory: summarize(restockHistory)
+  });
+}
+
+async function mirrorEnterpriseRecordsToLocalStores(options = {}) {
   if (!localRepositoryReady || !localRepository || typeof localRepository.saveEntity !== 'function') {
     return;
+  }
+
+  const signature = getEnterpriseMirrorSignature();
+  const metadataKey = 'enterpriseRecordMirrorSignature';
+
+  if (!options.force && typeof localRepository.getMetadata === 'function') {
+    const previousSignature = await localRepository.getMetadata(metadataKey);
+    if (previousSignature === signature) {
+      return;
+    }
   }
 
   const mirrorJobs = [
@@ -171,6 +204,11 @@ async function mirrorEnterpriseRecordsToLocalStores() {
         preserveVersion: true
       }))
   );
+
+  if (typeof localRepository.setMetadata === 'function') {
+    await localRepository.setMetadata(metadataKey, signature);
+    await localRepository.setMetadata('enterpriseRecordMirrorLastRunAt', new Date().toISOString());
+  }
 }
 
 let isInitialLoadComplete = false; // Safety flag to prevent overwriting cloud data on startup
@@ -7106,6 +7144,12 @@ async function mainInit() {
     loadSettings();
     updateVersionDisplay();
     checkShopStatus();
+
+    mirrorEnterpriseRecordsToLocalStores().catch(error => {
+      console.warn('[MIGRATION] Enterprise record mirror skipped:', error);
+    });
+
+    // Background Cloud Sync
 
     // Background Cloud Sync
     onAuthStateChanged(auth, async (user) => {
