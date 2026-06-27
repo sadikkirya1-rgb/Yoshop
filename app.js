@@ -6970,6 +6970,42 @@ function shouldAcceptIncomingRecord(localRecord = {}, incomingRecord = {}) {
 
   return getRecordTimestamp(incomingRecord) >= getRecordTimestamp(localRecord);
 }
+const loggedSyncConflicts = new Set();
+
+function logRejectedIncomingRecord(entityType, localRecord = {}, incomingRecord = {}) {
+  const recordId = getEnterpriseRecordId(localRecord) || getEnterpriseRecordId(incomingRecord);
+  const conflictKey = [
+    entityType,
+    recordId,
+    localRecord.version || 0,
+    incomingRecord.version || 0,
+    localRecord.updatedAt || localRecord.lastSyncAt || '',
+    incomingRecord.updatedAt || incomingRecord.lastSyncAt || ''
+  ].join('|');
+
+  if (loggedSyncConflicts.has(conflictKey)) return;
+  loggedSyncConflicts.add(conflictKey);
+
+  console.info('[SYNC_CONFLICT] Older incoming record ignored:', {
+    entityType,
+    recordId,
+    localVersion: localRecord.version || 0,
+    incomingVersion: incomingRecord.version || 0,
+    localUpdatedAt: localRecord.updatedAt || localRecord.lastSyncAt || null,
+    incomingUpdatedAt: incomingRecord.updatedAt || incomingRecord.lastSyncAt || null
+  });
+
+  appendAuditEvent('sync_conflict_ignored', {
+    entityType,
+    recordId,
+    localVersion: localRecord.version || 0,
+    incomingVersion: incomingRecord.version || 0,
+    localUpdatedAt: localRecord.updatedAt || localRecord.lastSyncAt || null,
+    incomingUpdatedAt: incomingRecord.updatedAt || incomingRecord.lastSyncAt || null
+  });
+
+  persistAuditTrail().catch(() => { });
+}
 
 function upsertEnterpriseRecord(records = [], incomingRecord = {}, entityType) {
   const hydratedRecord = hydrateEnterpriseRecord(entityType, incomingRecord);
@@ -6982,6 +7018,7 @@ function upsertEnterpriseRecord(records = [], incomingRecord = {}, entityType) {
   if (index >= 0) {
     const localRecord = nextRecords[index];
     if (!shouldAcceptIncomingRecord(localRecord, hydratedRecord)) {
+      logRejectedIncomingRecord(entityType, localRecord, hydratedRecord);
       return nextRecords;
     }
 
