@@ -1,9 +1,10 @@
-const CACHE_NAME = 'yoshop-v27';
+const CACHE_NAME = 'yoshop-v28';
 
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/assetlinks.json',
 
   '/style.css',
   '/style.css?v=20260620',
@@ -42,36 +43,65 @@ const APP_SHELL_URLS = [
   'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js'
 ];
 
-function sameOriginCacheKey(request) {
+const QUERYLESS_APP_PATHS = new Set([
+  '/',
+  '/index.html',
+  '/manifest.json',
+  '/assetlinks.json',
+  '/app.js',
+  '/style.css',
+  '/offline-architecture.mjs',
+  '/audit-utils.mjs',
+  '/sync-utils.mjs',
+  '/theme-utils.mjs',
+  '/repository-service.mjs',
+  '/cloud-service.mjs',
+  '/permission-utils.mjs'
+]);
+
+function getCacheKey(request) {
   const url = new URL(request.url);
 
-  if (url.origin !== self.location.origin) return request;
+  if (url.origin !== self.location.origin) {
+    return request;
+  }
 
-  const querylessPaths = [
-    '/app.js',
-    '/style.css',
-    '/index.html',
-    '/manifest.json',
-    '/offline-architecture.mjs',
-    '/audit-utils.mjs',
-    '/sync-utils.mjs',
-    '/theme-utils.mjs',
-    '/repository-service.mjs',
-    '/cloud-service.mjs',
-    '/permission-utils.mjs'
-  ];
+  if (QUERYLESS_APP_PATHS.has(url.pathname)) {
+    return url.pathname === '/' ? '/index.html' : url.pathname;
+  }
 
-  return querylessPaths.includes(url.pathname) ? url.pathname : request;
+  return request;
+}
+
+async function putInCache(request, response) {
+  if (!response) return response;
+
+  const cache = await caches.open(CACHE_NAME);
+  const copy = response.clone();
+  await cache.put(getCacheKey(request), copy);
+  return response;
+}
+
+async function cacheAppShell() {
+  const cache = await caches.open(CACHE_NAME);
+
+  await Promise.allSettled(
+    APP_SHELL_URLS.map((url) => {
+      const request = new Request(url, { cache: 'reload' });
+      return fetch(request).then((response) => {
+        if (!response || (!response.ok && response.type !== 'opaque')) {
+          throw new Error(`Unable to cache ${url}`);
+        }
+
+        return cache.put(getCacheKey(request), response);
+      });
+    })
+  );
 }
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
-
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
-      return Promise.allSettled(APP_SHELL_URLS.map((url) => cache.add(url)));
-    })
-  );
+  event.waitUntil(cacheAppShell());
 });
 
 self.addEventListener('activate', (event) => {
@@ -91,23 +121,23 @@ self.addEventListener('fetch', (event) => {
 
   if (request.method !== 'GET') return;
 
-  if (request.url.includes('fiveserver.js') || request.url.includes('livereload.js')) {
+  if (
+    request.url.includes('fiveserver.js') ||
+    request.url.includes('livereload.js') ||
+    request.url.startsWith('chrome-extension:')
+  ) {
     return;
   }
 
   if (request.mode === 'navigate') {
     event.respondWith(
       fetch(request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
-          return response;
-        })
+        .then((response) => putInCache(new Request('/index.html'), response))
         .catch(async () => {
           return (
             await caches.match('/index.html') ||
             await caches.match('/') ||
-            new Response('YoShop is offline and the app shell is not cached yet. Open the app once while online.', {
+            new Response('YoShop is offline. Open the app once while online to finish installing offline files.', {
               status: 503,
               headers: { 'Content-Type': 'text/plain' }
             })
@@ -118,41 +148,39 @@ self.addEventListener('fetch', (event) => {
   }
 
   event.respondWith(
-    caches.match(sameOriginCacheKey(request), { ignoreSearch: true })
+    caches.match(getCacheKey(request), { ignoreSearch: true })
       .then((cachedResponse) => {
-        if (cachedResponse) return cachedResponse;
-
-        return fetch(request)
+        const networkFetch = fetch(request)
           .then((networkResponse) => {
-            if (!networkResponse || networkResponse.status !== 200) return networkResponse;
-
-            const url = new URL(request.url);
-            const shouldRuntimeCache =
-              url.origin === self.location.origin ||
-              request.destination === 'script' ||
-              request.destination === 'style' ||
-              request.destination === 'image' ||
-              request.url.includes('firebasestorage.googleapis.com');
-
-            if (shouldRuntimeCache) {
-              const copy = networkResponse.clone();
-              caches.open(CACHE_NAME).then((cache) => {
-                cache.put(sameOriginCacheKey(request), copy);
-              });
+            if (!networkResponse || (!networkResponse.ok && networkResponse.type !== 'opaque')) {
+              return networkResponse;
             }
 
+            putInCache(request, networkResponse.clone()).catch(() => { });
             return networkResponse;
-          })
-          .catch(async () => {
-            if (request.destination === 'document') {
-              return await caches.match('/index.html');
-            }
-
-            return new Response('Offline: resource not available', {
-              status: 408,
-              headers: { 'Content-Type': 'text/plain' }
-            });
           });
+
+        if (cachedResponse) {
+          networkFetch.catch(() => { });
+          return cachedResponse;
+        }
+
+        return networkFetch.catch(async () => {
+          if (request.destination === 'style') {
+            return new Response('', {
+              headers: { 'Content-Type': 'text/css' }
+            });
+          }
+
+          if (request.destination === 'image') {
+            return new Response('', { status: 204 });
+          }
+
+          return new Response('Offline: resource not available', {
+            status: 408,
+            headers: { 'Content-Type': 'text/plain' }
+          });
+        });
       })
   );
 });
