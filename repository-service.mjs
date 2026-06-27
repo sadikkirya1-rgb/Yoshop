@@ -73,8 +73,12 @@ export function createRepositoryService(options = {}) {
           businessId: options.businessId || tenantScope,
           userId: options.userId || userId,
           deviceId: options.deviceId || deviceId,
-          tenantScope
+          tenantScope,
+          allowEmptyOverwriteFields: Array.isArray(options.allowEmptyOverwriteFields)
+            ? options.allowEmptyOverwriteFields
+            : []
         };
+
         await repository.saveEntity(mapping.entityType, normalized, { enqueueSync: options.enqueueSync !== false });
         return value;
       }

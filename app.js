@@ -60,7 +60,14 @@ let isPinVerified = sessionStorage.getItem('isPinVerified') === 'true' && !!curr
 let auditTrail = [];
 
 function appendAuditEvent(type, details = {}) {
-  const nextTrail = createAuditEvent(auditTrail, type, details);
+  const context = getSyncMetadataContext();
+  const nextTrail = createAuditEvent(auditTrail, type, details, context);
+  const latestEvent = nextTrail[nextTrail.length - 1];
+
+  if (latestEvent) {
+    nextTrail[nextTrail.length - 1] = enrichEnterpriseRecord('auditLog', latestEvent, latestEvent);
+  }
+
   auditTrail = limitAuditTrail(nextTrail, 500);
   return auditTrail;
 }
@@ -73,6 +80,44 @@ async function persistAuditTrail() {
   }
 }
 let currentLoggedInStaffName = sessionStorage.getItem('currentLoggedInStaffName') || '';
+function getCurrentDeviceId() {
+  return new URLSearchParams(window.location.search).get('device') || 'browser';
+}
+
+function getCurrentStaffId() {
+  return currentLoggedInStaffName || currentUser?.uid || 'system';
+}
+
+function getSyncMetadataContext() {
+  const effectiveUid = getEffectiveUid?.() || currentUser?.uid || 'guest';
+  return {
+    businessId: effectiveUid,
+    userId: currentUser?.uid || effectiveUid || 'system',
+    staffId: getCurrentStaffId(),
+    deviceId: getCurrentDeviceId()
+  };
+}
+
+function enrichEnterpriseRecord(entityType, record = {}, existingRecord = null) {
+  const now = new Date().toISOString();
+  const context = getSyncMetadataContext();
+  const currentVersion = Number(existingRecord?.version || record.version || 0);
+
+  return {
+    ...record,
+    id: record.id || record.recordId || existingRecord?.id || createEntityId(entityType, record),
+    recordId: record.recordId || record.id || existingRecord?.recordId || createEntityId(entityType, record),
+    businessId: record.businessId || existingRecord?.businessId || context.businessId,
+    userId: record.userId || existingRecord?.userId || context.userId,
+    staffId: record.staffId || existingRecord?.staffId || context.staffId,
+    deviceId: record.deviceId || existingRecord?.deviceId || context.deviceId,
+    createdAt: record.createdAt || existingRecord?.createdAt || now,
+    updatedAt: now,
+    version: currentVersion + 1,
+    syncStatus: record.syncStatus || 'pending',
+    lastSyncAt: record.lastSyncAt || null
+  };
+}
 let isInitialLoadComplete = false; // Safety flag to prevent overwriting cloud data on startup
 let isMonitoringMode = false; // Tracks if App Admin has activated monitoring context
 
@@ -588,6 +633,109 @@ function getCloudPayloadForSyncAction(action) {
   }
 }
 
+const PROTECTED_EMPTY_OVERWRITE_FIELDS = [
+  'menu',
+  'staff',
+  'customers',
+  'dishCategories',
+  'units',
+  'restockHistory'
+];
+
+function isNonEmptyArray(value) {
+  return Array.isArray(value) && value.length > 0;
+}
+
+function isEmptyArray(value) {
+  return Array.isArray(value) && value.length === 0;
+}
+
+function getAllowedEmptyOverwriteFields(action = {}) {
+  const fromAction = Array.isArray(action.allowEmptyOverwriteFields) ? action.allowEmptyOverwriteFields : [];
+  const fromPayload = Array.isArray(action.payload?.allowEmptyOverwriteFields) ? action.payload.allowEmptyOverwriteFields : [];
+  return new Set([...fromAction, ...fromPayload]);
+}
+
+function isMeaningfulObject(value) {
+  return value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0;
+}
+
+function looksLikeDefaultSettings(value) {
+  if (!isMeaningfulObject(value)) return true;
+  const defaults = typeof defaultSettings === 'object' ? defaultSettings : {};
+  return (
+    value.name === defaults.name &&
+    value.address === defaults.address &&
+    value.contact === defaults.contact &&
+    value.currency === defaults.currency &&
+    !value.logo
+  );
+}
+
+function shouldProtectSettingsOverwrite(incomingSettings, remoteSettings) {
+  if (!isMeaningfulObject(remoteSettings)) return false;
+  if (!isMeaningfulObject(incomingSettings)) return true;
+  return looksLikeDefaultSettings(incomingSettings) && !looksLikeDefaultSettings(remoteSettings);
+}
+
+async function protectCloudPayloadFromEmptyOverwrite(shopDocRef, cloudPayload, action = {}) {
+  if (!cloudPayload || typeof cloudPayload !== 'object') return cloudPayload;
+
+  const allowedEmptyOverwriteFields = getAllowedEmptyOverwriteFields(action);
+
+  const needsProtection = PROTECTED_EMPTY_OVERWRITE_FIELDS.some((field) =>
+    isEmptyArray(cloudPayload[field]) && !allowedEmptyOverwriteFields.has(field)
+  ) || (
+      Object.prototype.hasOwnProperty.call(cloudPayload, 'settings') &&
+      !allowedEmptyOverwriteFields.has('settings')
+    );
+
+  if (!needsProtection) return cloudPayload;
+
+  try {
+    const remoteSnap = await getDoc(shopDocRef);
+    if (!remoteSnap.exists()) return cloudPayload;
+
+    const remoteData = remoteSnap.data() || {};
+    const safePayload = { ...cloudPayload };
+    const protectedFields = [];
+
+    PROTECTED_EMPTY_OVERWRITE_FIELDS.forEach((field) => {
+      if (
+        isEmptyArray(safePayload[field]) &&
+        isNonEmptyArray(remoteData[field]) &&
+        !allowedEmptyOverwriteFields.has(field)
+      ) {
+        delete safePayload[field];
+        protectedFields.push(field);
+      }
+    });
+
+
+
+    if (
+      Object.prototype.hasOwnProperty.call(safePayload, 'settings') &&
+      shouldProtectSettingsOverwrite(safePayload.settings, remoteData.settings) &&
+      !allowedEmptyOverwriteFields.has('settings')
+    ) {
+      delete safePayload.settings;
+      protectedFields.push('settings');
+    }
+
+    if (protectedFields.length > 0) {
+      console.warn('[SYNC_GUARD] Prevented empty/default overwrite for:', protectedFields.join(', '), {
+        entityType: action.entityType,
+        actionId: action.id
+      });
+    }
+
+    return Object.keys(safePayload).length > 0 ? safePayload : null;
+  } catch (error) {
+    console.warn('[SYNC_GUARD] Could not verify remote data before sync. Skipping protected payload to avoid data loss.', error);
+    return null;
+  }
+}
+
 function getFirstNonEmptyArray(...values) {
   for (const value of values) {
     if (Array.isArray(value) && value.length > 0) return value;
@@ -645,7 +793,10 @@ async function syncCloudAction(action) {
   const cloudPayload = getCloudPayloadForSyncAction(action);
   if (cloudPayload) {
     const shopDocRef = doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile');
-    await setDoc(shopDocRef, cloudPayload, { merge: true });
+    const safeCloudPayload = await protectCloudPayloadFromEmptyOverwrite(shopDocRef, cloudPayload, action);
+    if (safeCloudPayload) {
+      await setDoc(shopDocRef, safeCloudPayload, { merge: true });
+    }
     return;
   }
 
@@ -653,7 +804,13 @@ async function syncCloudAction(action) {
     const txRef = collection(dbFirestore, 'users', currentUser.uid, 'transactions');
     const payload = action.payload || {};
     const txId = payload.id || action.id;
-    await setDoc(doc(txRef, txId), { ...payload, synced: true, lastSyncedAt: new Date().toISOString() }, { merge: true });
+    await setDoc(doc(txRef, txId), {
+      ...payload,
+      synced: true,
+      syncStatus: 'synced',
+      lastSyncedAt: new Date().toISOString(),
+      lastSyncAt: new Date().toISOString()
+    }, { merge: true });
     return;
   }
 
@@ -661,7 +818,12 @@ async function syncCloudAction(action) {
     const auditRef = collection(dbFirestore, 'users', currentUser.uid, 'audit_log');
     const payload = action.payload || {};
     const auditId = payload.id || action.id;
-    await setDoc(doc(auditRef, auditId), { ...payload, lastSyncedAt: new Date().toISOString() }, { merge: true });
+    await setDoc(doc(auditRef, auditId), {
+      ...payload,
+      syncStatus: 'synced',
+      lastSyncedAt: new Date().toISOString(),
+      lastSyncAt: new Date().toISOString()
+    }, { merge: true });
     return;
   }
 
@@ -1551,22 +1713,55 @@ function handleFirebaseError(error, context = "Firebase Operation", path = "unkn
  * Debounced cloud sync - fires immediately but only syncs to cloud once per debounce period
  * This prevents excessive Firebase writes while ensuring rapid local updates
  */
-async function saveData(syncToCloud = true) {
+async function saveData(syncToCloud = true, options = {}) {
   try {
     // Save to local IndexedDB immediately (always, synchronous)
     // Use Promise.allSettled instead of Promise.all to handle individual errors gracefully
     await Promise.allSettled([
-      saveState('menu', menu || [], { enqueueSync: syncToCloud }),
-      saveState('activeOrders', activeOrders || {}, { enqueueSync: syncToCloud }),
-      saveState('transactions', transactions || [], { enqueueSync: false }),
-      saveState('settings', settings || defaultSettings, { enqueueSync: syncToCloud }),
-      saveState('staff', staff || [], { enqueueSync: syncToCloud }),
-      saveState('dishCategories', dishCategories || [], { enqueueSync: syncToCloud }),
-      saveState('customers', customers || [], { enqueueSync: syncToCloud }),
-      saveState('units', units || [], { enqueueSync: syncToCloud }),
-      saveState('restockHistory', restockHistory || [], { enqueueSync: syncToCloud }),
-      saveState('appAdminSettings', appAdminSettings || defaultAppAdminSettings, { enqueueSync: syncToCloud }),
-      saveState('auditTrail', auditTrail || [], { enqueueSync: syncToCloud })
+      saveState('menu', menu || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('activeOrders', activeOrders || {}, {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('transactions', transactions || [], {
+        enqueueSync: false,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('settings', settings || defaultSettings, {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('staff', staff || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('dishCategories', dishCategories || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('customers', customers || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('units', units || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('restockHistory', restockHistory || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('appAdminSettings', appAdminSettings || defaultAppAdminSettings, {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('auditTrail', auditTrail || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      })
     ]);
     await persistImageCache();
 
@@ -1630,7 +1825,12 @@ async function saveData(syncToCloud = true) {
  */
 async function recordTransaction(transaction) {
   // 1. Mark as not synced initially and add to local state for immediate UI update
-  transaction.synced = false;
+  transaction = enrichEnterpriseRecord('sales', {
+    ...transaction,
+    synced: false,
+    syncStatus: 'pending'
+  }, transaction);
+
   transactions.unshift(transaction);
   appendAuditEvent('sale_completed', {
     total: transaction.total || 0,
@@ -2657,11 +2857,13 @@ async function addDish(buttonElement) {
 
       // Preserve existing fields not managed by this form (like physical stock and units)
       const imageToSave = isValidMenuImage(image) ? image : menu[index].image;
-      let dishData = {
+      let dishData = enrichEnterpriseRecord('products', {
         ...menu[index],
         name, barcode, category, recipe, costPrice, price, image: imageToSave
-      };
+      }, menu[index]);
+
       menu[index] = dishData;
+
 
       // Propagate name change to other product recipes if this dish is used as a sub-component
       if (oldName && oldName !== name) {
@@ -2688,7 +2890,16 @@ async function addDish(buttonElement) {
 
     } else {
       // It's a new dish
-      let dishData = { name, barcode, category, recipe, costPrice, price, image: isValidMenuImage(image) ? image : undefined };
+      let dishData = enrichEnterpriseRecord('products', {
+        name,
+        barcode,
+        category,
+        recipe,
+        costPrice,
+        price,
+        image: isValidMenuImage(image) ? image : undefined
+      });
+
       // Clear form only for new dishes
       document.getElementById('dishName').value = '';
       document.getElementById('dishBarcode').value = '';
@@ -3526,7 +3737,7 @@ async function deleteItem(i) {
   }
 
   menu.splice(index, 1);
-
+  saveData(); // Persist the deletion
 
   // Safely update all views with error handling to prevent one failure from stopping the rest
   // Update UI components immediately
@@ -3535,7 +3746,6 @@ async function deleteItem(i) {
   try { renderInventoryReport(); } catch (e) { console.error("Error updating inventory:", e); }
   try { updateDashboard(); } catch (e) { console.error("Error updating dashboard:", e); }
 
-  saveData(); // Persist the deletion
 }
 
 // ===== Receipt =====
