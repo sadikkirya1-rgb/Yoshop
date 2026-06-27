@@ -8374,17 +8374,32 @@ function exportTransactionsToCSV() {
 
 function backupAllData() {
   const dataToBackup = {
-    menu, activeOrders, transactions, settings, staff, dishCategories, customers
+    backupVersion: 2,
+    exportedAt: new Date().toISOString(),
+    businessId: getEffectiveUid?.() || currentUser?.uid || 'guest',
+    menu,
+    activeOrders,
+    transactions,
+    settings,
+    staff,
+    dishCategories,
+    customers,
+    units,
+    restockHistory,
+    appAdminSettings,
+    auditTrail
   };
+
   const jsonString = JSON.stringify(dataToBackup, null, 2);
   const blob = new Blob([jsonString], { type: "application/json" });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `pos-backup-${new Date().toISOString().split('T')[0]}.json`;
+  link.download = `yoshop-backup-${new Date().toISOString().split('T')[0]}.json`;
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 
 async function restoreData() {
@@ -8393,49 +8408,96 @@ async function restoreData() {
     await showAppAlert("Please select a backup file to restore.", "Missing File");
     return;
   }
-  const confirmed = await showAppConfirm("This will overwrite all current data. Are you sure you want to continue?", "Restore Backup", "Restore", "Cancel");
+
+  const confirmed = await showAppConfirm(
+    "This will restore the backup on this device first. It will not push empty or raw backup data to cloud during restore. Continue?",
+    "Restore Backup",
+    "Restore",
+    "Cancel"
+  );
   if (!confirmed) return;
 
   const file = fileInput.files[0];
   const reader = new FileReader();
+
   reader.onload = async function (event) {
     try {
-      const restoredData = JSON.parse(event.target.result);
+      const restoredData = JSON.parse(event.target.result || '{}');
 
-      // Directly save each part of the restored data to IndexedDB
-      await Promise.all([
-        saveState('menu', restoredData.menu || defaultMenu),
-        saveState('activeOrders', restoredData.activeOrders || {}),
-        saveState('transactions', restoredData.transactions || []),
-        saveState('settings', restoredData.settings || defaultSettings),
-        saveState('staff', restoredData.staff || defaultStaff),
-        saveState('dishCategories', restoredData.dishCategories || []),
-        saveState('customers', restoredData.customers || []),
-        saveState('restockHistory', restoredData.restockHistory || []),
-        saveState('units', restoredData.units || [
-          { full: 'Bottle', short: 'btl' },
-          { full: 'Box', short: 'box' },
-          { full: 'Can', short: 'can' },
-          { full: 'Case', short: 'case' },
-          { full: 'Each', short: 'each' },
-          { full: 'Fluid Ounce', short: 'fl oz' },
-          { full: 'Gallon', short: 'gal' },
-          { full: 'Gram', short: 'g' },
-          { full: 'Kilogram', short: 'kg' },
-          { full: 'Litre', short: 'L' },
-          { full: 'Millilitre', short: 'ml' },
-          { full: 'Ounce', short: 'oz' },
-          { full: 'Pack', short: 'pk' },
-          { full: 'Piece', short: 'pc' },
-          { full: 'Pint', short: 'pt' },
-          { full: 'Pound', short: 'lb' }
-        ])
+      const restoredMenu = hydrateEnterpriseRecords('products', restoredData.menu || defaultMenu);
+      const restoredTransactions = hydrateEnterpriseRecords('sales', restoredData.transactions || []);
+      const restoredStaff = hydrateEnterpriseRecords('staff', restoredData.staff || defaultStaff);
+      const restoredCustomers = hydrateEnterpriseRecords('customers', restoredData.customers || []);
+      const restoredUnits = hydrateEnterpriseRecords('units', restoredData.units || [
+        { full: 'Bottle', short: 'btl' },
+        { full: 'Box', short: 'box' },
+        { full: 'Can', short: 'can' },
+        { full: 'Case', short: 'case' },
+        { full: 'Each', short: 'each' },
+        { full: 'Fluid Ounce', short: 'fl oz' },
+        { full: 'Gallon', short: 'gal' },
+        { full: 'Gram', short: 'g' },
+        { full: 'Kilogram', short: 'kg' },
+        { full: 'Litre', short: 'L' },
+        { full: 'Millilitre', short: 'ml' },
+        { full: 'Ounce', short: 'oz' },
+        { full: 'Pack', short: 'pk' },
+        { full: 'Piece', short: 'pc' },
+        { full: 'Pint', short: 'pt' },
+        { full: 'Pound', short: 'lb' }
       ]);
+      const restoredRestockHistory = hydrateEnterpriseRecords('inventoryHistory', restoredData.restockHistory || []);
 
-      alert("Data restored successfully. The application will now reload.");
-      location.reload();
-    } catch (e) { alert("Error reading or parsing the backup file. Please ensure it's a valid backup."); }
+      menu = restoredMenu;
+      activeOrders = restoredData.activeOrders || {};
+      transactions = restoredTransactions;
+      settings = normalizeSettings(restoredData.settings, defaultSettings);
+      staff = restoredStaff;
+      dishCategories = Array.isArray(restoredData.dishCategories) ? restoredData.dishCategories : defaultDishCategories;
+      customers = restoredCustomers;
+      units = restoredUnits;
+      restockHistory = restoredRestockHistory;
+      appAdminSettings = {
+        ...defaultAppAdminSettings,
+        ...(restoredData.appAdminSettings || {})
+      };
+      auditTrail = Array.isArray(restoredData.auditTrail) ? hydrateEnterpriseRecords('auditLog', restoredData.auditTrail) : [];
+
+      appendAuditEvent('backup_restored', {
+        fileName: file.name,
+        backupVersion: restoredData.backupVersion || 1,
+        restoredAt: new Date().toISOString()
+      });
+
+      await saveData(false);
+      await mirrorEnterpriseRecordsToLocalStores({ force: true });
+
+      renderDishesTable();
+      renderMenu();
+      renderTransactions();
+      renderCategoryList();
+      renderInventoryReport();
+      renderStockListTable();
+      renderCustomerList();
+      renderStaffList();
+      renderUnitList();
+      renderRestockHistoryTable();
+      populateCategoryDropdown();
+      populateCategoryFilter();
+      populateReportFilters();
+      populateUnitDropdown();
+      loadSettings();
+      updateDashboard();
+
+      fileInput.value = '';
+
+      await showAppAlert("Backup restored on this device. Review the data before syncing to cloud.", "Restore Complete");
+    } catch (error) {
+      console.error("Restore failed:", error);
+      await showAppAlert("Restore failed. Please check that the selected file is a valid YoShop backup.", "Restore Failed");
+    }
   };
+
   reader.readAsText(file);
 }
 
