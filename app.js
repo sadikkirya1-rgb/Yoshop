@@ -879,10 +879,76 @@ function getCloudCategoryList(cloudData = {}) {
   return deriveCategoriesFromProducts(getCloudMenuItems(cloudData));
 }
 
+const RECORD_SYNC_COLLECTIONS = {
+  customerRecord: 'customers',
+  staffRecord: 'staff',
+  unitRecord: 'units'
+};
+
+async function syncEnterpriseRecordAction(action) {
+  const collectionName = RECORD_SYNC_COLLECTIONS[action.entityType];
+  if (!collectionName) return false;
+
+  const payload = action.payload || {};
+  const recordId = payload.recordId || payload.id || action.recordId || action.id;
+  if (!recordId) return true;
+
+  const recordRef = doc(dbFirestore, 'users', currentUser.uid, collectionName, String(recordId));
+
+  if (payload.operation === 'delete' || action.operation === 'delete') {
+    await deleteDoc(recordRef);
+    return true;
+  }
+
+  const { operation, ...recordPayload } = payload;
+
+  await setDoc(recordRef, {
+    ...recordPayload,
+    syncStatus: 'synced',
+    lastSyncedAt: new Date().toISOString(),
+    lastSyncAt: new Date().toISOString()
+  }, { merge: true });
+
+  return true;
+}
+
+async function enqueueEnterpriseRecordChange(collectionName, record, operation = 'upsert') {
+  if (!record || typeof record !== 'object') return;
+
+  const entityTypeMap = {
+    customers: 'customerRecord',
+    staff: 'staffRecord',
+    units: 'unitRecord'
+  };
+
+  const entityType = entityTypeMap[collectionName];
+  if (!entityType) return;
+
+  const effectiveUid = getEffectiveUid();
+  if (!effectiveUid) return;
+
+  await enqueueLocalSyncAction({
+    entityType,
+    payload: {
+      ...record,
+      operation
+    },
+    businessId: effectiveUid,
+    userId: currentUser?.uid || effectiveUid,
+    staffId: getCurrentStaffId(),
+    updatedBy: currentUser?.uid || effectiveUid,
+    deviceId: getCurrentDeviceId()
+  });
+}
+
 async function syncCloudAction(action) {
   const queueCollectionPath = getSyncQueueCollectionPath(currentUser.uid);
   const queueDocRef = doc(collection(dbFirestore, ...queueCollectionPath), action.id);
   await setDoc(queueDocRef, { ...action, syncStatus: 'synced', lastSyncAt: new Date().toISOString() }, { merge: true });
+
+  if (await syncEnterpriseRecordAction(action)) {
+    return;
+  }
 
   const cloudPayload = getCloudPayloadForSyncAction(action);
   if (cloudPayload) {
@@ -5792,19 +5858,22 @@ function addStaff() {
     if (pin) staffData.pin = pin;
     staff[i] = staffData;
 
+    enqueueEnterpriseRecordChange('staff', staffData, 'upsert').catch(console.warn);
     appendAuditEvent('staff_updated', { staffName: name, role });
 
     const addBtn = document.querySelector('#staffTab .form-panel .btn[onclick="addStaff()"]');
     if (addBtn) addBtn.textContent = "Add Staff";
   } else {
-    staff.push(enrichEnterpriseRecord('staff', {
+    const staffData = enrichEnterpriseRecord('staff', {
       name,
       role,
       pin,
       permissions,
       isActive: true
-    }));
+    });
 
+    staff.push(staffData);
+    enqueueEnterpriseRecordChange('staff', staffData, 'upsert').catch(console.warn);
     appendAuditEvent('staff_created', { staffName: name, role });
   }
 
@@ -5818,6 +5887,7 @@ function addStaff() {
   renderStaffList();
   populateReportFilters();
 }
+
 function editStaff(index) {
   const member = staff[index];
   document.getElementById('staffNameInput').value = member.name;
@@ -5836,6 +5906,8 @@ function editStaff(index) {
 
 function toggleStaffStatus(index) {
   staff[index].isActive = staff[index].isActive === false ? true : false;
+  staff[index] = enrichEnterpriseRecord('staff', staff[index], staff[index]);
+  enqueueEnterpriseRecordChange('staff', staff[index], 'upsert').catch(console.warn);
   saveData();
   renderStaffList();
   populateReportFilters();
@@ -5877,6 +5949,9 @@ function saveStaffPermissions() {
   const permissions = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
 
   staff[index].permissions = permissions;
+  staff[index] = enrichEnterpriseRecord('staff', staff[index], staff[index]);
+  enqueueEnterpriseRecordChange('staff', staff[index], 'upsert').catch(console.warn);
+
   saveData();
   document.getElementById('staffPermissionsModal').style.display = 'none';
   alert("Permissions updated successfully.");
@@ -5885,6 +5960,9 @@ function saveStaffPermissions() {
 async function deleteStaff(index) {
   const confirmed = await showAppConfirm(`Are you sure you want to remove ${staff[index].name}?`, "Remove Staff", "Remove", "Cancel");
   if (!confirmed) return;
+
+  const staffToDelete = staff[index];
+  enqueueEnterpriseRecordChange('staff', staffToDelete, 'delete').catch(console.warn);
 
   staff.splice(index, 1);
   saveData();
@@ -6156,11 +6234,13 @@ function addUnit() {
   if (units.some(u => u.short.toLowerCase() === shortName.toLowerCase())) return alert("Unit short name already exists.");
   if (units.some(u => u.full.toLowerCase() === fullName.toLowerCase())) return alert("Unit full name already exists.");
 
-  units.push(enrichEnterpriseRecord('units', {
+  const unitData = enrichEnterpriseRecord('units', {
     short: shortName,
     full: fullName
-  }));
+  });
 
+  units.push(unitData);
+  enqueueEnterpriseRecordChange('units', unitData, 'upsert').catch(console.warn);
   units.sort((a, b) => a.short.localeCompare(b.short));
   nameInput.value = '';
   fullNameInput.value = '';
@@ -6175,6 +6255,8 @@ function addUnit() {
 function deleteUnit(index) {
   const unit = units[index];
   if (confirm(`Are you sure you want to delete the unit "${unit.short} (${unit.full})"?`)) {
+    const unitToDelete = units[index];
+    enqueueEnterpriseRecordChange('units', unitToDelete, 'delete').catch(console.warn);
     units.splice(index, 1);
     saveData();
     renderUnitList();
@@ -6239,6 +6321,8 @@ function addCustomer() {
     appendAuditEvent('customer_created', { customerName: customerData.name });
   }
 
+  enqueueEnterpriseRecordChange('customers', customerData, 'upsert').catch(console.warn);
+
   saveData();
   renderCustomerList();
   toggleAddCustomerForm(false);
@@ -6256,6 +6340,8 @@ function editCustomer(index) {
 
 function deleteCustomer(index) {
   if (confirm(`Are you sure you want to delete customer "${customers[index].name}"?`)) {
+    const customerToDelete = customers[index];
+    enqueueEnterpriseRecordChange('customers', customerToDelete, 'delete').catch(console.warn);
     customers.splice(index, 1);
     saveData();
     renderCustomerList();
@@ -7148,8 +7234,6 @@ async function mainInit() {
     mirrorEnterpriseRecordsToLocalStores().catch(error => {
       console.warn('[MIGRATION] Enterprise record mirror skipped:', error);
     });
-
-    // Background Cloud Sync
 
     // Background Cloud Sync
     onAuthStateChanged(auth, async (user) => {
