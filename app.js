@@ -7451,6 +7451,20 @@ async function mainInit() {
       console.warn('[MIGRATION] Enterprise record mirror skipped:', error);
     });
 
+    if (typeof localRepository?.getMetadata === 'function') {
+      localRepository.getMetadata('restoredBackupPendingCloudSync')
+        .then(pendingRestore => {
+          if (pendingRestore) {
+            addNotification(
+              "A restored backup is still local-only. Review it, then sync it to cloud when ready.",
+              "info",
+              "syncRestoredBackupToCloud()"
+            );
+          }
+        })
+        .catch(error => console.warn('[RESTORE] Pending restore check failed:', error));
+    }
+
     // Background Cloud Sync
     onAuthStateChanged(auth, async (user) => {
       currentUser = user;
@@ -8471,6 +8485,13 @@ async function restoreData() {
 
       await saveData(false);
       await mirrorEnterpriseRecordsToLocalStores({ force: true });
+      if (typeof localRepository?.setMetadata === 'function') {
+        await localRepository.setMetadata('restoredBackupPendingCloudSync', {
+          fileName: file.name,
+          backupVersion: restoredData.backupVersion || 1,
+          restoredAt: new Date().toISOString()
+        });
+      }
 
       renderDishesTable();
       renderMenu();
@@ -8491,6 +8512,11 @@ async function restoreData() {
 
       fileInput.value = '';
 
+      addNotification(
+        "Backup restored on this device. Review it, then sync it to cloud when ready.",
+        "info",
+        "syncRestoredBackupToCloud()"
+      );
       await showAppAlert("Backup restored on this device. Review the data before syncing to cloud.", "Restore Complete");
     } catch (error) {
       console.error("Restore failed:", error);
@@ -8500,6 +8526,52 @@ async function restoreData() {
 
   reader.readAsText(file);
 }
+async function syncRestoredBackupToCloud() {
+  const confirmed = await showAppConfirm(
+    "This will upload the restored backup data from this device to Firebase cloud. Continue only after you have reviewed the restored data.",
+    "Sync Restored Backup",
+    "Sync to Cloud",
+    "Cancel"
+  );
+
+  if (!confirmed) return;
+
+  try {
+    await mirrorEnterpriseRecordsToLocalStores({ force: true });
+
+    await Promise.allSettled([
+      ...(Array.isArray(menu) ? menu.map(record => enqueueEnterpriseRecordChange('products', record, 'upsert')) : []),
+      ...(Array.isArray(customers) ? customers.map(record => enqueueEnterpriseRecordChange('customers', record, 'upsert')) : []),
+      ...(Array.isArray(staff) ? staff.map(record => enqueueEnterpriseRecordChange('staff', record, 'upsert')) : []),
+      ...(Array.isArray(units) ? units.map(record => enqueueEnterpriseRecordChange('units', record, 'upsert')) : []),
+      ...(Array.isArray(restockHistory) ? restockHistory.map(record => enqueueEnterpriseRecordChange('inventory_history', record, 'upsert')) : [])
+    ]);
+
+    await saveData(true, {
+      allowEmptyOverwriteFields: [
+        'menu',
+        'staff',
+        'customers',
+        'dishCategories',
+        'units',
+        'restockHistory'
+      ]
+    });
+
+    await flushLocalSyncQueue();
+
+    appendAuditEvent('restored_backup_synced_to_cloud', {
+      syncedAt: new Date().toISOString()
+    });
+    await persistAuditTrail();
+
+    await showAppAlert("Restored backup has been queued and synced to cloud where possible.", "Cloud Sync Complete");
+  } catch (error) {
+    console.error("Restored backup cloud sync failed:", error);
+    await showAppAlert("Could not sync restored backup to cloud. Please check your internet connection and try again.", "Cloud Sync Failed");
+  }
+}
+
 
 // ===== Barcode Logic =====
 
@@ -9288,7 +9360,7 @@ Object.assign(window, {
   toggleAddCustomerForm, addCustomer, editCustomer, deleteCustomer, toggleTheme, exportReportToCSV,
   renderStockListTable, editStockItem, toggleStockAdjustmentForm,
   saveStockAdjustment, toggleNewStockItemForm, saveNewStockItem,
-  triggerAppUpdate, exportTransactionsToCSV, backupAllData, restoreData, prepareLogin,
+  triggerAppUpdate, exportTransactionsToCSV, backupAllData, restoreData, syncRestoredBackupToCloud, prepareLogin,
   manualBarcodeInput, startCameraScan, closeCameraScanner, startMobileConnection, login, loginWithEmail, registerWithEmail, handleForgotPassword, logout, syncNow,
   closeMobileConnectModal, generateAndPrintBarcodes, requestNotificationPermission,
   showLoginOverlay, testLocalNotification, toggleNotifications, dismissNotification, selectLoginRole, resetLoginStage,
