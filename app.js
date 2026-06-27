@@ -102,11 +102,12 @@ function enrichEnterpriseRecord(entityType, record = {}, existingRecord = null) 
   const now = new Date().toISOString();
   const context = getSyncMetadataContext();
   const currentVersion = Number(existingRecord?.version || record.version || 0);
+  const generatedId = record.id || record.recordId || existingRecord?.id || existingRecord?.recordId || createEntityId(entityType, record);
 
   return {
     ...record,
-    id: record.id || record.recordId || existingRecord?.id || createEntityId(entityType, record),
-    recordId: record.recordId || record.id || existingRecord?.recordId || createEntityId(entityType, record),
+    id: record.id || record.recordId || existingRecord?.id || generatedId,
+    recordId: record.recordId || record.id || existingRecord?.recordId || generatedId,
     businessId: record.businessId || existingRecord?.businessId || context.businessId,
     userId: record.userId || existingRecord?.userId || context.userId,
     staffId: record.staffId || existingRecord?.staffId || context.staffId,
@@ -117,6 +118,36 @@ function enrichEnterpriseRecord(entityType, record = {}, existingRecord = null) 
     syncStatus: record.syncStatus || 'pending',
     lastSyncAt: record.lastSyncAt || null
   };
+}
+
+function hydrateEnterpriseRecord(entityType, record = {}, index = 0) {
+  if (!record || typeof record !== 'object') return record;
+
+  const now = new Date().toISOString();
+  const context = getSyncMetadataContext();
+  const generatedId = record.id || record.recordId || createEntityId(entityType, { ...record, index });
+
+  return {
+    ...record,
+    id: record.id || generatedId,
+    recordId: record.recordId || record.id || generatedId,
+    businessId: record.businessId || context.businessId,
+    userId: record.userId || context.userId,
+    staffId: record.staffId || context.staffId,
+    deviceId: record.deviceId || context.deviceId,
+    createdAt: record.createdAt || record.date || now,
+    updatedAt: record.updatedAt || record.date || now,
+    version: Number(record.version || 1),
+    syncStatus: record.syncStatus || (record.lastSyncAt ? 'synced' : 'pending'),
+    lastSyncAt: record.lastSyncAt || null
+  };
+}
+
+function hydrateEnterpriseRecords(entityType, records = []) {
+  if (!Array.isArray(records)) return [];
+  return records
+    .filter(record => record && typeof record === 'object')
+    .map((record, index) => hydrateEnterpriseRecord(entityType, record, index));
 }
 let isInitialLoadComplete = false; // Safety flag to prevent overwriting cloud data on startup
 let isMonitoringMode = false; // Tracks if App Admin has activated monitoring context
@@ -6771,14 +6802,14 @@ function setupRealTimeSync(uid) {
                 return localVal || cloudVal || {};
               };
               pendingUpdate = {
-                menu: safeArray(getCloudMenuItems(cloudData), menu),
+                menu: hydrateEnterpriseRecords('products', safeArray(getCloudMenuItems(cloudData), menu)),
                 activeOrders: safeObj(cloudData.activeOrders, activeOrders),
                 settings: cloudData.settings ? { ...defaultSettings, ...cloudData.settings } : settings,
-                staff: safeArray(cloudData.staff, staff),
+                staff: hydrateEnterpriseRecords('staff', safeArray(cloudData.staff, staff)),
                 dishCategories: safeArray(getCloudCategoryList(cloudData), dishCategories),
-                customers: safeArray(cloudData.customers, customers),
-                units: safeArray(cloudData.units, units),
-                restockHistory: safeArray(cloudData.restockHistory, restockHistory),
+                customers: hydrateEnterpriseRecords('customers', safeArray(cloudData.customers, customers)),
+                units: hydrateEnterpriseRecords('units', safeArray(cloudData.units, units)),
+                restockHistory: hydrateEnterpriseRecords('inventoryHistory', safeArray(cloudData.restockHistory, restockHistory)),
                 appAdminSettings: {
                   ...defaultAppAdminSettings,
                   ...(cloudData.appAdminSettings || {})
@@ -7004,13 +7035,13 @@ async function mainInit() {
     settings = normalizeSettings(localData[3], defaultSettings);
 
     // Populate state from local storage immediately
-    menu = localData[0] || defaultMenu;
+    menu = hydrateEnterpriseRecords('products', localData[0] || defaultMenu);
     activeOrders = localData[1] || {};
-    transactions = localData[2] || [];
-    staff = localData[4] || defaultStaff;
+    transactions = hydrateEnterpriseRecords('sales', localData[2] || []);
+    staff = hydrateEnterpriseRecords('staff', localData[4] || defaultStaff);
     dishCategories = localData[5] || defaultDishCategories;
-    customers = localData[6] || [];
-    units = localData[7] || [
+    customers = hydrateEnterpriseRecords('customers', localData[6] || []);
+    units = hydrateEnterpriseRecords('units', localData[7] || [
       { full: 'Bottle', short: 'btl' },
       { full: 'Box', short: 'box' },
       { full: 'Can', short: 'can' },
@@ -7027,8 +7058,8 @@ async function mainInit() {
       { full: 'Piece', short: 'pc' },
       { full: 'Pint', short: 'pt' },
       { full: 'Pound', short: 'lb' }
-    ];
-    restockHistory = localData[8] || [];
+    ]);
+    restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[8] || []);
     appAdminSettings = {
       ...defaultAppAdminSettings,
       ...(localData[9] || {})
