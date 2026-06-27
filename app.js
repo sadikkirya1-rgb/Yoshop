@@ -617,6 +617,7 @@ function getCloudPayloadForSyncAction(action) {
   const value = action.payload.value ?? action.payload;
   switch (action.entityType) {
     case 'products': return { menu: Array.isArray(value) ? value : [] };
+    case 'staff': return { staff: Array.isArray(value) ? value : [] };
     case 'categories': return { dishCategories: Array.isArray(value) ? value : [] };
     case 'brands': return { brands: Array.isArray(value) ? value : [] };
     case 'units': return { units: Array.isArray(value) ? value : [] };
@@ -5686,24 +5687,43 @@ function addStaff() {
 
   if (index !== '') {
     const i = parseInt(index, 10);
-    staff[i] = { ...staff[i], name, role, permissions };
-    if (pin) staff[i].pin = pin; // Only update pin if provided
+    const existingStaff = staff[i] || {};
+    const staffData = enrichEnterpriseRecord('staff', {
+      ...existingStaff,
+      name,
+      role,
+      permissions
+    }, existingStaff);
+
+    if (pin) staffData.pin = pin;
+    staff[i] = staffData;
+
+    appendAuditEvent('staff_updated', { staffName: name, role });
+
     const addBtn = document.querySelector('#staffTab .form-panel .btn[onclick="addStaff()"]');
     if (addBtn) addBtn.textContent = "Add Staff";
   } else {
-    staff.push({ name, role, pin, permissions, isActive: true });
+    staff.push(enrichEnterpriseRecord('staff', {
+      name,
+      role,
+      pin,
+      permissions,
+      isActive: true
+    }));
+
+    appendAuditEvent('staff_created', { staffName: name, role });
   }
 
-  nameInput.value = ''; // Clear input
-  roleInput.value = ''; // Clear role input
+  nameInput.value = '';
+  roleInput.value = '';
   pinInput.value = '';
   indexInput.value = '';
-  checkboxes.forEach(cb => cb.checked = (cb.value === 'menuTab')); // Reset to default
+  checkboxes.forEach(cb => cb.checked = (cb.value === 'menuTab'));
+
   saveData();
   renderStaffList();
   populateReportFilters();
 }
-
 function editStaff(index) {
   const member = staff[index];
   document.getElementById('staffNameInput').value = member.name;
@@ -6037,13 +6057,22 @@ function addUnit() {
   const fullNameInput = document.getElementById('unitFullNameInput');
   const shortName = nameInput.value.trim();
   const fullName = fullNameInput.value.trim();
+
   if (!shortName || !fullName) return alert("Both short name and full name are required.");
   if (units.some(u => u.short.toLowerCase() === shortName.toLowerCase())) return alert("Unit short name already exists.");
   if (units.some(u => u.full.toLowerCase() === fullName.toLowerCase())) return alert("Unit full name already exists.");
-  units.push({ short: shortName, full: fullName });
+
+  units.push(enrichEnterpriseRecord('units', {
+    short: shortName,
+    full: fullName
+  }));
+
   units.sort((a, b) => a.short.localeCompare(b.short));
   nameInput.value = '';
   fullNameInput.value = '';
+
+  appendAuditEvent('unit_created', { shortName, fullName });
+
   saveData();
   renderUnitList();
   populateUnitDropdown();
@@ -6099,16 +6128,21 @@ function addCustomer() {
 
   if (!nameInput.value.trim()) return alert("Customer name is required.");
 
-  const customerData = {
+  const parsedIndex = index !== '' ? parseInt(index, 10) : -1;
+  const existingCustomer = parsedIndex >= 0 ? customers[parsedIndex] : null;
+
+  const customerData = enrichEnterpriseRecord('customers', {
     name: nameInput.value.trim(),
     contact: contactInput.value.trim(),
     address: addressInput.value.trim()
-  };
+  }, existingCustomer);
 
   if (index !== '') {
-    customers[parseInt(index, 10)] = customerData;
+    customers[parsedIndex] = customerData;
+    appendAuditEvent('customer_updated', { customerName: customerData.name });
   } else {
     customers.push(customerData);
+    appendAuditEvent('customer_created', { customerName: customerData.name });
   }
 
   saveData();
@@ -6412,12 +6446,14 @@ function saveStockAdjustment() {
   const oldStock = menu[index].stock;
   menu[index].stock = newStock;
 
-  restockHistory.unshift({
+  restockHistory.unshift(enrichEnterpriseRecord('inventoryHistory', {
     date: new Date().toISOString(),
     itemName: menu[index].name,
+    itemId: menu[index].recordId || menu[index].id || null,
     adjustment: newStock - oldStock,
-    newTotal: newStock
-  });
+    newTotal: newStock,
+    note: 'Manual Stock Adjustment'
+  }));
   if (restockHistory.length > 100) restockHistory.pop();
 
   saveData();
@@ -6536,13 +6572,13 @@ function saveNewStockItem() {
       image: undefined
     };
 
-    restockHistory.unshift({
+    restockHistory.unshift(enrichEnterpriseRecord('inventoryHistory', {
       date: new Date().toISOString(),
       itemName: name,
       adjustment: stock,
       newTotal: stock,
       note: 'Initial Stock'
-    });
+    }));
     menu.push(newItem);
     alert(`Item "${name}" added successfully.`);
   }
