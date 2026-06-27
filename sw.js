@@ -45,9 +45,7 @@ const APP_SHELL_URLS = [
 function sameOriginCacheKey(request) {
   const url = new URL(request.url);
 
-  if (url.origin !== self.location.origin) {
-    return request;
-  }
+  if (url.origin !== self.location.origin) return request;
 
   const querylessPaths = [
     '/app.js',
@@ -63,11 +61,7 @@ function sameOriginCacheKey(request) {
     '/permission-utils.mjs'
   ];
 
-  if (querylessPaths.includes(url.pathname)) {
-    return url.pathname;
-  }
-
-  return request;
+  return querylessPaths.includes(url.pathname) ? url.pathname : request;
 }
 
 self.addEventListener('install', (event) => {
@@ -75,9 +69,7 @@ self.addEventListener('install', (event) => {
 
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return Promise.allSettled(
-        APP_SHELL_URLS.map((url) => cache.add(url))
-      );
+      return Promise.allSettled(APP_SHELL_URLS.map((url) => cache.add(url)));
     })
   );
 });
@@ -99,10 +91,7 @@ self.addEventListener('fetch', (event) => {
 
   if (request.method !== 'GET') return;
 
-  if (
-    request.url.includes('fiveserver.js') ||
-    request.url.includes('livereload.js')
-  ) {
+  if (request.url.includes('fiveserver.js') || request.url.includes('livereload.js')) {
     return;
   }
 
@@ -111,9 +100,7 @@ self.addEventListener('fetch', (event) => {
       fetch(request)
         .then((response) => {
           const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => {
-            cache.put('/index.html', copy);
-          });
+          caches.open(CACHE_NAME).then((cache) => cache.put('/index.html', copy));
           return response;
         })
         .catch(async () => {
@@ -137,9 +124,7 @@ self.addEventListener('fetch', (event) => {
 
         return fetch(request)
           .then((networkResponse) => {
-            if (!networkResponse || networkResponse.status !== 200) {
-              return networkResponse;
-            }
+            if (!networkResponse || networkResponse.status !== 200) return networkResponse;
 
             const url = new URL(request.url);
             const shouldRuntimeCache =

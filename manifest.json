@@ -3,6 +3,7 @@
   "short_name": "YoShop",
   "description": "YoShop POS System",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#f82c33",
