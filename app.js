@@ -6780,7 +6780,6 @@ function saveNewStockItem() {
         }
       });
     }
-    enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
 
     if (sellingPriceInput && !isNaN(parseFloat(sellingPriceInput))) {
       item.price = parseFloat(sellingPriceInput);
@@ -6788,6 +6787,7 @@ function saveNewStockItem() {
       // Recalculate price based on markup in case cost changed
       item.price = costPrice * (1 + ((settings.defaultMarkup || 200) / 100));
     }
+    enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
     alert(`Item "${name}" updated successfully.`);
   } else {
     // Add new item
