@@ -51,6 +51,10 @@ service cloud.firestore {
         allow read, write: if isOwnerOrAdmin(userId);
       }
 
+      match /inventory_history/{recordId} {
+        allow read, write: if isOwnerOrAdmin(userId);
+      }
+
       match /audit_log/{recordId} {
         allow read, write: if isOwnerOrAdmin(userId);
       }

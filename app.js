@@ -882,7 +882,8 @@ function getCloudCategoryList(cloudData = {}) {
 const RECORD_SYNC_COLLECTIONS = {
   customerRecord: 'customers',
   staffRecord: 'staff',
-  unitRecord: 'units'
+  unitRecord: 'units',
+  inventoryHistoryRecord: 'inventory_history'
 };
 
 async function syncEnterpriseRecordAction(action) {
@@ -918,7 +919,8 @@ async function enqueueEnterpriseRecordChange(collectionName, record, operation =
   const entityTypeMap = {
     customers: 'customerRecord',
     staff: 'staffRecord',
-    units: 'unitRecord'
+    units: 'unitRecord',
+    inventory_history: 'inventoryHistoryRecord'
   };
 
   const entityType = entityTypeMap[collectionName];
@@ -953,7 +955,8 @@ async function backfillEnterpriseRecordCollectionsOnce(uid) {
   const backfillGroups = [
     { collectionName: 'customers', entityType: 'customers', records: customers },
     { collectionName: 'staff', entityType: 'staff', records: staff },
-    { collectionName: 'units', entityType: 'units', records: units }
+    { collectionName: 'units', entityType: 'units', records: units },
+    { collectionName: 'inventory_history', entityType: 'inventoryHistory', records: restockHistory }
   ];
 
   for (const group of backfillGroups) {
@@ -6669,14 +6672,16 @@ function saveStockAdjustment() {
   const oldStock = menu[index].stock;
   menu[index].stock = newStock;
 
-  restockHistory.unshift(enrichEnterpriseRecord('inventoryHistory', {
+  const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
     date: new Date().toISOString(),
     itemName: menu[index].name,
     itemId: menu[index].recordId || menu[index].id || null,
     adjustment: newStock - oldStock,
     newTotal: newStock,
     note: 'Manual Stock Adjustment'
-  }));
+  });
+  restockHistory.unshift(restockRecord);
+  enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
   if (restockHistory.length > 100) restockHistory.pop();
 
   saveData();
@@ -6795,13 +6800,16 @@ function saveNewStockItem() {
       image: undefined
     };
 
-    restockHistory.unshift(enrichEnterpriseRecord('inventoryHistory', {
+    const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
       date: new Date().toISOString(),
       itemName: name,
       adjustment: stock,
       newTotal: stock,
       note: 'Initial Stock'
-    }));
+    });
+
+    restockHistory.unshift(restockRecord);
+    enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
     menu.push(newItem);
     alert(`Item "${name}" added successfully.`);
   }
@@ -6989,6 +6997,16 @@ function setupEnterpriseRecordCollectionSync(uid) {
       getRecords: () => units,
       setRecords: records => { units = records; },
       render: () => { renderUnitList(); populateUnitDropdown(); }
+    }
+    ,
+    {
+      collectionName: 'inventory_history',
+      entityType: 'inventoryHistory',
+      getRecords: () => restockHistory,
+      setRecords: records => {
+        restockHistory = records.sort((a, b) => new Date(b.date || b.updatedAt || 0) - new Date(a.date || a.updatedAt || 0)).slice(0, 100);
+      },
+      render: () => { renderRestockHistoryTable(); renderInventoryReport(); }
     }
   ];
 
