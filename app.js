@@ -941,6 +941,50 @@ async function enqueueEnterpriseRecordChange(collectionName, record, operation =
   });
 }
 
+async function backfillEnterpriseRecordCollectionsOnce(uid) {
+  if (!uid || !dbFirestore || !localRepositoryReady || !localRepository) return;
+
+  const metadataKey = `enterpriseRecordBackfill:${uid}`;
+  if (typeof localRepository.getMetadata === 'function') {
+    const alreadyBackfilled = await localRepository.getMetadata(metadataKey);
+    if (alreadyBackfilled) return;
+  }
+
+  const backfillGroups = [
+    { collectionName: 'customers', entityType: 'customers', records: customers },
+    { collectionName: 'staff', entityType: 'staff', records: staff },
+    { collectionName: 'units', entityType: 'units', records: units }
+  ];
+
+  for (const group of backfillGroups) {
+    const records = Array.isArray(group.records) ? group.records : [];
+
+    for (const record of records) {
+      if (!record || typeof record !== 'object') continue;
+
+      const hydratedRecord = hydrateEnterpriseRecord(group.entityType, record);
+      const recordId = hydratedRecord.recordId || hydratedRecord.id;
+      if (!recordId) continue;
+
+      await setDoc(
+        doc(dbFirestore, 'users', uid, group.collectionName, String(recordId)),
+        {
+          ...hydratedRecord,
+          syncStatus: 'synced',
+          lastSyncedAt: new Date().toISOString(),
+          lastSyncAt: new Date().toISOString()
+        },
+        { merge: true }
+      );
+    }
+  }
+
+  if (typeof localRepository.setMetadata === 'function') {
+    await localRepository.setMetadata(metadataKey, new Date().toISOString());
+  }
+}
+
+
 async function syncCloudAction(action) {
   const queueCollectionPath = getSyncQueueCollectionPath(currentUser.uid);
   const queueDocRef = doc(collection(dbFirestore, ...queueCollectionPath), action.id);
@@ -5860,7 +5904,6 @@ function addStaff() {
 
     enqueueEnterpriseRecordChange('staff', staffData, 'upsert').catch(console.warn);
     appendAuditEvent('staff_updated', { staffName: name, role });
-
     const addBtn = document.querySelector('#staffTab .form-panel .btn[onclick="addStaff()"]');
     if (addBtn) addBtn.textContent = "Add Staff";
   } else {
@@ -7018,6 +7061,9 @@ function setupRealTimeSync(uid) {
     console.log('🟢 [SYNC] Setting up real-time listener for cross-device sync...');
     setupRealTimeTransactionsSync(uid);
     setupEnterpriseRecordCollectionSync(uid);
+    backfillEnterpriseRecordCollectionsOnce(uid).catch(error => {
+      console.warn('[MIGRATION] Enterprise record backfill skipped:', error);
+    });
 
     // ===== PRODUCTION OPTIMIZATION: Debounced real-time updates =====
     let pendingUpdate = null;
