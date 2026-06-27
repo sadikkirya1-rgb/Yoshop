@@ -7534,6 +7534,9 @@ async function mainInit() {
           }
           if (navigator.onLine) {
             await flushLocalSyncQueue();
+            if (typeof localRepository?.setMetadata === 'function') {
+              await localRepository.setMetadata('restoredBackupPendingCloudSync', null);
+            }
             await scheduleBackgroundSync();
           }
         } catch (e) {
