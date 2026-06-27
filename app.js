@@ -6881,6 +6881,111 @@ function notifyOtherTabsAboutCloudChange(targetUid) {
  * Sets up real-time listener for cross-device/cross-tab synchronization
  * Updates all tabs/devices instantly when cloud data changes
  */
+let unsubscribeEnterpriseRecordSyncs = [];
+
+function stopEnterpriseRecordSyncs() {
+  unsubscribeEnterpriseRecordSyncs.forEach(unsubscribe => {
+    try { unsubscribe(); } catch (error) { console.warn('[SYNC] Record listener cleanup failed:', error); }
+  });
+  unsubscribeEnterpriseRecordSyncs = [];
+}
+
+function getEnterpriseRecordId(record = {}) {
+  return record.recordId || record.id || record.name || record.short || '';
+}
+
+function upsertEnterpriseRecord(records = [], incomingRecord = {}, entityType) {
+  const hydratedRecord = hydrateEnterpriseRecord(entityType, incomingRecord);
+  const incomingId = getEnterpriseRecordId(hydratedRecord);
+  if (!incomingId) return records;
+
+  const nextRecords = Array.isArray(records) ? [...records] : [];
+  const index = nextRecords.findIndex(record => getEnterpriseRecordId(record) === incomingId);
+
+  if (index >= 0) {
+    nextRecords[index] = {
+      ...nextRecords[index],
+      ...hydratedRecord
+    };
+  } else {
+    nextRecords.push(hydratedRecord);
+  }
+
+  return nextRecords;
+}
+
+function removeEnterpriseRecord(records = [], removedRecord = {}) {
+  const removedId = getEnterpriseRecordId(removedRecord);
+  if (!removedId || !Array.isArray(records)) return records;
+  return records.filter(record => getEnterpriseRecordId(record) !== removedId);
+}
+
+function setupEnterpriseRecordCollectionSync(uid) {
+  if (!dbFirestore || !uid) return;
+
+  stopEnterpriseRecordSyncs();
+
+  const collectionConfigs = [
+    {
+      collectionName: 'customers',
+      entityType: 'customers',
+      getRecords: () => customers,
+      setRecords: records => { customers = records; },
+      render: () => { renderCustomerList(); }
+    },
+    {
+      collectionName: 'staff',
+      entityType: 'staff',
+      getRecords: () => staff,
+      setRecords: records => { staff = records; },
+      render: () => { renderStaffList(); populateReportFilters(); }
+    },
+    {
+      collectionName: 'units',
+      entityType: 'units',
+      getRecords: () => units,
+      setRecords: records => { units = records; },
+      render: () => { renderUnitList(); populateUnitDropdown(); }
+    }
+  ];
+
+  unsubscribeEnterpriseRecordSyncs = collectionConfigs.map(config => {
+    const recordRef = collection(dbFirestore, 'users', uid, config.collectionName);
+
+    return onSnapshot(
+      recordRef,
+      { includeMetadataChanges: true },
+      async snapshot => {
+        if (snapshot.metadata.hasPendingWrites) return;
+
+        let nextRecords = config.getRecords();
+
+        snapshot.docChanges().forEach(change => {
+          const record = {
+            ...change.doc.data(),
+            id: change.doc.data().id || change.doc.id,
+            recordId: change.doc.data().recordId || change.doc.data().id || change.doc.id
+          };
+
+          if (change.type === 'removed') {
+            nextRecords = removeEnterpriseRecord(nextRecords, record);
+          } else {
+            nextRecords = upsertEnterpriseRecord(nextRecords, record, config.entityType);
+          }
+        });
+
+        config.setRecords(nextRecords);
+        config.render();
+        updateDashboard();
+
+        await saveData(false);
+      },
+      error => {
+        console.warn(`[SYNC] ${config.collectionName} record listener failed:`, error);
+      }
+    );
+  });
+}
 function setupRealTimeSync(uid) {
   if (!dbFirestore) {
     console.warn("🔴 Firestore not initialized, skipping real-time sync");
@@ -6889,6 +6994,7 @@ function setupRealTimeSync(uid) {
   }
 
   if (unsubscribeSync) unsubscribeSync();
+  stopEnterpriseRecordSyncs();
   if (unsubscribeTransactionsSync) {
     unsubscribeTransactionsSync();
     unsubscribeTransactionsSync = null;
@@ -6911,6 +7017,7 @@ function setupRealTimeSync(uid) {
   try {
     console.log('🟢 [SYNC] Setting up real-time listener for cross-device sync...');
     setupRealTimeTransactionsSync(uid);
+    setupEnterpriseRecordCollectionSync(uid);
 
     // ===== PRODUCTION OPTIMIZATION: Debounced real-time updates =====
     let pendingUpdate = null;
