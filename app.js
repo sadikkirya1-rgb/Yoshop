@@ -6755,8 +6755,6 @@ function saveNewStockItem() {
     item.costPrice = costPrice;
     item.stock = stock;
     menu[index] = enrichEnterpriseRecord('products', item, item);
-    enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
-
     // If name changed, update all recipes and active orders to keep the app working perfectly
     if (oldName !== name) {
       // Identify which products will be affected by this rename
@@ -6782,6 +6780,7 @@ function saveNewStockItem() {
         }
       });
     }
+    enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
 
     if (sellingPriceInput && !isNaN(parseFloat(sellingPriceInput))) {
       item.price = parseFloat(sellingPriceInput);
@@ -6956,6 +6955,22 @@ function getEnterpriseRecordId(record = {}) {
   return record.recordId || record.id || record.name || record.short || '';
 }
 
+function getRecordTimestamp(record = {}) {
+  const value = record.updatedAt || record.lastSyncAt || record.lastSyncedAt || record.createdAt || record.date || '';
+  const timestamp = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function shouldAcceptIncomingRecord(localRecord = {}, incomingRecord = {}) {
+  const localVersion = Number(localRecord.version || 0);
+  const incomingVersion = Number(incomingRecord.version || 0);
+
+  if (incomingVersion > localVersion) return true;
+  if (incomingVersion < localVersion) return false;
+
+  return getRecordTimestamp(incomingRecord) >= getRecordTimestamp(localRecord);
+}
+
 function upsertEnterpriseRecord(records = [], incomingRecord = {}, entityType) {
   const hydratedRecord = hydrateEnterpriseRecord(entityType, incomingRecord);
   const incomingId = getEnterpriseRecordId(hydratedRecord);
@@ -6965,8 +6980,13 @@ function upsertEnterpriseRecord(records = [], incomingRecord = {}, entityType) {
   const index = nextRecords.findIndex(record => getEnterpriseRecordId(record) === incomingId);
 
   if (index >= 0) {
+    const localRecord = nextRecords[index];
+    if (!shouldAcceptIncomingRecord(localRecord, hydratedRecord)) {
+      return nextRecords;
+    }
+
     nextRecords[index] = {
-      ...nextRecords[index],
+      ...localRecord,
       ...hydratedRecord
     };
   } else {
