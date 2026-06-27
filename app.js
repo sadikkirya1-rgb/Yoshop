@@ -7394,7 +7394,83 @@ async function updateVersionDisplay() {
     displayEl.textContent = '1.5.0'; // Fallback
   }
 }
+async function loadLocalBusinessDataForUid(uid, options = {}) {
+  const effectiveUid = uid || localStorage.getItem('lastUserUid') || sessionStorage.getItem('currentUserUid') || 'guest';
 
+  await initDB(effectiveUid);
+
+  const localData = await Promise.all([
+    loadState('menu'),
+    loadState('activeOrders'),
+    loadState('transactions'),
+    loadState('settings'),
+    loadState('staff'),
+    loadState('dishCategories'),
+    loadState('customers'),
+    loadState('units'),
+    loadState('restockHistory'),
+    loadState('appAdminSettings'),
+    loadState('auditTrail')
+  ]);
+
+  settings = normalizeSettings(localData[3], defaultSettings);
+  menu = hydrateEnterpriseRecords('products', localData[0] || []);
+  activeOrders = localData[1] || {};
+  transactions = hydrateEnterpriseRecords('sales', localData[2] || []);
+  staff = hydrateEnterpriseRecords('staff', localData[4] || []);
+  dishCategories = localData[5] || [];
+  customers = hydrateEnterpriseRecords('customers', localData[6] || []);
+  units = hydrateEnterpriseRecords('units', localData[7] || [
+    { full: 'Bottle', short: 'btl' },
+    { full: 'Box', short: 'box' },
+    { full: 'Can', short: 'can' },
+    { full: 'Case', short: 'case' },
+    { full: 'Each', short: 'each' },
+    { full: 'Fluid Ounce', short: 'fl oz' },
+    { full: 'Gallon', short: 'gal' },
+    { full: 'Gram', short: 'g' },
+    { full: 'Kilogram', short: 'kg' },
+    { full: 'Litre', short: 'L' },
+    { full: 'Millilitre', short: 'ml' },
+    { full: 'Ounce', short: 'oz' },
+    { full: 'Pack', short: 'pk' },
+    { full: 'Piece', short: 'pc' },
+    { full: 'Pint', short: 'pt' },
+    { full: 'Pound', short: 'lb' }
+  ]);
+  restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[8] || []);
+  appAdminSettings = {
+    ...defaultAppAdminSettings,
+    ...(localData[9] || {})
+  };
+  auditTrail = Array.isArray(localData[10]) ? localData[10] : [];
+
+  settings = normalizeSettings(settings, defaultSettings);
+  applyTheme();
+
+  if (options.refresh !== false) {
+    populateCurrencies();
+    updateDashboard();
+    renderDishesTable();
+    renderMenu();
+    renderTransactions();
+    renderCategoryList();
+    renderInventoryReport();
+    renderStockListTable();
+    renderCustomerList();
+    renderStaffList();
+    renderUnitList();
+    renderRestockHistoryTable();
+    populateCategoryDropdown();
+    populateCategoryFilter();
+    populateReportFilters();
+    populateUnitDropdown();
+    loadSettings();
+    refreshCurrentView();
+  }
+
+  return localData;
+}
 // ===== Main App Initialization =====
 async function mainInit() {
   try {
@@ -7404,7 +7480,7 @@ async function mainInit() {
     }
 
     // Determine which local DB to open based on session
-    const lastUid = sessionStorage.getItem('currentUserUid') || 'guest';
+    const lastUid = sessionStorage.getItem('currentUserUid') || localStorage.getItem('lastUserUid') || 'guest';
     await initDB(lastUid);
 
     // Request persistent storage to prevent browser from clearing data
@@ -7555,11 +7631,16 @@ async function mainInit() {
           staff = [];
           dishCategories = [];
           customers = [];
+          units = [];
           restockHistory = [];
           settings = { ...defaultSettings };
           auditTrail = [];
-          sessionStorage.setItem('currentUserUid', user.uid);
         }
+
+        sessionStorage.setItem('currentUserUid', user.uid);
+        localStorage.setItem('lastUserUid', user.uid);
+
+        await loadLocalBusinessDataForUid(user.uid, { refresh: true });
 
         // Run tenant initialization for normal users to ensure private data exists
         try {
@@ -7578,6 +7659,7 @@ async function mainInit() {
         try {
           // Clear session and local storage items used for identity and caches
           sessionStorage.removeItem('currentUserUid');
+          localStorage.removeItem('lastUserUid');
           sessionStorage.removeItem('currentUserRole');
           sessionStorage.removeItem('currentUserPermissions');
           sessionStorage.removeItem('isPinVerified');
