@@ -166,7 +166,10 @@ async function mirrorEnterpriseRecordsToLocalStores() {
   await Promise.allSettled(
     mirrorJobs
       .filter(([, record]) => record && typeof record === 'object')
-      .map(([entityType, record]) => localRepository.saveEntity(entityType, record, { enqueueSync: false }))
+      .map(([entityType, record]) => localRepository.saveEntity(entityType, record, {
+        enqueueSync: false,
+        preserveVersion: true
+      }))
   );
 }
 

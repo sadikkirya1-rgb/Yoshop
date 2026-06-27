@@ -23,7 +23,7 @@ const DEFAULT_ENTITY_STORES = [
   'notifications',
   'auditLog',
   'activityLog',
-  'settings',  'appAdminSettings',  'businessProfile',
+  'settings', 'appAdminSettings', 'businessProfile',
   'subscription',
   'productImages',
   'metadata',
@@ -142,7 +142,7 @@ function createMemoryDatabase(dbName) {
         }
       };
     },
-    close() {}
+    close() { }
   };
 }
 
@@ -361,7 +361,7 @@ export function createBusinessRepository(options = {}) {
         id: entity?.id || entity?._id || createEntityId(storeNameForEntity, entity),
         createdAt: entity?.createdAt || now,
         updatedAt: entity?.updatedAt || now,
-        version: (entity?.version || 0) + 1,
+        version: options.preserveVersion ? Number(entity?.version || 1) : (entity?.version || 0) + 1,
         businessId: entity?.businessId || userId,
         userId: entity?.userId || userId,
         staffId: entity?.staffId || 'system',
