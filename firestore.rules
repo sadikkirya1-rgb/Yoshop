@@ -43,6 +43,10 @@ service cloud.firestore {
         allow read, write: if isOwnerOrAdmin(userId);
       }
 
+      match /products/{recordId} {
+        allow read, write: if isOwnerOrAdmin(userId);
+      }
+
       match /staff/{recordId} {
         allow read, write: if isOwnerOrAdmin(userId);
       }

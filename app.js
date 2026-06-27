@@ -880,6 +880,7 @@ function getCloudCategoryList(cloudData = {}) {
 }
 
 const RECORD_SYNC_COLLECTIONS = {
+  productRecord: 'products',
   customerRecord: 'customers',
   staffRecord: 'staff',
   unitRecord: 'units',
@@ -917,6 +918,7 @@ async function enqueueEnterpriseRecordChange(collectionName, record, operation =
   if (!record || typeof record !== 'object') return;
 
   const entityTypeMap = {
+    products: 'productRecord',
     customers: 'customerRecord',
     staff: 'staffRecord',
     units: 'unitRecord',
@@ -953,6 +955,7 @@ async function backfillEnterpriseRecordCollectionsOnce(uid) {
   }
 
   const backfillGroups = [
+    { collectionName: 'products', entityType: 'products', records: menu },
     { collectionName: 'customers', entityType: 'customers', records: customers },
     { collectionName: 'staff', entityType: 'staff', records: staff },
     { collectionName: 'units', entityType: 'units', records: units },
@@ -3071,6 +3074,7 @@ async function addDish(buttonElement) {
       }, menu[index]);
 
       menu[index] = dishData;
+      enqueueEnterpriseRecordChange('products', dishData, 'upsert').catch(console.warn);
 
 
       // Propagate name change to other product recipes if this dish is used as a sub-component
@@ -3113,6 +3117,7 @@ async function addDish(buttonElement) {
       document.getElementById('dishBarcode').value = '';
       imageInput.value = ''; // Reset file input
       menu.push(dishData);
+      enqueueEnterpriseRecordChange('products', dishData, 'upsert').catch(console.warn);
     }
 
     // Force update all orders to sync new prices/details
@@ -3943,6 +3948,7 @@ async function deleteItem(i) {
   } else if (!confirm(`Are you sure you want to delete ${item.name}?`)) {
     return;
   }
+  enqueueEnterpriseRecordChange('products', item, 'delete').catch(console.warn);
 
   menu.splice(index, 1);
   saveData(); // Persist the deletion
@@ -6671,6 +6677,8 @@ function saveStockAdjustment() {
 
   const oldStock = menu[index].stock;
   menu[index].stock = newStock;
+  menu[index] = enrichEnterpriseRecord('products', menu[index], menu[index]);
+  enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
 
   const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
     date: new Date().toISOString(),
@@ -6746,6 +6754,8 @@ function saveNewStockItem() {
     item.unit = unit;
     item.costPrice = costPrice;
     item.stock = stock;
+    menu[index] = enrichEnterpriseRecord('products', item, item);
+    enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
 
     // If name changed, update all recipes and active orders to keep the app working perfectly
     if (oldName !== name) {
@@ -6790,7 +6800,7 @@ function saveNewStockItem() {
       const markup = (settings.defaultMarkup || 200) / 100;
       price = costPrice * (1 + markup);
     }
-    const newItem = {
+    const newItem = enrichEnterpriseRecord('products', {
       name,
       category: null, // No default category
       costPrice,
@@ -6798,7 +6808,7 @@ function saveNewStockItem() {
       unit,
       price,
       image: undefined
-    };
+    });
 
     const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
       date: new Date().toISOString(),
@@ -6811,6 +6821,7 @@ function saveNewStockItem() {
     restockHistory.unshift(restockRecord);
     enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
     menu.push(newItem);
+    enqueueEnterpriseRecordChange('products', newItem, 'upsert').catch(console.warn);
     alert(`Item "${name}" added successfully.`);
   }
 
@@ -6977,6 +6988,20 @@ function setupEnterpriseRecordCollectionSync(uid) {
   stopEnterpriseRecordSyncs();
 
   const collectionConfigs = [
+    {
+      collectionName: 'products',
+      entityType: 'products',
+      getRecords: () => menu,
+      setRecords: records => { menu = records; },
+      render: () => {
+        renderMenu();
+        renderDishesTable();
+        renderStockListTable();
+        renderInventoryReport();
+        populateCategoryFilter();
+      }
+    },
+
     {
       collectionName: 'customers',
       entityType: 'customers',
