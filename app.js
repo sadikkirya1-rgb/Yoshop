@@ -755,6 +755,7 @@ async function enqueueLocalSyncAction(action) {
   const envelope = await repositoryService.enqueueSyncAction(action);
   if (envelope) {
     pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
+    updateOnlineStatus();
   }
   return envelope;
 }
@@ -2204,58 +2205,135 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null) 
   } catch (e) { console.warn("Could not load transactions from collection:", e); }
 }
 
+async function getPendingSyncSummary() {
+  let queue = Array.isArray(pendingSyncQueue) ? pendingSyncQueue : [];
+
+  try {
+    if (localRepositoryReady && localRepository && typeof localRepository.getSyncQueue === 'function') {
+      queue = await localRepository.getSyncQueue();
+      pendingSyncQueue = queue;
+    }
+  } catch (error) {
+    console.warn('[SYNC] Could not read local sync queue:', error);
+  }
+
+  const unsyncedTransactions = Array.isArray(transactions)
+    ? transactions.filter(tx => tx && tx.synced !== true).length
+    : 0;
+
+  const retryCount = queue.filter(item => item && (item.syncStatus === 'retry' || item.syncStatus === 'failed')).length;
+  const pendingCount = queue.length + unsyncedTransactions;
+
+  return {
+    queue,
+    pendingCount,
+    retryCount,
+    unsyncedTransactions
+  };
+}
+
+function renderSyncStatus({ state, label, title, background, showBadge = true }) {
+  const statusEl = document.getElementById('connectivity-status');
+  const syncBadgeEl = document.getElementById('sync-badge');
+  const syncBtn = document.getElementById('header-sync-status');
+
+  if (statusEl) {
+    statusEl.textContent = state;
+    statusEl.title = title;
+  }
+
+  if (syncBtn) {
+    syncBtn.title = title;
+    syncBtn.setAttribute('data-tooltip', title);
+  }
+
+  if (syncBadgeEl) {
+    syncBadgeEl.textContent = label;
+    syncBadgeEl.style.display = showBadge ? 'inline-flex' : 'none';
+    syncBadgeEl.style.background = background;
+  }
+}
+
 async function syncNow() {
   if (!currentUser) return alert("Please login to sync data to the cloud.");
+
   const statusEl = document.getElementById('connectivity-status');
   const syncBtn = document.getElementById('header-sync-status');
 
-  statusEl.innerHTML = '<span class="spinner" style="width:14px; height:14px; border-width:2px; margin:0;"></span>';
-  syncBtn.disabled = true;
+  if (statusEl) {
+    statusEl.innerHTML = '<span class="spinner" style="width:14px; height:14px; border-width:2px; margin:0;"></span>';
+  }
+  if (syncBtn) syncBtn.disabled = true;
 
   try {
+    if (!navigator.onLine) {
+      await updateOnlineStatus();
+      return alert("You are offline. Your changes are saved locally and will sync when internet returns.");
+    }
+
     await saveData();
+    await flushLocalSyncQueue();
+
+    syncFailureCount = 0;
   } catch (e) {
+    syncFailureCount++;
     alert("Sync failed: " + e.message);
   } finally {
-    syncBtn.disabled = false;
-    updateOnlineStatus();
+    if (syncBtn) syncBtn.disabled = false;
+    await updateOnlineStatus();
   }
 }
 
-function updateOnlineStatus() {
+async function updateOnlineStatus() {
   const statusEl = document.getElementById('connectivity-status');
-  const syncBadgeEl = document.getElementById('sync-badge');
   if (!statusEl) return;
 
-  const hasPendingSync = pendingSyncQueue.length > 0 || transactions.some(tx => !tx.synced);
+  const { pendingCount, retryCount } = await getPendingSyncSummary();
 
-  if (navigator.onLine && syncFailureCount === 0) {
-    statusEl.textContent = '🟢';
-    statusEl.title = hasPendingSync ? 'Online • Sync pending' : 'Online & Synced';
-    if (syncBadgeEl) {
-      syncBadgeEl.textContent = hasPendingSync ? 'Pending' : 'Synced';
-      syncBadgeEl.style.display = hasPendingSync ? 'inline-flex' : 'none';
-      syncBadgeEl.style.background = hasPendingSync ? '#f59e0b' : '#16a34a';
-    }
-    syncOfflineTransactions();
-  } else if (navigator.onLine && syncFailureCount > 0) {
-    statusEl.textContent = '🔴';
-    statusEl.title = `Sync error (${syncFailureCount} failures)`;
-    if (syncBadgeEl) {
-      syncBadgeEl.textContent = 'Error';
-      syncBadgeEl.style.display = 'inline-flex';
-      syncBadgeEl.style.background = '#dc2626';
-    }
-  } else {
-    statusEl.textContent = '🔴';
-    statusEl.title = 'Offline';
-    if (syncBadgeEl) {
-      syncBadgeEl.textContent = 'Offline';
-      syncBadgeEl.style.display = 'inline-flex';
-      syncBadgeEl.style.background = '#6b7280';
-    }
+  if (!navigator.onLine) {
+    renderSyncStatus({
+      state: '🔴',
+      label: pendingCount > 0 ? `${pendingCount} Pending` : 'Offline',
+      title: pendingCount > 0
+        ? `Offline • ${pendingCount} change(s) saved locally and waiting to sync`
+        : 'Offline • local mode',
+      background: '#6b7280',
+      showBadge: true
+    });
+    return;
   }
+
+  if (syncFailureCount > 0 || retryCount > 0) {
+    renderSyncStatus({
+      state: '🟠',
+      label: pendingCount > 0 ? `${pendingCount} Retry` : 'Retry',
+      title: `Online • sync needs retry (${syncFailureCount || retryCount} issue(s))`,
+      background: '#dc2626',
+      showBadge: true
+    });
+    return;
+  }
+
+  if (pendingCount > 0) {
+    renderSyncStatus({
+      state: '🟡',
+      label: `${pendingCount} Pending`,
+      title: `Online • ${pendingCount} change(s) waiting to sync`,
+      background: '#f59e0b',
+      showBadge: true
+    });
+    return;
+  }
+
+  renderSyncStatus({
+    state: '🟢',
+    label: 'Synced',
+    title: 'Online & synced',
+    background: '#16a34a',
+    showBadge: false
+  });
 }
+
 function setAppShellLocked(isLocked) {
   const layout = document.querySelector('.app-layout');
   const header = document.querySelector('header');
@@ -8228,8 +8306,7 @@ async function loginWithPIN() {
       loginRole === 'shopAdmin' ? [] : (staffMember.permissions || ['menuTab']),
       staffMember.name
     );
-    console.log(`Unlocked as ${loginRole === 'admin' ? 'Admin' : 'Staff'}: ${staffMember.name}`);
-  } else {
+    console.log(`Unlocked as ${loginRole === 'shopAdmin' ? 'ShopAdmin' : 'Staff'}: ${staffMember.name}`);
     await showAppAlert("Incorrect Name or PIN. Please try again.", "Login Failed");
     if (document.getElementById('loginPIN')) document.getElementById('loginPIN').value = '';
     if (typeof prepareLogin === 'function') prepareLogin('staff');
@@ -8810,9 +8887,21 @@ async function syncRestoredBackupToCloud() {
       ]
     });
 
-    await flushLocalSyncQueue();
-    if (typeof localRepository?.setMetadata === 'function') {
-      await localRepository.setMetadata('restoredBackupPendingCloudSync', null);
+    async function flushLocalSyncQueue() {
+      if (!currentUser || !dbFirestore || !navigator.onLine || !localRepositoryReady || !repositoryService) return [];
+
+      const results = await repositoryService.flushSyncQueue();
+
+      try {
+        if (localRepository && typeof localRepository.getSyncQueue === 'function') {
+          pendingSyncQueue = await localRepository.getSyncQueue();
+        }
+      } catch (error) {
+        console.warn('[SYNC] Could not refresh local sync queue after flush:', error);
+      }
+
+      updateOnlineStatus();
+      return results;
     }
 
     appendAuditEvent('restored_backup_synced_to_cloud', {
