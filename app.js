@@ -2246,6 +2246,26 @@ function updateOnlineStatus() {
     }
   }
 }
+function setAppShellLocked(isLocked) {
+  const layout = document.querySelector('.app-layout');
+  const header = document.querySelector('header');
+
+  if (layout) {
+    layout.style.visibility = isLocked ? 'hidden' : 'visible';
+    layout.style.pointerEvents = isLocked ? 'none' : '';
+  }
+
+  if (header) {
+    header.style.visibility = isLocked ? 'hidden' : 'visible';
+    header.style.pointerEvents = isLocked ? 'none' : '';
+  }
+}
+
+function showLoggedOutScreen() {
+  setAppShellLocked(true);
+  updateAuthUI(null);
+  showLoginOverlay();
+}
 
 function updateAuthUI(user) {
   // Remove existing auth container if any
@@ -2308,12 +2328,16 @@ function updateAuthUI(user) {
 
     // Check if user has completed the second stage (PIN)
     if (isPinVerified) {
+      setAppShellLocked(false);
       const overlay = document.getElementById('login-overlay');
       if (overlay) overlay.style.display = 'none';
       const lockBtn = document.getElementById('nav-lock-btn');
       if (lockBtn) lockBtn.style.display = 'inline-block';
       applyRolePermissions();
     } else {
+      setAppShellLocked(true);
+      showLoginOverlay();
+      setAppShellLocked(true);
       showLoginOverlay();
       const lockBtn = document.getElementById('nav-lock-btn');
       if (lockBtn) lockBtn.style.display = 'none';
@@ -2721,16 +2745,24 @@ async function logout() {
   const shouldLogout = await showAppConfirm("Are you sure you want to log out?", "Logout", "Logout", "Cancel");
   if (!shouldLogout) return;
 
-  appendAuditEvent('logout', { message: 'User logged out' });
-  await persistAuditTrail();
-  await saveData(false);
+  try {
+    appendAuditEvent('logout', { message: 'User logged out' });
+    await persistAuditTrail();
+    await saveData(false);
+  } catch (error) {
+    console.warn('Logout save warning:', error);
+  }
 
   sessionStorage.removeItem('currentUserRole');
   sessionStorage.removeItem('currentUserPermissions');
   sessionStorage.removeItem('isPinVerified');
   sessionStorage.removeItem('currentLoggedInStaffName');
   sessionStorage.removeItem('currentUserUid');
+  localStorage.removeItem('lastUserUid');
   clearPinSession();
+
+  currentUser = null;
+  userMetadata = null;
   currentUserRole = null;
   currentUserPermissions = [];
   isPinVerified = false;
@@ -2741,18 +2773,31 @@ async function logout() {
   staff = [];
   dishCategories = [];
   customers = [];
+  units = [];
   restockHistory = [];
   settings = { ...defaultSettings };
   auditTrail = [];
 
   try {
+    if (unsubscribeSync) {
+      unsubscribeSync();
+      unsubscribeSync = null;
+    }
+
+    if (unsubscribeTransactionsSync) {
+      unsubscribeTransactionsSync();
+      unsubscribeTransactionsSync = null;
+    }
+
     if (localRepository) {
       await localRepository.close();
       localRepository = null;
     }
+
     repositoryService = null;
     cloudRepositoryService = null;
     localRepositoryReady = false;
+
     if (db) {
       db.close();
       db = null;
@@ -2761,8 +2806,13 @@ async function logout() {
     console.warn('Logout cleanup warning:', error);
   }
 
-  await signOut(auth);
-  location.reload();
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.warn('Firebase sign out warning:', error);
+  }
+
+  showLoggedOutScreen();
 }
 
 function updateItemUnit(itemIndex, newUnit) {
@@ -8182,6 +8232,7 @@ function completePinLogin(role, permissions, staffName) {
   appendAuditEvent('pin_login', { role, staffName });
   persistAuditTrail().catch(() => { });
 
+  setAppShellLocked(false);
   const overlay = document.getElementById('login-overlay');
   if (overlay) overlay.style.display = 'none';
 
@@ -8291,10 +8342,21 @@ async function updateShopStatus(status) {
   checkShopStatus();
 }
 
+if (
+  ['localhost', '127.0.0.1'].includes(location.hostname) &&
+  'serviceWorker' in navigator
+) {
+  navigator.serviceWorker.getRegistrations()
+    .then(registrations => Promise.all(registrations.map(registration => registration.unregister())))
+    .then(() => caches?.keys?.())
+    .then(cacheNames => cacheNames ? Promise.all(cacheNames.map(name => caches.delete(name))) : null)
+    .catch(error => console.warn('[DEV] Local service worker cleanup skipped:', error));
+}
+
 mainInit();
 
 // Register Service Worker for PWA
-if ('serviceWorker' in navigator) {
+if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(location.hostname)) {
   window.addEventListener('load', () => {
     // updateViaCache: 'none' forces the browser to check the server for sw.js changes on every check
     navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
