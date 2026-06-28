@@ -512,7 +512,10 @@
           <input type="hidden" id="staffIndex">
           <div class="input-row">
             <input type="text" id="staffNameInput" placeholder="Staff Name">
-            <input type="text" id="staffRoleInput" placeholder="Staff Role (e.g., Server, Manager)">
+            <select id="staffRoleInput">
+              <option value="admin">Admin</option>
+              <option value="staff" selected>Staff</option>
+            </select>
             <input type="password" id="staffPinInput" placeholder="4-digit PIN" maxlength="4" style="width: 100px;">
             <button type="button" onclick="togglePINVisibility('staffPinInput')" class="btn"
               style="padding: 5px 10px; margin: 0;">👁️</button>

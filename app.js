@@ -61,15 +61,24 @@ let auditTrail = [];
 let isLoggingOut = false;
 
 function getNormalizedRole(role = currentUserRole) {
-  return String(role || '').trim().toLowerCase();
+  const normalized = String(role || '').trim().toLowerCase();
+  if (normalized === 'manager') return 'admin';
+  if (normalized === 'shopadmin') return 'admin';
+  if (normalized === 'appadmin') return 'appAdmin';
+  if (normalized === 'admin') return 'admin';
+  return normalized || 'staff';
 }
 
-function isManagerRole(role = currentUserRole) {
-  return getNormalizedRole(role) === 'manager';
+function isShopAdminRole(role = currentUserRole) {
+  return getNormalizedRole(role) === 'admin';
 }
 
 function isAppAdminRole(role = currentUserRole) {
-  return getNormalizedRole(role) === 'appadmin';
+  return getNormalizedRole(role) === 'appAdmin';
+}
+
+function isFullAccessRole(role = currentUserRole) {
+  return isShopAdminRole(role) || isAppAdminRole(role);
 }
 
 function savePinSession(role, permissions = [], staffName = '') {
@@ -84,7 +93,7 @@ function savePinSession(role, permissions = [], staffName = '') {
   sessionStorage.setItem('currentLoggedInStaffName', staffName);
   localStorage.setItem('currentLoggedInStaffName', staffName);
 
-  if (role === 'manager' || role === 'appAdmin') {
+  if (role === 'admin' || role === 'appAdmin') {
     sessionStorage.removeItem('currentUserPermissions');
     localStorage.removeItem('currentUserPermissions');
   } else {
@@ -1158,7 +1167,7 @@ const defaultSettings = {
   defaultMarkup: 200, // Default 200% markup
   lowStockThreshold: 10,
   taxRate: 0,
-  managerPIN: "1234" // Default Manager PIN
+  ShopAdmin: "1234" // Default ShopAdmin PIN
 };
 let settings = { ...defaultSettings };
 const defaultStaff = [];
@@ -2739,9 +2748,9 @@ async function handleChangePassword() {
     alert("This account doesn't have a password. Use the 'Create Password' button instead.");
   }
 }
-isLoggingOut = true;
-isInitialLoadComplete = false;
 async function logout() {
+  isLoggingOut = true;
+  isInitialLoadComplete = false;
   const shouldLogout = await showAppConfirm("Are you sure you want to log out?", "Logout", "Logout", "Cancel");
   if (!shouldLogout) return;
 
@@ -2841,10 +2850,9 @@ function updateCurrencyDisplay() {
 
 // ===== Tabs =====
 function showTab(tabId, btn) {
-  const isManager = isManagerRole();
-  const isAppAdmin = isAppAdminRole();
-  if (!isManager && !isAppAdmin && !currentUserPermissions.includes(tabId)) {
-    return alert("Access Denied: This section is restricted to Managers.");
+  const hasFullAccess = isFullAccessRole();
+  if (!hasFullAccess && !currentUserPermissions.includes(tabId)) {
+    return alert("Access Denied: You do not have permission to open this section.");
   }
 
   document.querySelectorAll('section').forEach(sec => sec.classList.remove('active'));
@@ -4705,7 +4713,7 @@ function populateReceiptContent(transaction) {
 
 async function deleteTransaction(index) {
   const pin = await showAppPrompt("Enter Admin PIN to delete transaction:", "Admin PIN Required", "Admin PIN");
-  if (!settings.managerPIN || pin !== settings.managerPIN) {
+  if (!settings.ShopAdminPIN || pin !== settings.ShopAdmin) {
     await showAppAlert("Incorrect PIN. Access denied.", "Access Denied");
     return;
   }
@@ -5802,17 +5810,17 @@ function renderAdminShopsComparisonChart(revenuePerShop) {
 
 // ===== Settings =====
 async function saveSettings() {
-  const pin = document.getElementById('managerPIN').value;
-  const confirmPin = document.getElementById('confirmManagerPIN').value;
+  const pin = document.getElementById('ShopAdminPIN').value;
+  const confirmPin = document.getElementById('confirmShopAdminPIN').value;
 
   // Enforce exactly 4 numeric digits
   if (pin.length !== 4 || !/^\d+$/.test(pin)) {
-    return alert("Manager PIN must be exactly 4 numeric digits.");
+    return alert("ShopAdmin PIN must be exactly 4 numeric digits.");
   }
 
   // Match confirmation field
   if (pin !== confirmPin) {
-    return alert("Manager PINs do not match. Please verify and try again.");
+    return alert("ShopAdmin PINs do not match. Please verify and try again.");
   }
 
   settings.name = document.getElementById('companyName').value;
@@ -5823,7 +5831,7 @@ async function saveSettings() {
   settings.lowStockThreshold = isNaN(lowStockThresholdVal) ? 10 : lowStockThresholdVal;
   settings.defaultMarkup = parseFloat(document.getElementById('defaultMarkup').value) || 200;
   settings.taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
-  settings.managerPIN = pin;
+  settings.ShopAdminPIN = pin;
 
   const logoFile = document.getElementById('companyLogo').files[0];
   if (logoFile) {
@@ -5888,8 +5896,8 @@ function loadSettings() {
   setVal('currency', settings.currency || '$');
   setVal('lowStockThreshold', (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10);
   setVal('taxRate', settings.taxRate || 0);
-  setVal('managerPIN', settings.managerPIN || "");
-  setVal('confirmManagerPIN', settings.managerPIN || "");
+  setVal('ShopAdminPIN', settings.ShopAdminPIN || "");
+  setVal('confirmShopAdminPIN', settings.ShopAdminPIN || "");
 
   const logoPreview = document.getElementById('logoPreview');
   const logoUrl = sanitizeLogoUrl(settings.logo);
@@ -5903,15 +5911,15 @@ function loadSettings() {
   checkNotificationStatus();
 }
 
-function togglePINVisibility(inputId = 'managerPIN') {
+function togglePINVisibility(inputId = 'ShopAdminPIN') {
   const pin = document.getElementById(inputId);
   if (!pin) return;
   const type = pin.type === 'password' ? 'text' : 'password';
   pin.type = type;
 
   // Sync confirmation fields
-  if (inputId === 'managerPIN') {
-    const confirm = document.getElementById('confirmManagerPIN');
+  if (inputId === 'ShopAdminPIN') {
+    const confirm = document.getElementById('confirmShopAdminPIN');
     if (confirm) confirm.type = type;
   }
 
@@ -8078,8 +8086,9 @@ function showLoginOverlay(mode = 'login') {
 }
 
 function applyRolePermissions() {
-  const isManager = isManagerRole();
+  const isShopAdmin = isShopAdminRole();
   const isAppAdmin = isAppAdminRole();
+  const hasFullAccess = isShopAdmin || isAppAdmin;
   const normalizedPermissions = getEffectivePermissions(currentUserRole, currentUserPermissions);
   const nav = document.querySelector('nav');
   if (!nav) return;
@@ -8102,7 +8111,7 @@ function applyRolePermissions() {
 
     const directPermission = directButtonPermissions[btn.id];
     if (directPermission) {
-      btn.style.display = (isManager || isAppAdmin || normalizedPermissions.includes(directPermission)) ? 'flex' : 'none';
+      btn.style.display = (hasFullAccess || normalizedPermissions.includes(directPermission)) ? 'flex' : 'none';
       return;
     }
 
@@ -8119,7 +8128,7 @@ function applyRolePermissions() {
         } else {
           btn.style.display = 'flex';
         }
-      } else if (isManager) {
+      } else if (isShopAdmin) {
         btn.style.display = tabId === 'appAdminTab' ? 'none' : 'flex';
       } else {
         btn.style.display = normalizedPermissions.includes(tabId) ? 'flex' : 'none';
@@ -8127,9 +8136,9 @@ function applyRolePermissions() {
     }
   });
 
-  // Hide Manager-specific settings groups
+  // Hide ShopAdmin-specific settings groups
   const securityGroup = document.getElementById('securitySettingsGroup');
-  if (securityGroup) securityGroup.style.display = isManager ? 'block' : 'none';
+  if (securityGroup) securityGroup.style.display = isShopAdmin ? 'block' : 'none';
 
   const appAdminBtn = document.getElementById('nav-app-admin-btn');
   if (appAdminBtn) appAdminBtn.style.display = isAppAdmin ? 'flex' : 'none';
@@ -8139,7 +8148,7 @@ function applyRolePermissions() {
     // Force App Admin back to management screen if they attempt to view a shop tab without monitoring
     const adminBtn = document.getElementById('nav-app-admin-btn');
     if (adminBtn) showTab('appAdminTab', adminBtn);
-  } else if (!isManager && !isAppAdmin && activeTab && !normalizedPermissions.includes(activeTab.id)) {
+  } else if (!isShopAdmin && !isAppAdmin && activeTab && !normalizedPermissions.includes(activeTab.id)) {
     const targetTab = getFirstAllowedTab(currentUserRole, normalizedPermissions, 'menuTab');
     if (targetTab) {
       const targetBtn = nav.querySelector(`button[onclick*="${targetTab}"]`);
@@ -8161,7 +8170,7 @@ function loginWithPIN() {
     const isOwner = settings.managerPIN && enteredPin === settings.managerPIN;
 
     if (isMasterAdmin || isOwner) {
-      completePinLogin(isMasterAdmin ? 'appAdmin' : 'manager', [], 'Admin');
+      completePinLogin(isMasterAdmin ? 'appAdmin' : 'admin', [], 'Admin');
     } else {
       alert("Incorrect Admin PIN.");
       if (pinInput) pinInput.value = '';
@@ -8185,23 +8194,23 @@ function loginWithPIN() {
 
   if (staffMember) {
     if (staffMember.isActive === false) {
-      alert("This account is currently inactive. Please contact your manager.");
+      alert("This account is currently inactive. Please contact the admin.");
       return;
     }
 
     appendAuditEvent('staff_login', { staffName: staffMember.name, role: (staffMember.role || 'staff').toLowerCase() });
     persistAuditTrail().catch(() => { });
 
-    // Determine Role (grant Manager role based on role field or if it's admin)
-    const definedRole = (staffMember.role || 'staff').toLowerCase();
-    const isManager = definedRole === 'manager' || definedRole === 'admin';
+    // Determine Role (grant ShopAdmin role based on role field or if it's admin)
+    const definedRole = getNormalizedRole(staffMember.role || 'staff');
+    const loginRole = definedRole === 'admin' ? 'admin' : 'staff';
 
     completePinLogin(
-      isManager ? 'manager' : 'staff',
-      staffMember.permissions || ['menuTab'],
+      loginRole,
+      loginRole === 'admin' ? [] : (staffMember.permissions || ['menuTab']),
       staffMember.name
     );
-    console.log(`Unlocked as ${isManager ? 'Manager' : 'Staff'}: ${staffMember.name}`);
+    console.log(`Unlocked as ${loginRole === 'admin' ? 'Admin' : 'Staff'}: ${staffMember.name}`);
   } else {
     alert("Incorrect Name or PIN. Please try again.");
     if (document.getElementById('loginPIN')) document.getElementById('loginPIN').value = '';
@@ -8215,7 +8224,7 @@ function completePinLogin(role, permissions, staffName) {
   isPinVerified = true;
   currentUserRole = role;
 
-  if (role === 'manager' || role === 'appAdmin') {
+  if (role === 'admin' || role === 'appAdmin') {
     currentUserPermissions = [];
   } else {
     currentUserPermissions = normalizePermissions(permissions);
@@ -8257,8 +8266,8 @@ async function forgotPIN() {
 
   const staffName = document.getElementById('loginStaffName')?.value.trim();
 
-  if (staffName && staffName.toLowerCase() !== 'admin' && staffName.toLowerCase() !== 'manager') {
-    return alert("Staff members should contact the Manager to reset their PIN.");
+  if (staffName && staffName.toLowerCase() !== 'admin' && staffName.toLowerCase() !== 'ShopAdmin') {
+    return alert("Staff members should contact the ShopAdmin to reset their PIN.");
   }
 
   if (confirm(`Send a PIN reset code to ${currentUser.email}?`)) {

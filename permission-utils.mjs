@@ -1,85 +1,92 @@
 const DEFAULT_PERMISSION_TOKENS = [
+  'dashboardTab',
   'menuTab',
-  'inventoryTab',
-  'customersTab',
-  'reportsTab',
+  'addDishTab',
+  'categoryTab',
+  'unitTab',
   'staffTab',
+  'customerTab',
+  'stockTab',
+  'transactionsTab',
+  'reportsTab',
   'settingsTab',
+  'lockPin',
+  'logoutAccount',
   'expensesTab',
   'printingTab',
   'exportTab',
   'deleteTab',
   'discountApproval',
-  'priceOverride',
-  'lockPin',
-  'logoutAccount'
+  'priceOverride'
 ];
 
 const FEATURE_ALIASES = {
-  products: 'menuTab',
-  inventory: 'inventoryTab',
-  customers: 'customersTab',
-  reports: 'reportsTab',
+  dashboard: 'dashboardTab',
+  shop: 'menuTab',
+  products: 'addDishTab',
+  categories: 'categoryTab',
+  units: 'unitTab',
   staff: 'staffTab',
+  customers: 'customerTab',
+  stock: 'stockTab',
+  sales: 'transactionsTab',
+  reports: 'reportsTab',
   settings: 'settingsTab',
-  expenses: 'expensesTab',
+  pin: 'lockPin',
+  lock: 'lockPin',
+  logout: 'logoutAccount',
+  inventory: 'stockTab',
   printing: 'printingTab',
   export: 'exportTab',
   delete: 'deleteTab',
   discount: 'discountApproval',
-  price: 'priceOverride',
-  pin: 'lockPin',
-  lock: 'lockPin',
-  logout: 'logoutAccount'
+  price: 'priceOverride'
 };
+
+function normalizeRole(role = '') {
+  const normalized = String(role || '').trim().toLowerCase();
+  if (normalized === 'manager') return 'admin';
+  if (normalized === 'appadmin') return 'appAdmin';
+  if (normalized === 'admin') return 'admin';
+  return normalized || 'staff';
+}
 
 function normalizePermissions(permissions = [], fallback = []) {
   const base = Array.isArray(permissions) ? permissions : [];
-  const normalized = base
-    .filter(Boolean)
-    .map((permission) => String(permission).trim())
-    .filter(Boolean);
   const fallbackPermissions = Array.isArray(fallback) ? fallback : [];
-  const merged = [...new Set([...normalized, ...fallbackPermissions])];
-  return merged.filter((permission) => permission && permission !== 'undefined');
+
+  return [...new Set([...base, ...fallbackPermissions])]
+    .filter(Boolean)
+    .map(permission => String(permission).trim())
+    .filter(permission => permission && permission !== 'undefined');
 }
 
 function hasPermission(role, permissions = [], feature = '') {
-  const normalizedRole = String(role || '').toLowerCase();
-  if (!normalizedRole || normalizedRole === 'appadmin' || normalizedRole === 'manager') {
-    return true;
-  }
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === 'appAdmin' || normalizedRole === 'admin') return true;
 
   const normalizedPermissions = normalizePermissions(permissions, []);
-  const featureKey = String(feature || '').trim().toLowerCase();
-  const alias = FEATURE_ALIASES[featureKey];
-  const targetPermissions = [featureKey, alias].filter(Boolean);
+  const featureKey = String(feature || '').trim();
+  const alias = FEATURE_ALIASES[featureKey.toLowerCase()];
+  const targets = [featureKey, alias].filter(Boolean);
 
-  if (targetPermissions.length === 0) {
-    return normalizedPermissions.length > 0;
-  }
-
-  return targetPermissions.some((permission) => normalizedPermissions.includes(permission));
+  return targets.length === 0
+    ? normalizedPermissions.length > 0
+    : targets.some(permission => normalizedPermissions.includes(permission));
 }
 
 function getEffectivePermissions(role, permissions = []) {
-  const normalizedRole = String(role || '').toLowerCase();
-  if (!normalizedRole || normalizedRole === 'appadmin' || normalizedRole === 'manager') {
-    return [];
-  }
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === 'appAdmin' || normalizedRole === 'admin') return [];
   return normalizePermissions(permissions, []);
 }
 
 function getFirstAllowedTab(role, permissions = [], fallback = 'menuTab') {
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === 'appAdmin' || normalizedRole === 'admin') return fallback;
+
   const normalizedPermissions = normalizePermissions(permissions, []);
-  const normalizedRole = String(role || '').toLowerCase();
-  if (normalizedRole === 'appadmin' || normalizedRole === 'manager') {
-    return fallback;
-  }
-  if (normalizedPermissions.length === 0) {
-    return fallback;
-  }
-  return normalizedPermissions[0] || fallback;
+  return normalizedPermissions.find(permission => permission.endsWith('Tab')) || fallback;
 }
 
 export {
