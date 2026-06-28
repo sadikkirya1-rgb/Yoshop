@@ -301,15 +301,15 @@ async function getCachedQuery(cacheKey, queryFn, ttl = CACHE_TTL) {
 
   async function resetLocalDatabase() {
     if (typeof showAppConfirm === 'function') {
-      const resp = await showAppConfirm('This will wipe all local data. Continue?');
+      const resp = await showAppConfirm('This will wipe all local data. Continue?', 'Reset Local Data', 'Continue', 'Cancel');
       if (!resp || !resp.confirmed) return;
-    } else if (!confirm('This will wipe all local data. Continue?')) return;
+    }
     try {
       indexedDB.deleteDatabase('posDB');
       location.reload();
     } catch (e) {
       console.error('Failed to reset local DB:', e);
-      if (typeof showAppAlert === 'function') showAppAlert('Could not reset local database.');
+      if (typeof showAppAlert === 'function') showAppAlert('Could not reset local database.', 'Reset Failed');
       else alert('Could not reset local database.');
     }
   }
@@ -1800,9 +1800,9 @@ async function refreshAppAdminShopsTable() {
  */
 async function monitorShop(shopUid, shopName) {
   if (typeof showAppConfirm === 'function') {
-    const resp = await showAppConfirm(`Switch to monitoring mode for "${shopName}"?`);
+    const resp = await showAppConfirm(`Switch to monitoring mode for "${shopName}"?`, 'Monitoring Mode', 'Continue', 'Cancel');
     if (!resp || !resp.confirmed) return;
-  } else if (!confirm(`Switch to monitoring mode for "${shopName}"?`)) return;
+  }
 
   console.log(`[ADMIN] Entering monitoring mode for UID: ${shopUid}`);
 
@@ -1849,9 +1849,9 @@ async function monitorShop(shopUid, shopName) {
  */
 async function updateTargetShopStatus(uid, status) {
   if (typeof showAppConfirm === 'function') {
-    const resp = await showAppConfirm(`Are you sure you want to set this shop status to ${status.toUpperCase()}?`);
+    const resp = await showAppConfirm(`Are you sure you want to set this shop status to ${status.toUpperCase()}?`, 'Update Shop Status', 'Continue', 'Cancel');
     if (!resp || !resp.confirmed) return;
-  } else if (!confirm(`Are you sure you want to set this shop status to ${status.toUpperCase()}?`)) return;
+  }
 
   try {
     // Update the shop_profile configuration for the target user
@@ -1871,9 +1871,9 @@ async function updateTargetShopStatus(uid, status) {
  */
 async function setFreePlan(uid) {
   if (typeof showAppConfirm === 'function') {
-    const resp = await showAppConfirm("Set this shop to Promo Plan? This removes the subscription expiry restriction.");
+    const resp = await showAppConfirm("Set this shop to Promo Plan? This removes the subscription expiry restriction.", 'Promo Plan', 'Continue', 'Cancel');
     if (!resp || !resp.confirmed) return;
-  } else if (!confirm("Set this shop to Promo Plan? This removes the subscription expiry restriction.")) return;
+  }
   try {
     await setDoc(doc(dbFirestore, "users", uid), {
       status: 'active',
@@ -2687,6 +2687,15 @@ function showAppAlert(message, title = 'Notice') {
   return showAppPopup({ title, message, confirmText: 'OK', cancelText: 'Cancel', showCancel: false, input: null });
 }
 
+const nativeAlert = window.alert;
+window.alert = function(message, title = 'Notice') {
+  if (typeof showAppAlert === 'function') {
+    void showAppAlert(message, title);
+    return;
+  }
+  return nativeAlert.call(window, message);
+};
+
 async function submitAuthAction() {
   const curPassValue = document.getElementById('authCurrentPassword').value;
   const newPassValue = document.getElementById('authNewPassword').value;
@@ -2719,9 +2728,10 @@ async function submitAuthAction() {
         alert("Email login successfully added! You can now use either Google or this password.");
       }
     } else if (activeAuthAction === 'deleteAccount') {
-      if (confirm("FINAL WARNING: All your data will be lost. Are you absolutely sure?")) {
+      const confirmed = await showAppConfirm("FINAL WARNING: All your data will be lost. Are you absolutely sure?", 'Delete Account', 'Delete', 'Cancel');
+      if (confirmed?.confirmed) {
         await deleteUser(currentUser);
-        alert("Account deleted.");
+        await showAppAlert("Account deleted.", 'Account Deleted');
         location.reload();
         return;
       }
@@ -2854,7 +2864,7 @@ function updateCurrencyDisplay() {
 function showTab(tabId, btn) {
   const hasFullAccess = isFullAccessRole();
   if (!hasFullAccess && !currentUserPermissions.includes(tabId)) {
-    return alert("Access Denied: You do not have permission to open this section.");
+    return showAppAlert("Access Denied: You do not have permission to open this section.", 'Access Denied');
   }
 
   document.querySelectorAll('section').forEach(sec => sec.classList.remove('active'));
@@ -4044,10 +4054,8 @@ async function deleteItem(i) {
   if (!item) return;
 
   if (typeof showAppConfirm === 'function') {
-    const resp = await showAppConfirm(`Are you sure you want to delete ${item.name}?`);
+    const resp = await showAppConfirm(`Are you sure you want to delete ${item.name}?`, 'Delete Item', 'Delete', 'Cancel');
     if (!resp || !resp.confirmed) return;
-  } else if (!confirm(`Are you sure you want to delete ${item.name}?`)) {
-    return;
   }
   enqueueEnterpriseRecordChange('products', item, 'delete').catch(console.warn);
 
@@ -4191,11 +4199,14 @@ function getBarcodeDataUrl(code) {
   } catch (e) { return ''; }
 }
 
-function printReceipt() {
+async function printReceipt() {
   // If a device is connected, the user might want to use that instead.
   if (printerDevice) {
-    if (confirm("A thermal printer is connected. Do you want to print directly to the device instead of the browser's print dialog?")) {
-      return directPrint();
+    if (showAppConfirm) {
+      const confirmed = await showAppConfirm("A thermal printer is connected. Do you want to print directly to the device instead of the browser's print dialog?", 'Print Options', 'Print to Device', 'Browser Print');
+      if (confirmed?.confirmed) {
+        return directPrint();
+      }
     }
   }
   const receiptModal = document.getElementById('receiptModal');
@@ -6264,8 +6275,8 @@ function populateCategoryFilter() {
 function addCategory() {
   const nameInput = document.getElementById('categoryNameInput');
   const name = nameInput.value.trim();
-  if (!name) return alert("Category name cannot be empty.");
-  if (dishCategories.includes(name)) return alert("Category already exists.");
+  if (!name) return showAppAlert("Category name cannot be empty.", 'Category Required');
+  if (dishCategories.includes(name)) return showAppAlert("Category already exists.", 'Category Exists');
 
   dishCategories.push(name);
   dishCategories.sort();
@@ -6282,8 +6293,6 @@ async function editCategory(index) {
   let newCategoryName = null;
   if (typeof showAppPrompt === 'function') {
     newCategoryName = await showAppPrompt(`Enter new name for category "${oldCategoryName}":`, 'Rename Category', oldCategoryName);
-  } else {
-    newCategoryName = prompt(`Enter new name for category "${oldCategoryName}":`, oldCategoryName);
   }
 
   if (!newCategoryName || newCategoryName.trim() === '') {
@@ -6296,7 +6305,7 @@ async function editCategory(index) {
   }
 
   if (dishCategories.includes(trimmedNewName)) {
-    return alert(`Category "${trimmedNewName}" already exists.`);
+    return showAppAlert(`Category "${trimmedNewName}" already exists.`, 'Category Exists');
   }
 
   // Update category in the list
@@ -6316,10 +6325,10 @@ async function editCategory(index) {
   populateCategoryDropdown();
   populateCategoryFilter();
   updateDashboard();
-  alert(`Category "${oldCategoryName}" was updated to "${trimmedNewName}".`);
+  await showAppAlert(`Category "${oldCategoryName}" was updated to "${trimmedNewName}".`, 'Category Updated');
 }
 
-function deleteCategory(index) {
+async function deleteCategory(index) {
   const categoryName = dishCategories[index];
   const itemsUsingCategory = menu.filter(item => item.category === categoryName);
 
@@ -6328,7 +6337,8 @@ function deleteCategory(index) {
     message += `\n\nWarning: This category contains ${itemsUsingCategory.length} items. They will be moved to "Uncategorized".`;
   }
 
-  if (confirm(message)) {
+  const confirmed = await showAppConfirm(message, 'Delete Category', 'Delete', 'Cancel');
+  if (confirmed?.confirmed) {
     // Update items to remove the category reference
     itemsUsingCategory.forEach(item => item.category = '');
 
@@ -6384,9 +6394,9 @@ function addUnit() {
   const shortName = nameInput.value.trim();
   const fullName = fullNameInput.value.trim();
 
-  if (!shortName || !fullName) return alert("Both short name and full name are required.");
-  if (units.some(u => u.short.toLowerCase() === shortName.toLowerCase())) return alert("Unit short name already exists.");
-  if (units.some(u => u.full.toLowerCase() === fullName.toLowerCase())) return alert("Unit full name already exists.");
+  if (!shortName || !fullName) return showAppAlert("Both short name and full name are required.", 'Unit Required');
+  if (units.some(u => u.short.toLowerCase() === shortName.toLowerCase())) return showAppAlert("Unit short name already exists.", 'Unit Exists');
+  if (units.some(u => u.full.toLowerCase() === fullName.toLowerCase())) return showAppAlert("Unit full name already exists.", 'Unit Exists');
 
   const unitData = enrichEnterpriseRecord('units', {
     short: shortName,
@@ -6406,9 +6416,10 @@ function addUnit() {
   populateUnitDropdown();
 }
 
-function deleteUnit(index) {
+async function deleteUnit(index) {
   const unit = units[index];
-  if (confirm(`Are you sure you want to delete the unit "${unit.short} (${unit.full})"?`)) {
+  const confirmed = await showAppConfirm(`Are you sure you want to delete the unit "${unit.short} (${unit.full})"?`, 'Delete Unit', 'Delete', 'Cancel');
+  if (confirmed?.confirmed) {
     const unitToDelete = units[index];
     enqueueEnterpriseRecordChange('units', unitToDelete, 'delete').catch(console.warn);
     units.splice(index, 1);
@@ -6456,7 +6467,7 @@ function addCustomer() {
   const addressInput = document.getElementById('customerAddressInput');
   const index = document.getElementById('customerIndex').value;
 
-  if (!nameInput.value.trim()) return alert("Customer name is required.");
+  if (!nameInput.value.trim()) return showAppAlert("Customer name is required.", 'Customer Required');
 
   const parsedIndex = index !== '' ? parseInt(index, 10) : -1;
   const existingCustomer = parsedIndex >= 0 ? customers[parsedIndex] : null;
@@ -6492,8 +6503,9 @@ function editCustomer(index) {
   document.getElementById('saveCustomerBtn').textContent = 'Update Customer';
 }
 
-function deleteCustomer(index) {
-  if (confirm(`Are you sure you want to delete customer "${customers[index].name}"?`)) {
+async function deleteCustomer(index) {
+  const confirmed = await showAppConfirm(`Are you sure you want to delete customer "${customers[index].name}"?`, 'Delete Customer', 'Delete', 'Cancel');
+  if (confirmed?.confirmed) {
     const customerToDelete = customers[index];
     enqueueEnterpriseRecordChange('customers', customerToDelete, 'delete').catch(console.warn);
     customers.splice(index, 1);
@@ -6679,7 +6691,7 @@ function renderStockListTable() {
 function editStockItem(index) {
   const item = menu[index];
   if (!item || item.stock === undefined) {
-    return alert("This item cannot be edited here. Please edit it from the 'Products' section.");
+    return showAppAlert("This item cannot be edited here. Please edit it from the 'Products' section.", 'Stock Edit Blocked');
   }
 
   // Show the form
@@ -6729,7 +6741,7 @@ function toggleStockAdjustmentForm(show, index = null) {
   if (show && index !== null) {
     const item = menu[index];
     if (item.stock === undefined) {
-      return alert(`Cannot directly adjust stock for "${item.name}" because it is a composite dish made from a recipe. Adjust the stock of its individual ingredients instead.`);
+      return showAppAlert(`Cannot directly adjust stock for "${item.name}" because it is a composite dish made from a recipe. Adjust the stock of its individual ingredients instead.`, 'Stock Adjustment Blocked');
     }
     document.getElementById('stockItemIndex').value = index;
     document.getElementById('stockAdjustItemName').textContent = `Adjust Stock for: ${item.name} (Current: ${item.stock})`;
@@ -6742,13 +6754,13 @@ function toggleStockAdjustmentForm(show, index = null) {
   }
 }
 
-function saveStockAdjustment() {
+async function saveStockAdjustment() {
   const index = document.getElementById('stockItemIndex').value;
   const newStockInput = document.getElementById('newStockValue');
   const newStock = parseInt(newStockInput.value, 10);
 
   if (index === '' || isNaN(newStock) || newStock < 0) {
-    return alert("Please enter a valid, non-negative number for the stock.");
+    return showAppAlert("Please enter a valid, non-negative number for the stock.", 'Invalid Stock');
   }
 
   // Warning for zero stock if the item is used in popular products
@@ -6771,8 +6783,8 @@ function saveStockAdjustment() {
       const affectedPopular = dependentDishes.filter(d => topSellers.includes(d.name)).map(d => d.name);
 
       if (affectedPopular.length > 0) {
-        const proceed = confirm(`Warning: Setting stock to zero for "${itemName}" will make these popular products OUT OF STOCK:\n\n${affectedPopular.join('\n')}\n\nAre you sure you want to proceed?`);
-        if (!proceed) return;
+        const proceed = await showAppConfirm(`Warning: Setting stock to zero for "${itemName}" will make these popular products OUT OF STOCK:\n\n${affectedPopular.join('\n')}\n\nAre you sure you want to proceed?`, 'Low Stock Warning', 'Continue', 'Cancel');
+        if (!proceed?.confirmed) return;
       }
     }
   }
@@ -6824,7 +6836,7 @@ function populateUnitDropdown() {
   unitSelect.innerHTML = `<option value="" disabled selected>Select Unit</option>` + units.map(u => `<option value="${u.short}">${u.short}</option>`).join('');
 }
 
-function saveNewStockItem() {
+async function saveNewStockItem() {
   const name = document.getElementById('newStockItemName').value.trim();
   const unit = document.getElementById('newStockItemUnit').value;
   const costPrice = parseFloat(document.getElementById('newStockItemCost').value);
@@ -6832,16 +6844,16 @@ function saveNewStockItem() {
   const stock = parseInt(document.getElementById('newStockItemStock').value, 10);
 
   if (!name) {
-    return alert("Please enter an item name.");
+    return showAppAlert("Please enter an item name.", 'Item Name Required');
   }
   if (!unit) {
-    return alert("Please select a unit.");
+    return showAppAlert("Please select a unit.", 'Unit Required');
   }
   if (isNaN(costPrice) || costPrice < 0) {
-    return alert("Please enter a valid cost price.");
+    return showAppAlert("Please enter a valid cost price.", 'Invalid Cost');
   }
   if (isNaN(stock) || stock < 0) {
-    return alert("Please enter a valid stock quantity.");
+    return showAppAlert("Please enter a valid stock quantity.", 'Invalid Stock');
   }
 
   const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
@@ -6863,8 +6875,8 @@ function saveNewStockItem() {
       const affectedProducts = menu.filter(d => d.recipe && d.recipe.some(c => c.itemName === oldName)).map(d => d.name);
 
       if (affectedProducts.length > 0) {
-        const confirmRename = confirm(`Renaming "${oldName}" to "${name}" will automatically update recipes for the following products:\n\n${affectedProducts.join('\n')}\n\nDo you want to proceed?`);
-        if (!confirmRename) return;
+        const confirmRename = await showAppConfirm(`Renaming "${oldName}" to "${name}" will automatically update recipes for the following products:\n\n${affectedProducts.join('\n')}\n\nDo you want to proceed?`, 'Confirm Rename', 'Continue', 'Cancel');
+        if (!confirmRename?.confirmed) return;
       }
 
       menu.forEach(d => {
@@ -6890,7 +6902,7 @@ function saveNewStockItem() {
       item.price = costPrice * (1 + ((settings.defaultMarkup || 200) / 100));
     }
     enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
-    alert(`Item "${name}" updated successfully.`);
+    await showAppAlert(`Item "${name}" updated successfully.`, 'Stock Item Updated');
   } else {
     // Add new item
     // It's a primary ingredient, so calculate its selling price based on markup
@@ -6923,7 +6935,7 @@ function saveNewStockItem() {
     enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
     menu.push(newItem);
     enqueueEnterpriseRecordChange('products', newItem, 'upsert').catch(console.warn);
-    alert(`Item "${name}" added successfully.`);
+    await showAppAlert(`Item "${name}" added successfully.`, 'Stock Item Added');
   }
 
   saveData();
@@ -6952,11 +6964,11 @@ function generateAutoBarcode(force = false) {
 
   if (force) {
     if (!name || name.length < 2) {
-      alert("Please enter a product name first (at least 2 letters).");
+      showAppAlert("Please enter a product name first (at least 2 letters).", 'Product Name Required');
       return;
     }
     if (!cat) {
-      alert("Please select a category first.");
+      showAppAlert("Please select a category first.", 'Category Required');
       return;
     }
   }
@@ -8269,16 +8281,17 @@ function resetLoginStage() {
 }
 
 async function forgotPIN() {
-  if (!currentUser) return alert("Please sign in with Google first.");
+  if (!currentUser) return showAppAlert("Please sign in with Google first.", 'Login Required');
 
   const staffName = document.getElementById('loginStaffName')?.value.trim();
 
   if (staffName && staffName.toLowerCase() !== 'admin' && staffName.toLowerCase() !== 'ShopAdmin') {
-    return alert("Staff members should contact the ShopAdmin to reset their PIN.");
+    return showAppAlert("Staff members should contact the ShopAdmin to reset their PIN.", 'PIN Reset');
   }
 
-  if (confirm(`Send a PIN reset code to ${currentUser.email}?`)) {
-    alert(`A reset request has been simulated. In a production environment, an email would be sent to ${currentUser.email} with instructions.`);
+  const confirmed = await showAppConfirm(`Send a PIN reset code to ${currentUser.email}?`, 'Reset PIN', 'Send', 'Cancel');
+  if (confirmed?.confirmed) {
+    await showAppAlert(`A reset request has been simulated. In a production environment, an email would be sent to ${currentUser.email} with instructions.`, 'PIN Reset Sent');
   }
 }
 
@@ -8331,21 +8344,21 @@ function updateAppAdminCredentials() {
   const name = document.getElementById('appAdminNameInput').value.trim();
   const pin = document.getElementById('appAdminPinInput').value.trim();
 
-  if (!name) return alert("Username required.");
-  if (pin.length < 4) return alert("PIN/Password must be at least 4 characters.");
+  if (!name) return showAppAlert("Username required.", 'Admin Required');
+  if (pin.length < 4) return showAppAlert("PIN/Password must be at least 4 characters.", 'Invalid PIN');
 
   appAdminSettings.username = name;
   appAdminSettings.pin = pin;
   saveData();
-  if (typeof showAppAlert === 'function') showAppAlert("App Admin credentials updated.");
+  if (typeof showAppAlert === 'function') showAppAlert("App Admin credentials updated.", 'Credentials Updated');
   else alert("App Admin credentials updated.");
 }
 
 async function updateShopStatus(status) {
   if (typeof showAppConfirm === 'function') {
-    const resp = await showAppConfirm(`Switch shop to ${status.toUpperCase()}?`);
+    const resp = await showAppConfirm(`Switch shop to ${status.toUpperCase()}?`, 'Update Shop Status', 'Continue', 'Cancel');
     if (!resp || !resp.confirmed) return;
-  } else if (!confirm(`Switch shop to ${status.toUpperCase()}?`)) return;
+  }
   appAdminSettings.shopStatus = status;
   saveData();
   const display = document.getElementById('currentShopStatusDisplay');
@@ -9081,8 +9094,11 @@ let html5QrcodeScanner = null;
 function manualBarcodeInput() {
   (async () => {
     let code = null;
-    if (typeof showAppPrompt === 'function') code = await showAppPrompt('Enter Product Barcode:', 'Barcode');
-    else code = prompt('Enter Product Barcode:');
+    if (typeof showAppPrompt === 'function') {
+      code = await showAppPrompt('Enter Product Barcode:', 'Barcode');
+    } else {
+      code = prompt('Enter Product Barcode:');
+    }
     if (code) {
       const trimmedCode = code.trim();
       if (document.getElementById('menuTab').classList.contains('active')) {
