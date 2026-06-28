@@ -8367,7 +8367,7 @@ if (
 mainInit();
 
 // Register Service Worker for PWA
-if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(location.hostname)) {
+if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
     // updateViaCache: 'none' forces the browser to check the server for sw.js changes on every check
     navigator.serviceWorker.register('./sw.js', { updateViaCache: 'none' })
