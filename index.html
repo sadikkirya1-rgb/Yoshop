@@ -1,49 +1,52 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
-<title>YoShop</title>
-<link rel="icon" type="image/png" href="assets/icons/android192x192.png"> <!-- Using android192x192.png as the default favicon -->
-<link rel="canonical" href="https://yoshop.netlify.app/"> <!-- Updated canonical URL -->
-<link rel="stylesheet" href="style.css?v=20260620">
-<script>
-  const previewTunnel = location.hostname.endsWith('.github.dev') || location.hostname.endsWith('.app.github.dev');
-  if (!previewTunnel) {
-    const manifestLink = document.createElement('link');
-    manifestLink.rel = 'manifest';
-    manifestLink.href = 'manifest.json';
-    manifestLink.onerror = () => console.info('Manifest load failed - may be blocked by network or preview tunnel.');
-    document.head.appendChild(manifestLink);
-  }
 
-  document.addEventListener('DOMContentLoaded', () => {
-    if (previewTunnel) {
-      const existing = document.getElementById('preview-warning-banner');
-      if (existing) existing.remove();
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>YoShop</title>
+  <link rel="icon" type="image/png" href="assets/icons/android192x192.png">
+  <!-- Using android192x192.png as the default favicon -->
+  <link rel="canonical" href="https://yoshop.netlify.app/"> <!-- Updated canonical URL -->
+  <link rel="stylesheet" href="style.css?v=20260628">
+  <script>
+    const previewTunnel = location.hostname.endsWith('.github.dev') || location.hostname.endsWith('.app.github.dev');
+    if (!previewTunnel) {
+      const manifestLink = document.createElement('link');
+      manifestLink.rel = 'manifest';
+      manifestLink.href = 'manifest.json';
+      manifestLink.onerror = () => console.info('Manifest load failed - may be blocked by network or preview tunnel.');
+      document.head.appendChild(manifestLink);
     }
-  });
-</script>
-<!-- PWA Meta Tags -->
-<meta name="theme-color" content="#f82c33"/>
-<link rel="apple-touch-icon" href="assets/icons/ios192.png">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="msapplication-TileImage" content="assets/icons/android192x192.png">
-<meta name="mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
-<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script type="module" src="app.js?v=20260620"></script>
+
+    document.addEventListener('DOMContentLoaded', () => {
+      if (previewTunnel) {
+        const existing = document.getElementById('preview-warning-banner');
+        if (existing) existing.remove();
+      }
+    });
+  </script>
+  <!-- PWA Meta Tags -->
+  <meta name="theme-color" content="#f82c33" />
+  <link rel="apple-touch-icon" href="assets/icons/ios192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="msapplication-TileImage" content="assets/icons/android192x192.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.5.29/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.5/dist/JsBarcode.all.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <script type="module" src="app.js?v=20260628"></script>
 </head>
+
 <body class="loading">
   <!-- Splash Screen -->
   <div id="splash-screen">
@@ -60,7 +63,10 @@
     <span class="header-logo">🖨️</span>
     YoShop
     <button id="header-printer-status" class="icon-btn" title="Printer Connected">
-      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16"><path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 1a1 1 0 1 1 0 2 1 1 0 0 1 0-2z"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16">
+        <path
+          d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 1a1 1 0 1 1 0 2 1 1 0 0 1 0-2z" />
+      </svg>
     </button>
     <button id="header-sync-status" class="icon-btn" onclick="syncNow()" title="Cloud Sync">
       <span id="connectivity-status"></span>
@@ -72,13 +78,13 @@
     </button>
     <!-- Notification Dropdown -->
     <div id="notificationDropdown">
-        <div class="notification-header">
-          <span>Notifications</span>
-          <button onclick="clearAllNotifications()" class="clear-all-btn">Clear All</button>
-        </div>
-        <div id="notificationList">
-            <div class="no-notifications">No notifications</div>
-        </div>
+      <div class="notification-header">
+        <span>Notifications</span>
+        <button onclick="clearAllNotifications()" class="clear-all-btn">Clear All</button>
+      </div>
+      <div id="notificationList">
+        <div class="no-notifications">No notifications</div>
+      </div>
     </div>
     <button id="theme-toggle-header" class="icon-btn" onclick="toggleTheme()">
       <span id="theme-icon"></span>
@@ -104,49 +110,64 @@
       </div>
       <div class="receipt-actions">
         <button class="btn" onclick="addSplitBill()">+ Add Person</button>
-        <button class="btn" id="processSplitBtn" onclick="processSplitPayments()" class="process-split-btn">Process Payments</button>
+        <button class="btn" id="processSplitBtn" onclick="processSplitPayments()" class="process-split-btn">Process
+          Payments</button>
         <button class="btn" onclick="closeSplitBillModal()" class="cancel-btn">Cancel</button>
       </div>
     </div>
   </div>
-  
+
 
   <!-- Payment Modal -->
   <div id="paymentModal" class="receipt-modal-overlay">
     <div class="custom-modal-card payment-modal-content">
-        <h3>Complete Payment</h3>
-        <div id="paymentDetails">
-            <div class="payment-details-wrapper">
-                <div class="payment-row"><span>Subtotal:</span> <span><span class="currency-symbol">$</span><span id="paymentSubtotal">0.00</span></span></div>
-                <div class="payment-row"><span>Tax:</span> <span><span class="currency-symbol">$</span><span id="paymentTax">0.00</span></span></div>
-                <div class="payment-row payment-discount"><span>Discount:</span> <span>-<span class="currency-symbol">$</span><span id="paymentDiscountDisplay">0.00</span></span></div>
-            </div>
-            <div class="total payment-total">
-                Total Due: <span class="currency-symbol">$</span><span id="paymentTotalDue">0.00</span>
-            </div>
-            <div class="input-row">
-                <label for="discountInput" class="discount-input-wrapper">Discount (<span class="currency-symbol">$</span>):</label>
-                <input type="number" id="discountInput" placeholder="0.00" min="0" step="0.01" oninput="updatePaymentTotals()">
-            </div>
-            <div class="input-row">
-                <label for="paymentMethod" class="payment-method-wrapper">Payment Method:</label>
-                <select id="paymentMethod" onchange="toggleCashPaymentFields()" class="payment-method-select">
-                    <option value="Cash">Cash</option>
-                    <option value="Card">Card</option>
-                    <option value="Mobile">Mobile Payment</option>
-                </select>
-            </div>
-            <div id="cashPaymentFields">
-                <div class="input-row"><label for="amountTendered" class="amount-tendered-wrapper">Amount Tendered:</label><input type="number" id="amountTendered" oninput="calculateChange()" placeholder="0.00" step="0.01"></div>
-                <div class="total change-due">Change Due: <span class="currency-symbol">$</span><span id="changeDue">0.00</span></div>
-            </div>
+      <h3>Complete Payment</h3>
+      <div id="paymentDetails">
+        <div class="payment-details-wrapper">
+          <div class="payment-row"><span>Subtotal:</span> <span><span class="currency-symbol">$</span><span
+                id="paymentSubtotal">0.00</span></span></div>
+          <div class="payment-row"><span>Tax:</span> <span><span class="currency-symbol">$</span><span
+                id="paymentTax">0.00</span></span></div>
+          <div class="payment-row payment-discount"><span>Discount:</span> <span>-<span
+                class="currency-symbol">$</span><span id="paymentDiscountDisplay">0.00</span></span></div>
         </div>
-        <div id="splitPaymentContainer">
-            <!-- Split payment details will be injected here -->
+        <div class="total payment-total">
+          Total Due: <span class="currency-symbol">$</span><span id="paymentTotalDue">0.00</span>
         </div>
-        <div id="paymentStatusMessage" style="display:none; margin-top:10px; padding:8px 12px; border-radius:6px; background:#f4f7fb; color:#334155; font-size:0.9em;"></div>
-        <div class="receipt-actions"><button class="btn" id="confirmPaymentBtn" onclick="finalizePayment()" class="confirm-payment-btn">Confirm Payment</button><button class="btn" onclick="document.getElementById('paymentModal').style.display='none'" class="cancel-btn">Cancel</button></div>
-    </div></div>
+        <div class="input-row">
+          <label for="discountInput" class="discount-input-wrapper">Discount (<span
+              class="currency-symbol">$</span>):</label>
+          <input type="number" id="discountInput" placeholder="0.00" min="0" step="0.01"
+            oninput="updatePaymentTotals()">
+        </div>
+        <div class="input-row">
+          <label for="paymentMethod" class="payment-method-wrapper">Payment Method:</label>
+          <select id="paymentMethod" onchange="toggleCashPaymentFields()" class="payment-method-select">
+            <option value="Cash">Cash</option>
+            <option value="Card">Card</option>
+            <option value="Mobile">Mobile Payment</option>
+          </select>
+        </div>
+        <div id="cashPaymentFields">
+          <div class="input-row"><label for="amountTendered" class="amount-tendered-wrapper">Amount
+              Tendered:</label><input type="number" id="amountTendered" oninput="calculateChange()" placeholder="0.00"
+              step="0.01"></div>
+          <div class="total change-due">Change Due: <span class="currency-symbol">$</span><span
+              id="changeDue">0.00</span></div>
+        </div>
+      </div>
+      <div id="splitPaymentContainer">
+        <!-- Split payment details will be injected here -->
+      </div>
+      <div id="paymentStatusMessage"
+        style="display:none; margin-top:10px; padding:8px 12px; border-radius:6px; background:#f4f7fb; color:#334155; font-size:0.9em;">
+      </div>
+      <div class="receipt-actions"><button class="btn" id="confirmPaymentBtn" onclick="finalizePayment()"
+          class="confirm-payment-btn">Confirm Payment</button><button class="btn"
+          onclick="document.getElementById('paymentModal').style.display='none'" class="cancel-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Camera Scanner Modal -->
   <div id="cameraScannerModal" class="receipt-modal-overlay">
@@ -162,13 +183,13 @@
   <!-- Mobile Connect Modal -->
   <div id="mobileConnectModal" class="receipt-modal-overlay">
     <div class="custom-modal-card mobile-connect-modal-content">
-        <h3>Connect Mobile Scanner</h3>
-        <p>Scan this QR code with your phone to use it as a wireless barcode scanner.</p>
-        <div id="mobileConnectQR" class="mobile-connect-qr"></div>
-        <a id="mobileConnectLink" href="#" target="_blank" class="mobile-connect-link">Direct Link</a>
-        <div class="receipt-actions">
-            <button class="btn" onclick="closeMobileConnectModal()" class="cancel-btn">Close</button>
-        </div>
+      <h3>Connect Mobile Scanner</h3>
+      <p>Scan this QR code with your phone to use it as a wireless barcode scanner.</p>
+      <div id="mobileConnectQR" class="mobile-connect-qr"></div>
+      <a id="mobileConnectLink" href="#" target="_blank" class="mobile-connect-link">Direct Link</a>
+      <div class="receipt-actions">
+        <button class="btn" onclick="closeMobileConnectModal()" class="cancel-btn">Close</button>
+      </div>
     </div>
   </div>
 
@@ -176,7 +197,8 @@
   <div id="reportPreviewModal" class="receipt-modal-overlay">
     <div class="custom-modal-card" style="max-width: 95%; width: 1000px; height: 90vh;">
       <h3 id="reportPreviewTitle">Report Preview</h3>
-      <div id="reportPreviewContent" style="overflow: auto; flex-grow: 1; background: white; padding: 20px; border: 1px solid #ddd; color: black;">
+      <div id="reportPreviewContent"
+        style="overflow: auto; flex-grow: 1; background: white; padding: 20px; border: 1px solid #ddd; color: black;">
         <!-- Report content will be cloned here -->
       </div>
       <div class="receipt-actions">
@@ -184,7 +206,8 @@
         <button class="btn btn-primary-blue" onclick="downloadReportPDF('l')">Landscape (A4)</button>
         <button class="btn btn-info" onclick="exportReportAsImage()">Save as Image</button>
         <button class="btn btn-success" onclick="exportReportToCSV()">Excel/CSV</button>
-        <button class="btn cancel-btn" onclick="document.getElementById('reportPreviewModal').style.display='none'">Close</button>
+        <button class="btn cancel-btn"
+          onclick="document.getElementById('reportPreviewModal').style.display='none'">Close</button>
       </div>
     </div>
   </div>
@@ -199,8 +222,10 @@
         <button class="btn" onclick="downloadCurrentReceiptAsPDF()" class="save-pdf-btn">Save PDF</button>
         <button class="btn" onclick="shareReceipt()" class="share-btn">Share</button>
         <button class="btn" onclick="printReceipt()" class="print-btn">Print</button>
-        <button class="btn" onclick="directPrint()" id="directPrintBtn" class="direct-print-btn">Print to Device</button>
-        <button class="btn" onclick="document.getElementById('receiptModal').style.display='none'" class="close-modal-btn">Close</button>
+        <button class="btn" onclick="directPrint()" id="directPrintBtn" class="direct-print-btn">Print to
+          Device</button>
+        <button class="btn" onclick="document.getElementById('receiptModal').style.display='none'"
+          class="close-modal-btn">Close</button>
       </div>
     </div>
   </div>
@@ -232,7 +257,7 @@
       </div>
       <h3 class="success-title">Sale Successful!</h3>
       <p class="success-message">The transaction has been processed.</p>
-      
+
       <div class="success-details-box">
         <div class="success-row">
           <span>Amount Paid:</span>
@@ -248,11 +273,13 @@
           <span id="successPaymentMethod" class="payment-badge">Cash</span>
         </div>
       </div>
-      
+
       <div class="receipt-actions success-actions">
         <button class="btn btn-success" onclick="printReceipt()">🖨️ Print Receipt</button>
         <button class="btn btn-info" onclick="downloadCurrentReceiptAsPDF()">📄 View PDF</button>
-        <button class="btn btn-primary" onclick="document.getElementById('saleSuccessModal').style.display='none'; document.body.style.overflow='';" style="background: var(--primary);">New Sale</button>
+        <button class="btn btn-primary"
+          onclick="document.getElementById('saleSuccessModal').style.display='none'; document.body.style.overflow='';"
+          style="background: var(--primary);">New Sale</button>
       </div>
     </div>
   </div>
@@ -274,7 +301,8 @@
   <div id="updateToast">
     <span class="update-toast-content">🚀 New update available!</span>
     <button onclick="triggerAppUpdate(true)" class="update-now-btn">Update Now</button>
-    <button onclick="document.getElementById('updateToast').style.display='none'" class="update-close-btn">&times;</button>
+    <button onclick="document.getElementById('updateToast').style.display='none'"
+      class="update-close-btn">&times;</button>
   </div>
 
   <!-- Mobile Scanner UI (Hidden by default, shown only on phone when connected) -->
@@ -283,9 +311,10 @@
     <p id="ms-status" class="mobile-scanner-status">Connecting...</p>
     <div id="ms-reader"></div>
     <div id="scan-feedback">
-        ✅ Scanned
+      ✅ Scanned
     </div>
-    <button class="btn" onclick="window.location.href = window.location.pathname" class="exit-scanner-btn">Exit Scanner Mode</button>
+    <button class="btn" onclick="window.location.href = window.location.pathname" class="exit-scanner-btn">Exit Scanner
+      Mode</button>
   </div>
 
   <div class="app-layout">
@@ -301,9 +330,11 @@
       <button onclick="showTab('transactionsTab', this)"><span>🧾</span><span>Sales</span></button>
       <button onclick="showTab('reportsTab', this)"><span>📈</span><span>Reports</span></button>
       <button onclick="showTab('settingsTab', this)"><span>⚙️</span><span>Settings</span></button>
-      <button id="nav-app-admin-btn" onclick="showTab('appAdminTab', this); switchAppAdminView('dashboard');" style="display: none;"><span>🛡️</span><span>App Admin</span></button>
+      <button id="nav-app-admin-btn" onclick="showTab('appAdminTab', this); switchAppAdminView('dashboard');"
+        style="display: none;"><span>🛡️</span><span>App Admin</span></button>
       <button onclick="refreshApp()"><span>🔄</span><span>Refresh</span></button>
-      <button id="nav-lock-btn" onclick="lockApp()" title="Logout to PIN Screen" style="display: none;"><span>🔒</span><span>Lock PIN</span></button>
+      <button id="nav-lock-btn" onclick="lockApp()" title="Logout to PIN Screen"
+        style="display: none;"><span>🔒</span><span>Lock PIN</span></button>
     </nav>
 
     <main>
@@ -311,12 +342,12 @@
       <section id="menuTab" data-table-id="">
         <div id="menuHeaderContainer">
           <div id="menuOrderSummary" class="menu-summary">
-              <div class="total">Total: <span class="currency-symbol">$</span> <span id="menuTotal">0.00</span></div>
-              <div>
-                  <button class="btn btn-danger" onclick="clearCurrentOrder()" title="Clear Order">X</button>
-                  <button class="btn" onclick="previewOrder()">Preview</button>
-                  <button class="btn btn-success" onclick="processBill()">Checkout</button>
-              </div>
+            <div class="total">Total: <span class="currency-symbol">$</span> <span id="menuTotal">0.00</span></div>
+            <div>
+              <button class="btn btn-danger" onclick="clearCurrentOrder()" title="Clear Order">X</button>
+              <button class="btn" onclick="previewOrder()">Preview</button>
+              <button class="btn btn-success" onclick="processBill()">Checkout</button>
+            </div>
           </div>
           <div class="input-row menu-search-row">
             <select id="categoryFilter" onchange="renderMenu()" title="Filter by Category">
@@ -324,7 +355,8 @@
             </select>
             <input type="text" id="menuSearch" placeholder="Search for a product..." onkeyup="renderMenu()">
             <button class="btn camera-scan-btn" onclick="startCameraScan()" title="Scan with Camera">📷</button>
-            <button class="btn manual-barcode-btn" onclick="manualBarcodeInput()" title="Enter Barcode Manually">⌨️</button>
+            <button class="btn manual-barcode-btn" onclick="manualBarcodeInput()"
+              title="Enter Barcode Manually">⌨️</button>
           </div>
         </div>
         <div id="menuCategories"></div>
@@ -333,7 +365,15 @@
       <!-- Orders -->
       <section id="ordersTab">
         <table>
-          <thead><tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>Price</th>
+              <th>Qty</th>
+              <th>Total</th>
+              <th></th>
+            </tr>
+          </thead>
           <tbody id="orderList"></tbody>
           <tfoot>
             <tr class="total">
@@ -348,64 +388,77 @@
       <!-- Add Dish -->
       <section id="addDishTab">
         <div id="addDishFormContainer">
-            <input type="hidden" id="dishImageBase64">
-            <input type="hidden" id="dishIndex">
-            
-            <!-- Row 1: Basic Info -->
-            <div class="input-row dish-row-basic">
-              <input type="text" id="dishName" list="stockNameList" placeholder="Product Name" class="u-flex-2">
-              <datalist id="stockNameList"></datalist>
-              <div class="barcode-wrapper">
-                <input type="text" id="dishBarcode" placeholder="Barcode/SKU">
-                <button class="btn generate-barcode-btn" onclick="generateRandomBarcode()" title="Generate Random Barcode">🎲</button>
-              </div>
-              <select id="dishCategory" class="u-flex-grow-1"></select>
-              <input type="file" id="dishImage" accept="image/*" onchange="previewDishImage(this)" class="u-flex-grow-1" title="Product Image">
-              <img id="dishImagePreview" src="https://placehold.co/100" alt="Preview">
-            </div>
-            <!-- Recipe Builder -->
-            <div id="recipeBuilder" class="recipe-builder-box">
-                <h5 class="recipe-builder-title">Components / Bundle</h5>
-                <div id="recipeItemsContainer" class="recipe-items-container"></div>
-                <div class="input-row">
-                    <select id="newRecipeItemSelect" onchange="updateRecipeItemUnit()" class="u-flex-grow-1"></select>
-                    <input type="text" id="newRecipeItemUnit" placeholder="Unit" readonly class="u-flex-grow-05 u-text-center">
-                    <input type="number" id="newRecipeItemQty" placeholder="Qty" min="0.01" step="0.01" class="u-flex-grow-05">
-                    <button class="btn" onclick="addNewRecipeItemFromForm()">+ Add</button>
-                </div>
-            </div>
+          <input type="hidden" id="dishImageBase64">
+          <input type="hidden" id="dishIndex">
 
-            <!-- Pricing Calculator -->
-            <div id="pricingCalculator" class="pricing-calc-box">
-                <div class="input-row">
-                    <label for="dishSellingPrice" class="pricing-row">Selling:</label>
-                    <input type="number" id="dishSellingPrice" placeholder="0.00" step="0.01" oninput="updateRecipeTotals()" class="selling-price-input">
-                    <label for="dishCostPrice" class="cost-price-label">Total Cost:</label>
-                    <input type="text" id="dishCostPrice" readonly class="cost-price-input">
-                </div>
+          <!-- Row 1: Basic Info -->
+          <div class="input-row dish-row-basic">
+            <input type="text" id="dishName" list="stockNameList" placeholder="Product Name" class="u-flex-2">
+            <datalist id="stockNameList"></datalist>
+            <div class="barcode-wrapper">
+              <input type="text" id="dishBarcode" placeholder="Barcode/SKU">
+              <button class="btn generate-barcode-btn" onclick="generateRandomBarcode()"
+                title="Generate Random Barcode">🎲</button>
             </div>
+            <select id="dishCategory" class="u-flex-grow-1"></select>
+            <input type="file" id="dishImage" accept="image/*" onchange="previewDishImage(this)" class="u-flex-grow-1"
+              title="Product Image">
+            <img id="dishImagePreview" src="https://placehold.co/100" alt="Preview">
+          </div>
+          <!-- Recipe Builder -->
+          <div id="recipeBuilder" class="recipe-builder-box">
+            <h5 class="recipe-builder-title">Components / Bundle</h5>
+            <div id="recipeItemsContainer" class="recipe-items-container"></div>
+            <div class="input-row">
+              <select id="newRecipeItemSelect" onchange="updateRecipeItemUnit()" class="u-flex-grow-1"></select>
+              <input type="text" id="newRecipeItemUnit" placeholder="Unit" readonly
+                class="u-flex-grow-05 u-text-center">
+              <input type="number" id="newRecipeItemQty" placeholder="Qty" min="0.01" step="0.01"
+                class="u-flex-grow-05">
+              <button class="btn" onclick="addNewRecipeItemFromForm()">+ Add</button>
+            </div>
+          </div>
 
-            <!-- Action Buttons -->
-            <div class="input-row dish-form-actions">
-              <div class="profit-display">Profit: <span class="currency-symbol">$</span><span id="dishProfitValue">0.00</span> | Margin: <span id="dishProfitMargin">0.00</span>%</div>
-              <div>
-                <button class="btn" id="saveDishButton" onclick="addDish(this)">Save</button>
-                <button class="btn btn-secondary" onclick="toggleAddDishForm(false)">Cancel</button>
-              </div>
+          <!-- Pricing Calculator -->
+          <div id="pricingCalculator" class="pricing-calc-box">
+            <div class="input-row">
+              <label for="dishSellingPrice" class="pricing-row">Selling:</label>
+              <input type="number" id="dishSellingPrice" placeholder="0.00" step="0.01" oninput="updateRecipeTotals()"
+                class="selling-price-input">
+              <label for="dishCostPrice" class="cost-price-label">Total Cost:</label>
+              <input type="text" id="dishCostPrice" readonly class="cost-price-input">
             </div>
+          </div>
+
+          <!-- Action Buttons -->
+          <div class="input-row dish-form-actions">
+            <div class="profit-display">Profit: <span class="currency-symbol">$</span><span
+                id="dishProfitValue">0.00</span> | Margin: <span id="dishProfitMargin">0.00</span>%</div>
+            <div>
+              <button class="btn" id="saveDishButton" onclick="addDish(this)">Save</button>
+              <button class="btn btn-secondary" onclick="toggleAddDishForm(false)">Cancel</button>
+            </div>
+          </div>
         </div>
 
-        <h3>📋 Products List 
+        <h3>📋 Products List
           <button class="btn add-product-header" onclick="toggleAddDishForm(true)">➕ Add New</button>
           <button class="btn print-barcodes-btn" onclick="generateAndPrintBarcodes()">🖨️ Print</button>
         </h3>
         <div>
           <table>
-                <thead>
-                    <tr><th>Image</th><th>Product</th><th style="text-align: right;">Cost</th><th style="text-align: right;">Price</th><th style="text-align: right;">Profit</th><th style="text-align: right;">Action</th></tr>
-                </thead>
-                <tbody id="dishesTableBody"></tbody>
-            </table>
+            <thead>
+              <tr>
+                <th>Image</th>
+                <th>Product</th>
+                <th style="text-align: right;">Cost</th>
+                <th style="text-align: right;">Price</th>
+                <th style="text-align: right;">Profit</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="dishesTableBody"></tbody>
+          </table>
         </div>
       </section>
 
@@ -418,7 +471,12 @@
             <button class="btn" onclick="addCategory()">Add Category</button>
           </div>
           <table class="u-mt-15">
-            <thead><tr><th>Category Name</th><th style="text-align: right;">Action</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Category Name</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
             <tbody id="categoryListBody"></tbody>
           </table>
         </div>
@@ -435,7 +493,13 @@
             <button class="btn" onclick="addUnit()">Add Unit</button>
           </div>
           <table class="u-mt-15">
-            <thead><tr><th>Full Name</th><th>Short Name</th><th style="text-align: right;">Action</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Full Name</th>
+                <th>Short Name</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
             <tbody id="unitListBody"></tbody>
           </table>
         </div>
@@ -450,10 +514,12 @@
             <input type="text" id="staffNameInput" placeholder="Staff Name">
             <input type="text" id="staffRoleInput" placeholder="Staff Role (e.g., Server, Manager)">
             <input type="password" id="staffPinInput" placeholder="4-digit PIN" maxlength="4" style="width: 100px;">
-            <button type="button" onclick="togglePINVisibility('staffPinInput')" class="btn" style="padding: 5px 10px; margin: 0;">👁️</button>
+            <button type="button" onclick="togglePINVisibility('staffPinInput')" class="btn"
+              style="padding: 5px 10px; margin: 0;">👁️</button>
             <button class="btn" onclick="addStaff()">Add Staff</button>
           </div>
-          <div class="u-mt-10 u-fs-08" id="staffPermissionsContainer" style="display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 10px;">
+          <div class="u-mt-10 u-fs-08" id="staffPermissionsContainer"
+            style="display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 10px;">
             <span style="width: 100%; font-weight: bold;">New Staff Permissions:</span>
             <label><input type="checkbox" value="dashboardTab"> Dashboard</label>
             <label><input type="checkbox" value="menuTab" checked> Shop</label>
@@ -466,9 +532,19 @@
             <label><input type="checkbox" value="transactionsTab"> Sales</label>
             <label><input type="checkbox" value="reportsTab"> Reports</label>
             <label><input type="checkbox" value="settingsTab"> Settings</label>
+            <label><input type="checkbox" value="lockPin" checked> Lock PIN</label>
+            <label><input type="checkbox" value="logoutAccount" checked> Logout</label>
           </div>
           <table class="u-mt-15">
-            <thead><tr><th>Name</th><th>Role</th><th>PIN</th><th>Access</th><th style="text-align: right;">Action</th></tr></thead>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Role</th>
+                <th>PIN</th>
+                <th>Access</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
             <tbody id="staffListBody"></tbody>
           </table>
         </div>
@@ -478,27 +554,34 @@
       <section id="customerTab">
         <h3>👤 Customer Management</h3>
         <div class="form-panel">
-            <div id="addCustomerFormContainer">
-              <h5 style="margin-top: 0;">Add/Edit Customer</h5>
-              <input type="hidden" id="customerIndex">
-              <div class="input-row">
-                  <input type="text" id="customerNameInput" placeholder="Customer Name">
-                  <input type="text" id="customerContactInput" placeholder="Contact (Phone/Email)">
-              </div>
-              <div class="input-row"><input type="text" id="customerAddressInput" placeholder="Address"></div>
-              <div class="input-row" style="justify-content: flex-end;">
-                  <button class="btn" id="saveCustomerBtn" onclick="addCustomer()">Save Customer</button>
-                  <button class="btn btn-secondary" onclick="toggleAddCustomerForm(false)">Cancel</button>
-              </div>
+          <div id="addCustomerFormContainer">
+            <h5 style="margin-top: 0;">Add/Edit Customer</h5>
+            <input type="hidden" id="customerIndex">
+            <div class="input-row">
+              <input type="text" id="customerNameInput" placeholder="Customer Name">
+              <input type="text" id="customerContactInput" placeholder="Contact (Phone/Email)">
             </div>
-            <div id="customerListHeader" style="display: flex; justify-content: space-between; align-items: center;">
-              <h5 style="margin: 0;">All Customers</h5>
-              <button class="btn" id="addCustomerBtn" onclick="toggleAddCustomerForm(true)">➕ Add New Customer</button>
+            <div class="input-row"><input type="text" id="customerAddressInput" placeholder="Address"></div>
+            <div class="input-row" style="justify-content: flex-end;">
+              <button class="btn" id="saveCustomerBtn" onclick="addCustomer()">Save Customer</button>
+              <button class="btn btn-secondary" onclick="toggleAddCustomerForm(false)">Cancel</button>
             </div>
-            <table class="u-mt-15">
-              <thead><tr><th>Name</th><th>Contact</th><th>Address</th><th style="text-align: right; white-space: nowrap;">Action</th></tr></thead>
-              <tbody id="customerListBody"></tbody>
-            </table>
+          </div>
+          <div id="customerListHeader" style="display: flex; justify-content: space-between; align-items: center;">
+            <h5 style="margin: 0;">All Customers</h5>
+            <button class="btn" id="addCustomerBtn" onclick="toggleAddCustomerForm(true)">➕ Add New Customer</button>
+          </div>
+          <table class="u-mt-15">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Contact</th>
+                <th>Address</th>
+                <th style="text-align: right; white-space: nowrap;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="customerListBody"></tbody>
+          </table>
         </div>
       </section>
 
@@ -549,45 +632,54 @@
         <h3>📦 Stock Management</h3>
         <div class="input-row u-mb-20 u-flex-nowrap settings-group">
           <label for="lowStockThreshold">Low Stock:</label>
-          <input type="number" id="lowStockThreshold" placeholder="e.g., 10" min="0" class="u-flex-grow-0 u-flex-basis-100">
+          <input type="number" id="lowStockThreshold" placeholder="e.g., 10" min="0"
+            class="u-flex-grow-0 u-flex-basis-100">
           <button class="btn" onclick="saveSettings()">Save</button>
         </div>
         <h5 class="u-mt-20">Low Stock Report</h5>
         <table class="u-mt-10">
           <thead>
-            <tr><th>Item Name</th><th>Category</th><th class="u-text-right">Current Stock</th></tr>
+            <tr>
+              <th>Item Name</th>
+              <th>Category</th>
+              <th class="u-text-right">Current Stock</th>
+            </tr>
           </thead>
           <tbody id="lowStockReportBody"></tbody>
         </table>
         <div id="stockAdjustmentFormContainer" class="form-panel u-mt-20" style="display: none;">
-            <input type="hidden" id="stockItemIndex">
-            <h5 id="stockAdjustItemName" class="u-m-0">Adjust Stock for...</h5>
-            <div class="input-row">
-                <input type="number" id="newStockValue" placeholder="Enter new stock quantity" min="0">
-                <button class="btn" onclick="saveStockAdjustment()">Save Stock</button>
-                <button class="btn btn-secondary" onclick="toggleStockAdjustmentForm(false)">Cancel</button>
-            </div>
+          <input type="hidden" id="stockItemIndex">
+          <h5 id="stockAdjustItemName" class="u-m-0">Adjust Stock for...</h5>
+          <div class="input-row">
+            <input type="number" id="newStockValue" placeholder="Enter new stock quantity" min="0">
+            <button class="btn" onclick="saveStockAdjustment()">Save Stock</button>
+            <button class="btn btn-secondary" onclick="toggleStockAdjustmentForm(false)">Cancel</button>
+          </div>
         </div>
-        <h5 class="u-mt-20">All Items Stock <button class="btn u-float-right" onclick="toggleNewStockItemForm(true)">➕ Add New Item</button></h5>
+        <h5 class="u-mt-20">All Items Stock <button class="btn u-float-right" onclick="toggleNewStockItemForm(true)">➕
+            Add New Item</button></h5>
         <div id="newStockItemFormContainer" class="form-panel u-mt-20" style="display: none; padding: 20px;">
-            <h5 class="u-m-0">Add New Stock Item / Ingredient</h5>
-            <div class="input-row">
-                <input type="text" id="newStockItemName" placeholder="Item Name" class="u-flex-grow-1">
-                <select id="newStockItemUnit"></select>
-            </div>
-            <div class="input-row">
-                <input type="number" id="newStockItemCost" placeholder="Cost Price" step="0.01" min="0">
-                <input type="number" id="newStockItemPrice" placeholder="Selling Price" step="0.01" min="0">
-                <input type="number" id="newStockItemStock" placeholder="Initial Stock" min="0">
-            </div>
-            <div class="input-row" style="justify-content: flex-end;">
-                <button class="btn" onclick="saveNewStockItem()">Save Item</button>
-                <button class="btn btn-secondary" onclick="toggleNewStockItemForm(false)">Cancel</button>
-            </div>
+          <h5 class="u-m-0">Add New Stock Item / Ingredient</h5>
+          <div class="input-row">
+            <input type="text" id="newStockItemName" placeholder="Item Name" class="u-flex-grow-1">
+            <select id="newStockItemUnit"></select>
+          </div>
+          <div class="input-row">
+            <input type="number" id="newStockItemCost" placeholder="Cost Price" step="0.01" min="0">
+            <input type="number" id="newStockItemPrice" placeholder="Selling Price" step="0.01" min="0">
+            <input type="number" id="newStockItemStock" placeholder="Initial Stock" min="0">
+          </div>
+          <div class="input-row" style="justify-content: flex-end;">
+            <button class="btn" onclick="saveNewStockItem()">Save Item</button>
+            <button class="btn btn-secondary" onclick="toggleNewStockItemForm(false)">Cancel</button>
+          </div>
         </div>
         <table class="u-mt-10">
           <thead>
-            <tr><th colspan="6"><input type="text" id="stockSearchInput" onkeyup="renderStockListTable()" placeholder="Search stock items..." class="u-w-full u-mb-15"></th></tr>
+            <tr>
+              <th colspan="6"><input type="text" id="stockSearchInput" onkeyup="renderStockListTable()"
+                  placeholder="Search stock items..." class="u-w-full u-mb-15"></th>
+            </tr>
           </thead>
           <thead>
             <tr>
@@ -612,7 +704,11 @@
         <div class="u-overflow-x-auto" id="transactionListContainer">
           <table>
             <thead>
-              <tr><th>Date</th><th style="text-align: right;">Total</th><th style="text-align: right;">Action</th></tr>
+              <tr>
+                <th>Date</th>
+                <th style="text-align: right;">Total</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
             </thead>
             <tbody id="transactionHistoryBody"></tbody>
           </table>
@@ -631,28 +727,41 @@
             </select>
             <input type="date" id="reportDate" onchange="renderReport()" class="u-flex-basis-150">
             <div id="reportOptionsFilterContainer" class="u-flex-basis-150" style="position:relative;">
-              <button class="btn u-w-full u-m-0" onclick="toggleReportOptionsDropdown()" style="font-size:0.8em; padding:8px; background:var(--card); color:var(--text); border:1px solid var(--border-color);">Options</button>
-              <div id="reportOptionsDropdown" style="display:none; position:absolute; top:100%; left:0; width:200px; background:var(--card); border:1px solid var(--border-color); z-index:1000; padding:15px; box-shadow:0 10px 25px rgba(0,0,0,0.2); border-radius:8px;">
-                <label style="display:flex; align-items:center; gap:8px; margin-bottom:10px; cursor:pointer; color:var(--text); font-size:0.9em;"><input type="checkbox" id="showReportCards" checked onchange="renderReport()"> Summary Cards</label>
-                <label style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--text); font-size:0.9em;"><input type="checkbox" id="showReportCharts" checked onchange="renderReport()"> Charts</label>
+              <button class="btn u-w-full u-m-0" onclick="toggleReportOptionsDropdown()"
+                style="font-size:0.8em; padding:8px; background:var(--card); color:var(--text); border:1px solid var(--border-color);">Options</button>
+              <div id="reportOptionsDropdown"
+                style="display:none; position:absolute; top:100%; left:0; width:200px; background:var(--card); border:1px solid var(--border-color); z-index:1000; padding:15px; box-shadow:0 10px 25px rgba(0,0,0,0.2); border-radius:8px;">
+                <label
+                  style="display:flex; align-items:center; gap:8px; margin-bottom:10px; cursor:pointer; color:var(--text); font-size:0.9em;"><input
+                    type="checkbox" id="showReportCards" checked onchange="renderReport()"> Summary Cards</label>
+                <label
+                  style="display:flex; align-items:center; gap:8px; cursor:pointer; color:var(--text); font-size:0.9em;"><input
+                    type="checkbox" id="showReportCharts" checked onchange="renderReport()"> Charts</label>
               </div>
             </div>
           </div>
           <div class="input-row u-flex-nowrap u-flex-grow-1">
-            <select id="reportStaffFilter" onchange="renderReport()" class="u-flex-basis-150"><option value="">All Staff</option></select>
+            <select id="reportStaffFilter" onchange="renderReport()" class="u-flex-basis-150">
+              <option value="">All Staff</option>
+            </select>
             <div id="reportCategoryFilterContainer" class="u-flex-basis-150" style="position:relative;">
-              <button class="btn u-w-full u-m-0" onclick="toggleReportCategoryDropdown()" style="font-size:0.8em; padding:8px; background:var(--card); color:var(--text); border:1px solid var(--border-color);">Categories</button>
-              <div id="reportCategoryDropdown" style="display:none; position:absolute; top:100%; left:0; width:220px; background:var(--card); border:1px solid var(--border-color); z-index:1000; padding:15px; box-shadow:0 10px 25px rgba(0,0,0,0.2); border-radius:8px; max-height:300px; overflow-y:auto;">
+              <button class="btn u-w-full u-m-0" onclick="toggleReportCategoryDropdown()"
+                style="font-size:0.8em; padding:8px; background:var(--card); color:var(--text); border:1px solid var(--border-color);">Categories</button>
+              <div id="reportCategoryDropdown"
+                style="display:none; position:absolute; top:100%; left:0; width:220px; background:var(--card); border:1px solid var(--border-color); z-index:1000; padding:15px; box-shadow:0 10px 25px rgba(0,0,0,0.2); border-radius:8px; max-height:300px; overflow-y:auto;">
                 <!-- Checkboxes will be injected here -->
               </div>
             </div>
             <button class="btn u-flex-grow-1" onclick="renderReport()">Generate</button>
-            <button class="btn btn-purple" style="margin: 5px 2px;" onclick="openReportPreview()" title="Preview Report">Preview</button>
+            <button class="btn btn-purple" style="margin: 5px 2px;" onclick="openReportPreview()"
+              title="Preview Report">Preview</button>
           </div>
         </div>
         <div class="input-row u-mb-20" style="justify-content: flex-end; gap: 5px; flex-wrap: wrap;">
-          <button class="btn btn-primary-blue u-fs-08" onclick="downloadReportPDF('p')" title="Portrait A4">PDF (P)</button>
-          <button class="btn btn-primary-blue u-fs-08" onclick="downloadReportPDF('l')" title="Landscape A4">PDF (L)</button>
+          <button class="btn btn-primary-blue u-fs-08" onclick="downloadReportPDF('p')" title="Portrait A4">PDF
+            (P)</button>
+          <button class="btn btn-primary-blue u-fs-08" onclick="downloadReportPDF('l')" title="Landscape A4">PDF
+            (L)</button>
           <button class="btn btn-info u-fs-08" onclick="exportReportAsImage()">Image</button>
           <button class="btn btn-success u-fs-08" onclick="exportReportToCSV()">Excel</button>
         </div>
@@ -696,53 +805,69 @@
             <div class="input-row">
               <label for="managerPIN">Manager PIN:</label>
               <input type="password" id="managerPIN" placeholder="4-digit PIN" maxlength="4">
-              <button type="button" onclick="togglePINVisibility()" class="btn" style="padding: 5px 10px; margin: 0;">👁️</button>
+              <button type="button" onclick="togglePINVisibility()" class="btn"
+                style="padding: 5px 10px; margin: 0;">👁️</button>
             </div>
             <div class="input-row">
               <label for="confirmManagerPIN">Confirm PIN:</label>
               <input type="password" id="confirmManagerPIN" placeholder="Confirm PIN" maxlength="4">
-              <button type="button" onclick="togglePINVisibility('confirmManagerPIN')" class="btn" style="padding: 5px 10px; margin: 0;">👁️</button>
+              <button type="button" onclick="togglePINVisibility('confirmManagerPIN')" class="btn"
+                style="padding: 5px 10px; margin: 0;">👁️</button>
             </div>
             <button class="btn" onclick="saveSettings()">Update PIN</button>
-            <div id="account-security-section" style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px; display: flex; flex-direction: column; gap: 10px;">
-              <p class="u-fs-08 u-text-muted" style="margin: 0;">Account: <span id="display-user-email" style="font-weight: bold; color: var(--text);">...</span></p>
+            <div id="account-security-section"
+              style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px; display: flex; flex-direction: column; gap: 10px;">
+              <p class="u-fs-08 u-text-muted" style="margin: 0;">Account: <span id="display-user-email"
+                  style="font-weight: bold; color: var(--text);">...</span></p>
               <div id="auth-provider-badges" style="display: flex; gap: 5px; margin-bottom: 5px;"></div>
-              <button id="change-password-btn" class="btn" onclick="openAuthModal('changePassword')" style="background: #6c757d; margin: 0;">Change Password</button>
-              <button id="link-password-btn" class="btn" onclick="openAuthModal('linkPassword')" style="background: var(--primary); margin: 0; display: none;">Create Password for Email Login</button>
-              <button class="btn" onclick="openAuthModal('deleteAccount')" style="background: #dc3545; margin: 0;">Delete My Account</button>
+              <button id="change-password-btn" class="btn" onclick="openAuthModal('changePassword')"
+                style="background: #6c757d; margin: 0;">Change Password</button>
+              <button id="link-password-btn" class="btn" onclick="openAuthModal('linkPassword')"
+                style="background: var(--primary); margin: 0; display: none;">Create Password for Email Login</button>
+              <button class="btn" onclick="openAuthModal('deleteAccount')"
+                style="background: #dc3545; margin: 0;">Delete My Account</button>
             </div>
           </div>
         </div>
         <div class="settings-group">
           <h4 class="settings-header">Barcode Scanner</h4>
           <div class="settings-content">
-            <p>Connect your Wireless, Bluetooth, or USB scanner to your device. Most scanners act as a keyboard (HID mode). Click the box below and scan a code to test.</p>
+            <p>Connect your Wireless, Bluetooth, or USB scanner to your device. Most scanners act as a keyboard (HID
+              mode). Click the box below and scan a code to test.</p>
             <div class="input-row">
               <button class="btn" onclick="connectBluetoothScanner()">Scan Bluetooth</button>
               <button class="btn" onclick="connectUSBScanner()">Scan USB/Wireless</button>
-              <button class="btn" onclick="startMobileConnection()" style="background: #6f42c1;">📱 Connect Phone</button>
+              <button class="btn" onclick="startMobileConnection()" style="background: #6f42c1;">📱 Connect
+                Phone</button>
             </div>
-            <div style="margin-top: 10px; margin-bottom: 10px;"><strong>Status:</strong> <span id="scannerConnectionStatus">Ready (HID Mode)</span> <span id="mobileScannerStatus" style="margin-left: 10px; font-weight: bold;"></span></div>
+            <div style="margin-top: 10px; margin-bottom: 10px;"><strong>Status:</strong> <span
+                id="scannerConnectionStatus">Ready (HID Mode)</span> <span id="mobileScannerStatus"
+                style="margin-left: 10px; font-weight: bold;"></span></div>
             <div class="input-row">
-              <input type="text" id="scannerTestInput" placeholder="Click here and scan to test connection..." onfocus="this.value=''">
+              <input type="text" id="scannerTestInput" placeholder="Click here and scan to test connection..."
+                onfocus="this.value=''">
             </div>
             <div style="margin-top: 10px;">
-              <strong>Last Scanned:</strong> <span id="lastScannedCode" style="font-family: monospace; font-weight: bold; color: var(--primary);">None</span>
+              <strong>Last Scanned:</strong> <span id="lastScannedCode"
+                style="font-family: monospace; font-weight: bold; color: var(--primary);">None</span>
             </div>
           </div>
         </div>
         <div class="settings-group">
           <h4 class="settings-header">Printer Settings</h4>
           <div class="settings-content">
-            <p>Connect to a Bluetooth or USB thermal printer (ESC/POS compatible). Requires a compatible browser like Chrome.</p>
+            <p>Connect to a Bluetooth or USB thermal printer (ESC/POS compatible). Requires a compatible browser like
+              Chrome.</p>
             <div class="input-row">
               <button class="btn" onclick="connectBluetoothPrinter()">Connect Bluetooth Printer</button>
               <button class="btn" onclick="connectUSBPrinter()">Connect USB Printer</button>
             </div>
             <div style="margin-top: 10px;"><strong>Status:</strong> <span id="printerStatus">Not Connected</span></div>
             <div style="margin-top: 10px;">
-              <button class="btn" onclick="testPrint()" id="testPrintBtn" style="display: none; background: #17a2b8;">Test Print</button>
-              <button class="btn" onclick="disconnectPrinter()" id="disconnectPrinterBtn" style="display: none; background: #6c757d;">Disconnect</button>
+              <button class="btn" onclick="testPrint()" id="testPrintBtn"
+                style="display: none; background: #17a2b8;">Test Print</button>
+              <button class="btn" onclick="disconnectPrinter()" id="disconnectPrinterBtn"
+                style="display: none; background: #6c757d;">Disconnect</button>
             </div>
           </div>
         </div>
@@ -751,10 +876,12 @@
           <div class="settings-content">
             <p>Enable push notifications to receive alerts even when the app is closed.</p>
             <div class="input-row">
-              <button class="btn" id="enableNotifBtn" onclick="requestNotificationPermission()">Enable Notifications</button>
+              <button class="btn" id="enableNotifBtn" onclick="requestNotificationPermission()">Enable
+                Notifications</button>
               <button class="btn" onclick="testLocalNotification()">Test Notification</button>
             </div>
-            <div style="margin-top: 10px;"><strong>Status:</strong> <span id="notificationStatus">Checking...</span></div>
+            <div style="margin-top: 10px;"><strong>Status:</strong> <span id="notificationStatus">Checking...</span>
+            </div>
           </div>
         </div>
         <div class="settings-group">
@@ -762,7 +889,8 @@
           <div class="settings-content">
             <p>Warning: This will permanently delete all menu items and order history.</p>
             <div class="input-row" style="justify-content: center; align-items: center;">
-              <button class="btn" id="settingsUpdateBtn" onclick="triggerAppUpdate(true)" style="background: #ffc107; display: none; color: #000;">✨ Update App</button>
+              <button class="btn" id="settingsUpdateBtn" onclick="triggerAppUpdate(true)"
+                style="background: #ffc107; display: none; color: #000;">✨ Update App</button>
               <button class="btn" id="installAppBtn" style="background: #007bff;">Install App</button>
               <button class="btn" onclick="exportTransactionsToCSV()" style="background: #007bff;">Export CSV</button>
               <button class="btn" onclick="backupAllData()" style="background: #17a2b8;">Backup JSON</button>
@@ -772,9 +900,11 @@
             </div>
           </div>
         </div>
-        <div class="u-text-center u-mt-20 u-fs-08" style="padding-bottom: 20px; color: #888; opacity: 0.8; display: flex; align-items: center; justify-content: center; gap: 10px;">
+        <div class="u-text-center u-mt-20 u-fs-08"
+          style="padding-bottom: 20px; color: #888; opacity: 0.8; display: flex; align-items: center; justify-content: center; gap: 10px;">
           <span>YoShop Version <span id="app-version-display">...</span></span>
-          <button class="btn btn-secondary" onclick="triggerAppUpdate(true)" style="font-size: 0.8em; padding: 2px 8px; margin: 0; background: #6c757d;">Check for Updates</button>
+          <button class="btn btn-secondary" onclick="triggerAppUpdate(true)"
+            style="font-size: 0.8em; padding: 2px 8px; margin: 0; background: #6c757d;">Check for Updates</button>
         </div>
       </section>
 
@@ -782,25 +912,27 @@
       <section id="appAdminTab">
         <h3>🛡️ App Administration</h3>
         <div class="form-panel">
-            <h5>App Admin Credentials</h5>
-            <p class="u-fs-08 u-text-muted">Manage the master credentials for the shop administrator.</p>
-            <div class="input-row">
-                <input type="text" id="appAdminNameInput" placeholder="Admin Username">
-                <input type="password" id="appAdminPinInput" placeholder="Admin PIN" maxlength="4">
-                <button type="button" onclick="togglePINVisibility('appAdminPinInput')" class="btn" style="padding: 5px 10px; margin: 0;">👁️</button>
-                <button class="btn" onclick="updateAppAdminCredentials()">Update Credentials</button>
-            </div>
-            
-            <h5 class="u-mt-20">Shop Management</h5>
-            <div class="input-row">
-                <span>Current Shop Status: <strong id="currentShopStatusDisplay">Active</strong></span>
-            </div>
-            <div class="input-row">
-                <button class="btn btn-success" onclick="updateShopStatus('active')">Activate Shop</button>
-                <button class="btn btn-warning" onclick="updateShopStatus('suspended')">Suspend Shop</button>
-                <button class="btn btn-danger" onclick="updateShopStatus('deactivated')">Deactivate Shop</button>
-            </div>
-            <p class="u-fs-08 u-text-muted">Suspended or Deactivated shops will restrict access to all features except this admin panel for the App Admin.</p>
+          <h5>App Admin Credentials</h5>
+          <p class="u-fs-08 u-text-muted">Manage the master credentials for the shop administrator.</p>
+          <div class="input-row">
+            <input type="text" id="appAdminNameInput" placeholder="Admin Username">
+            <input type="password" id="appAdminPinInput" placeholder="Admin PIN" maxlength="4">
+            <button type="button" onclick="togglePINVisibility('appAdminPinInput')" class="btn"
+              style="padding: 5px 10px; margin: 0;">👁️</button>
+            <button class="btn" onclick="updateAppAdminCredentials()">Update Credentials</button>
+          </div>
+
+          <h5 class="u-mt-20">Shop Management</h5>
+          <div class="input-row">
+            <span>Current Shop Status: <strong id="currentShopStatusDisplay">Active</strong></span>
+          </div>
+          <div class="input-row">
+            <button class="btn btn-success" onclick="updateShopStatus('active')">Activate Shop</button>
+            <button class="btn btn-warning" onclick="updateShopStatus('suspended')">Suspend Shop</button>
+            <button class="btn btn-danger" onclick="updateShopStatus('deactivated')">Deactivate Shop</button>
+          </div>
+          <p class="u-fs-08 u-text-muted">Suspended or Deactivated shops will restrict access to all features except
+            this admin panel for the App Admin.</p>
         </div>
       </section>
     </main>
@@ -816,7 +948,8 @@
       <input type="hidden" id="permStaffIndex">
       <div class="receipt-actions">
         <button class="btn btn-success" onclick="saveStaffPermissions()">Update Permissions</button>
-        <button class="btn cancel-btn" onclick="document.getElementById('staffPermissionsModal').style.display='none'">Cancel</button>
+        <button class="btn cancel-btn"
+          onclick="document.getElementById('staffPermissionsModal').style.display='none'">Cancel</button>
       </div>
     </div>
   </div>
@@ -826,22 +959,28 @@
     <div class="custom-modal-card" style="max-width: 350px;">
       <h3 id="authModalTitle">Account Security</h3>
       <p id="authModalDescription" class="u-fs-08 u-text-muted" style="margin-bottom: 15px;"></p>
-      
+
       <div style="display: flex; flex-direction: column; gap: 10px;">
         <div id="currentPasswordField" style="display: none;">
           <div style="display: flex; gap: 8px; align-items: center;">
-            <input type="password" id="authCurrentPassword" placeholder="Current Password" style="flex: 1; padding: 12px; border-radius: 8px;">
-            <button type="button" onclick="togglePINVisibility('authCurrentPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 1em;">👁️</button>
+            <input type="password" id="authCurrentPassword" placeholder="Current Password"
+              style="flex: 1; padding: 12px; border-radius: 8px;">
+            <button type="button" onclick="togglePINVisibility('authCurrentPassword')" class="btn"
+              style="padding: 12px; margin: 0; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 1em;">👁️</button>
           </div>
         </div>
         <div id="newPasswordFields" style="display: none;">
           <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 10px;">
-            <input type="password" id="authNewPassword" placeholder="New Password" style="flex: 1; padding: 12px; border-radius: 8px;">
-            <button type="button" onclick="togglePINVisibility('authNewPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 1em;">👁️</button>
+            <input type="password" id="authNewPassword" placeholder="New Password"
+              style="flex: 1; padding: 12px; border-radius: 8px;">
+            <button type="button" onclick="togglePINVisibility('authNewPassword')" class="btn"
+              style="padding: 12px; margin: 0; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 1em;">👁️</button>
           </div>
           <div style="display: flex; gap: 8px; align-items: center;">
-            <input type="password" id="authConfirmNewPassword" placeholder="Confirm New Password" style="flex: 1; padding: 12px; border-radius: 8px;">
-            <button type="button" onclick="togglePINVisibility('authConfirmNewPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 1em;">👁️</button>
+            <input type="password" id="authConfirmNewPassword" placeholder="Confirm New Password"
+              style="flex: 1; padding: 12px; border-radius: 8px;">
+            <button type="button" onclick="togglePINVisibility('authConfirmNewPassword')" class="btn"
+              style="padding: 12px; margin: 0; background: transparent; border: 1px solid var(--border-color); border-radius: 8px; cursor: pointer; font-size: 1em;">👁️</button>
           </div>
         </div>
       </div>

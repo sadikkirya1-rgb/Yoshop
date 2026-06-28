@@ -10,7 +10,9 @@ const DEFAULT_PERMISSION_TOKENS = [
   'exportTab',
   'deleteTab',
   'discountApproval',
-  'priceOverride'
+  'priceOverride',
+  'lockPin',
+  'logoutAccount'
 ];
 
 const FEATURE_ALIASES = {
@@ -25,7 +27,10 @@ const FEATURE_ALIASES = {
   export: 'exportTab',
   delete: 'deleteTab',
   discount: 'discountApproval',
-  price: 'priceOverride'
+  price: 'priceOverride',
+  pin: 'lockPin',
+  lock: 'lockPin',
+  logout: 'logoutAccount'
 };
 
 function normalizePermissions(permissions = [], fallback = []) {

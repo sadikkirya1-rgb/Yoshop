@@ -2270,7 +2270,7 @@ function updateAuthUI(user) {
     const nav = document.querySelector('nav');
 
     // Inject App Admin Sidebar Buttons if they don't exist
-    if (currentUserRole === 'appAdmin' && nav && !document.getElementById('nav-admin-shops')) {
+    if (isAppAdminRole() && nav && !document.getElementById('nav-admin-shops')) {
       const shopsBtn = document.createElement('button');
       shopsBtn.id = 'nav-admin-shops';
       shopsBtn.onclick = () => { showTab('appAdminTab', shopsBtn); switchAppAdminView('shops'); };
@@ -8047,6 +8047,17 @@ function applyRolePermissions() {
     const isAdminSpecific = btn.id === 'nav-app-admin-btn' || btn.id === 'nav-admin-shops' || btn.id === 'nav-admin-shops-list' || btn.id === 'nav-admin-settings';
     if (!isAppAdmin && isAdminSpecific) {
       btn.style.display = 'none';
+      return;
+    }
+
+    const directButtonPermissions = {
+      'nav-lock-btn': 'lockPin',
+      'nav-logout-btn': 'logoutAccount'
+    };
+
+    const directPermission = directButtonPermissions[btn.id];
+    if (directPermission) {
+      btn.style.display = (isManager || isAppAdmin || normalizedPermissions.includes(directPermission)) ? 'flex' : 'none';
       return;
     }
 
