@@ -62,15 +62,16 @@ let isLoggingOut = false;
 
 function getNormalizedRole(role = currentUserRole) {
   const normalized = String(role || '').trim().toLowerCase();
-  if (normalized === 'manager') return 'admin';
-  if (normalized === 'shopadmin') return 'admin';
   if (normalized === 'appadmin') return 'appAdmin';
-  if (normalized === 'admin') return 'admin';
+  if (normalized === 'shopadmin') return 'shopAdmin';
+  if (normalized === 'admin') return 'shopAdmin'; // old data fallback
+  if (normalized === 'manager') return 'shopAdmin'; // old data fallback
+  if (normalized === 'staff') return 'staff';
   return normalized || 'staff';
 }
 
 function isShopAdminRole(role = currentUserRole) {
-  return getNormalizedRole(role) === 'admin';
+  return getNormalizedRole(role) === 'shopAdmin';
 }
 
 function isAppAdminRole(role = currentUserRole) {
@@ -80,7 +81,6 @@ function isAppAdminRole(role = currentUserRole) {
 function isFullAccessRole(role = currentUserRole) {
   return isShopAdminRole(role) || isAppAdminRole(role);
 }
-
 function savePinSession(role, permissions = [], staffName = '') {
   const normalizedPermissions = normalizePermissions(permissions);
 
@@ -93,7 +93,7 @@ function savePinSession(role, permissions = [], staffName = '') {
   sessionStorage.setItem('currentLoggedInStaffName', staffName);
   localStorage.setItem('currentLoggedInStaffName', staffName);
 
-  if (role === 'admin' || role === 'appAdmin') {
+  if (role === 'shopAdmin' || role === 'appAdmin') {
     sessionStorage.removeItem('currentUserPermissions');
     localStorage.removeItem('currentUserPermissions');
   } else {
@@ -1167,7 +1167,7 @@ const defaultSettings = {
   defaultMarkup: 200, // Default 200% markup
   lowStockThreshold: 10,
   taxRate: 0,
-  ShopAdmin: "1234" // Default ShopAdmin PIN
+  ShopAdminPIN: "1234" // Default ShopAdmin PIN
 };
 let settings = { ...defaultSettings };
 const defaultStaff = [];
@@ -2688,7 +2688,7 @@ function showAppAlert(message, title = 'Notice') {
 }
 
 const nativeAlert = window.alert;
-window.alert = function(message, title = 'Notice') {
+window.alert = function (message, title = 'Notice') {
   if (typeof showAppAlert === 'function') {
     void showAppAlert(message, title);
     return;
@@ -8183,11 +8183,11 @@ async function loginWithPIN() {
 
   if (loginSubStage === 'admin') {
     const isMasterAdmin = appAdminSettings.pin && enteredPin === appAdminSettings.pin;
-    const adminPin = settings.ShopAdminPIN || settings.managerPIN;
-    const isOwner = adminPin && enteredPin === adminPin;
+    const shopAdminPin = settings.ShopAdminPIN || settings.managerPIN || settings.ShopAdmin;
+    const isOwner = shopAdminPin && enteredPin === shopAdminPin;
 
     if (isMasterAdmin || isOwner) {
-      completePinLogin(isMasterAdmin ? 'appAdmin' : 'admin', [], 'Admin');
+      completePinLogin(isMasterAdmin ? 'appAdmin' : 'shopAdmin', [], isMasterAdmin ? 'AppAdmin' : 'ShopAdmin');
     } else {
       await showAppAlert("Incorrect Admin PIN.", "Login Failed");
       if (pinInput) pinInput.value = '';
@@ -8221,11 +8221,11 @@ async function loginWithPIN() {
 
     // Determine Role (grant ShopAdmin role based on role field or if it's admin)
     const definedRole = getNormalizedRole(staffMember.role || 'staff');
-    const loginRole = definedRole === 'admin' ? 'admin' : 'staff';
+    const loginRole = definedRole === 'shopAdmin' ? 'shopAdmin' : 'staff';
 
     completePinLogin(
       loginRole,
-      loginRole === 'admin' ? [] : (staffMember.permissions || ['menuTab']),
+      loginRole === 'shopAdmin' ? [] : (staffMember.permissions || ['menuTab']),
       staffMember.name
     );
     console.log(`Unlocked as ${loginRole === 'admin' ? 'Admin' : 'Staff'}: ${staffMember.name}`);
@@ -8243,7 +8243,7 @@ function completePinLogin(role, permissions, staffName) {
   isPinVerified = true;
   currentUserRole = role;
 
-  if (role === 'admin' || role === 'appAdmin') {
+  if (role === 'shopAdmin' || role === 'appAdmin') {
     currentUserPermissions = [];
   } else {
     currentUserPermissions = normalizePermissions(permissions);
@@ -8285,7 +8285,7 @@ async function forgotPIN() {
 
   const staffName = document.getElementById('loginStaffName')?.value.trim();
 
-  if (staffName && staffName.toLowerCase() !== 'admin' && staffName.toLowerCase() !== 'ShopAdmin') {
+  if (staffName && staffName.toLowerCase() !== 'shopadmin') {
     return showAppAlert("Staff members should contact the ShopAdmin to reset their PIN.", 'PIN Reset');
   }
 
@@ -8296,7 +8296,7 @@ async function forgotPIN() {
 }
 
 function checkShopStatus() {
-  const isAppAdmin = currentUserRole === 'appAdmin';
+  const isAppAdmin = isAppAdminRole();
   const shopStatus = appAdminSettings.shopStatus || 'active';
   const userStatus = userMetadata?.status || 'active';
   const subExpires = userMetadata?.subscriptionExpires ? new Date(userMetadata.subscriptionExpires) : null;

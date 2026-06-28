@@ -45,9 +45,11 @@ const FEATURE_ALIASES = {
 
 function normalizeRole(role = '') {
   const normalized = String(role || '').trim().toLowerCase();
-  if (normalized === 'manager') return 'admin';
   if (normalized === 'appadmin') return 'appAdmin';
-  if (normalized === 'admin') return 'admin';
+  if (normalized === 'shopadmin') return 'shopAdmin';
+  if (normalized === 'admin') return 'shopAdmin'; // old data fallback
+  if (normalized === 'manager') return 'shopAdmin'; // old data fallback
+  if (normalized === 'staff') return 'staff';
   return normalized || 'staff';
 }
 
@@ -63,7 +65,7 @@ function normalizePermissions(permissions = [], fallback = []) {
 
 function hasPermission(role, permissions = [], feature = '') {
   const normalizedRole = normalizeRole(role);
-  if (normalizedRole === 'appAdmin' || normalizedRole === 'admin') return true;
+  if (normalizedRole === 'appAdmin' || normalizedRole === 'shopAdmin') return true;
 
   const normalizedPermissions = normalizePermissions(permissions, []);
   const featureKey = String(feature || '').trim();
@@ -77,13 +79,13 @@ function hasPermission(role, permissions = [], feature = '') {
 
 function getEffectivePermissions(role, permissions = []) {
   const normalizedRole = normalizeRole(role);
-  if (normalizedRole === 'appAdmin' || normalizedRole === 'admin') return [];
+  if (normalizedRole === 'appAdmin' || normalizedRole === 'shopAdmin') return [];
   return normalizePermissions(permissions, []);
 }
 
 function getFirstAllowedTab(role, permissions = [], fallback = 'menuTab') {
   const normalizedRole = normalizeRole(role);
-  if (normalizedRole === 'appAdmin' || normalizedRole === 'admin') return fallback;
+  if (normalizedRole === 'appAdmin' || normalizedRole === 'shopAdmin') return fallback;
 
   const normalizedPermissions = normalizePermissions(permissions, []);
   return normalizedPermissions.find(permission => permission.endsWith('Tab')) || fallback;

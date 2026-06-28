@@ -513,7 +513,7 @@
           <div class="input-row">
             <input type="text" id="staffNameInput" placeholder="Staff Name">
             <select id="staffRoleInput">
-              <option value="admin">Admin</option>
+              <option value="shopAdmin">ShopAdmin</option>
               <option value="staff" selected>Staff</option>
             </select>
             <input type="password" id="staffPinInput" placeholder="4-digit PIN" maxlength="4" style="width: 100px;">
@@ -774,6 +774,7 @@
       <!-- Settings -->
       <section id="settingsTab">
         <h3>⚙️ Settings</h3>
+
         <div class="settings-group" id="restaurantDetailsSettings">
           <h4 class="settings-header" data-content-class="center-content">Business Details</h4>
           <div class="settings-content">
@@ -785,13 +786,12 @@
               <select id="currency" class="u-flex-1 u-p-8 u-border u-br-6"></select>
             </div>
             <div class="input-row">
-              <label for="defaultMarkup">Default Markup %:</label>
+              <label for="defaultMarkup">Default Markup (%):</label>
               <input type="number" id="defaultMarkup" placeholder="e.g., 200" min="0" step="1">
-              <span class="u-fs-08 u-text-muted">Profit margin to add to ingredient cost.</span>
             </div>
             <div class="input-row">
-              <label for="taxRate">Tax Rate %:</label>
-              <input type="number" id="taxRate" placeholder="e.g., 10" min="0" step="0.1">
+              <label for="taxRate">Tax Rate (%):</label>
+              <input type="number" id="taxRate" placeholder="e.g., 16" min="0" step="0.01">
             </div>
             <div class="input-row">
               <label for="companyLogo">Logo:</label>
@@ -801,66 +801,72 @@
             <button class="btn" onclick="saveSettings()">Save Settings</button>
           </div>
         </div>
+
         <div class="settings-group" id="securitySettingsGroup">
           <h4 class="settings-header">Security & Access</h4>
           <div class="settings-content">
-            <p class="u-fs-08 u-text-muted">Set a Manager PIN to restrict deletions and sensitive actions.</p>
+            <p class="u-fs-08 u-text-muted">Set a ShopAdmin PIN to restrict deletions and sensitive actions.</p>
             <div class="input-row">
-              <label for="managerPIN">Manager PIN:</label>
-              <input type="password" id="managerPIN" placeholder="4-digit PIN" maxlength="4">
-              <button type="button" onclick="togglePINVisibility()" class="btn"
+              <label for="ShopAdminPIN">ShopAdmin PIN:</label>
+              <input type="password" id="ShopAdminPIN" placeholder="4-digit PIN" maxlength="4">
+              <button type="button" onclick="togglePINVisibility('ShopAdminPIN')" class="btn"
                 style="padding: 5px 10px; margin: 0;">👁️</button>
             </div>
             <div class="input-row">
-              <label for="confirmManagerPIN">Confirm PIN:</label>
-              <input type="password" id="confirmManagerPIN" placeholder="Confirm PIN" maxlength="4">
-              <button type="button" onclick="togglePINVisibility('confirmManagerPIN')" class="btn"
+              <label for="confirmShopAdminPIN">Confirm PIN:</label>
+              <input type="password" id="confirmShopAdminPIN" placeholder="Confirm PIN" maxlength="4">
+              <button type="button" onclick="togglePINVisibility('confirmShopAdminPIN')" class="btn"
                 style="padding: 5px 10px; margin: 0;">👁️</button>
             </div>
             <button class="btn" onclick="saveSettings()">Update PIN</button>
+
             <div id="account-security-section"
               style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px; display: flex; flex-direction: column; gap: 10px;">
-              <p class="u-fs-08 u-text-muted" style="margin: 0;">Account: <span id="display-user-email"
-                  style="font-weight: bold; color: var(--text);">...</span></p>
-              <div id="auth-provider-badges" style="display: flex; gap: 5px; margin-bottom: 5px;"></div>
-              <button id="change-password-btn" class="btn" onclick="openAuthModal('changePassword')"
+              <button id="change-password-btn" class="btn" onclick="handleChangePassword()"
                 style="background: #6c757d; margin: 0;">Change Password</button>
               <button id="link-password-btn" class="btn" onclick="openAuthModal('linkPassword')"
                 style="background: var(--primary); margin: 0; display: none;">Create Password for Email Login</button>
               <button class="btn" onclick="openAuthModal('deleteAccount')"
-                style="background: #dc3545; margin: 0;">Delete My Account</button>
+                style="background: #dc3545; margin: 0;">Delete
+                My Account</button>
             </div>
           </div>
         </div>
+
         <div class="settings-group">
           <h4 class="settings-header">Barcode Scanner</h4>
           <div class="settings-content">
-            <p>Connect your Wireless, Bluetooth, or USB scanner to your device. Most scanners act as a keyboard (HID
-              mode). Click the box below and scan a code to test.</p>
+            <p>Connect your Wireless, Bluetooth, or USB scanner to your device. Most scanners act as a keyboard mode
+              scanner.</p>
             <div class="input-row">
               <button class="btn" onclick="connectBluetoothScanner()">Scan Bluetooth</button>
               <button class="btn" onclick="connectUSBScanner()">Scan USB/Wireless</button>
               <button class="btn" onclick="startMobileConnection()" style="background: #6f42c1;">📱 Connect
                 Phone</button>
             </div>
-            <div style="margin-top: 10px; margin-bottom: 10px;"><strong>Status:</strong> <span
-                id="scannerConnectionStatus">Ready (HID Mode)</span> <span id="mobileScannerStatus"
-                style="margin-left: 10px; font-weight: bold;"></span></div>
             <div class="input-row">
-              <input type="text" id="scannerTestInput" placeholder="Click here and scan to test connection..."
+              <input type="text" id="scannerTestInput" placeholder="Click here and scan a barcode"
+                oninput="document.getElementById('lastScannedCode').textContent = this.value || 'None'"
                 onfocus="this.value=''">
             </div>
             <div style="margin-top: 10px;">
-              <strong>Last Scanned:</strong> <span id="lastScannedCode"
+              <strong>Last Scanned:</strong>
+              <span id="lastScannedCode"
                 style="font-family: monospace; font-weight: bold; color: var(--primary);">None</span>
+            </div>
+            <div style="margin-top: 10px;">
+              <strong>Scanner Status:</strong> <span id="scannerConnectionStatus">Not Connected</span>
+            </div>
+            <div style="margin-top: 10px;">
+              <strong>Phone Status:</strong> <span id="mobileScannerStatus">Not Connected</span>
             </div>
           </div>
         </div>
+
         <div class="settings-group">
           <h4 class="settings-header">Printer Settings</h4>
           <div class="settings-content">
-            <p>Connect to a Bluetooth or USB thermal printer (ESC/POS compatible). Requires a compatible browser like
-              Chrome.</p>
+            <p>Connect to a Bluetooth or USB thermal printer. Requires a compatible browser like Chrome.</p>
             <div class="input-row">
               <button class="btn" onclick="connectBluetoothPrinter()">Connect Bluetooth Printer</button>
               <button class="btn" onclick="connectUSBPrinter()">Connect USB Printer</button>
@@ -874,6 +880,7 @@
             </div>
           </div>
         </div>
+
         <div class="settings-group">
           <h4 class="settings-header">Notifications</h4>
           <div class="settings-content">
@@ -887,10 +894,11 @@
             </div>
           </div>
         </div>
+
         <div class="settings-group">
           <h4 class="settings-header">Application Data</h4>
           <div class="settings-content">
-            <p>Warning: This will permanently delete all menu items and order history.</p>
+            <p>Warning: reset will permanently delete local app data.</p>
             <div class="input-row" style="justify-content: center; align-items: center;">
               <button class="btn" id="settingsUpdateBtn" onclick="triggerAppUpdate(true)"
                 style="background: #ffc107; display: none; color: #000;">✨ Update App</button>
@@ -903,12 +911,13 @@
             </div>
           </div>
         </div>
-        <div class="u-text-center u-mt-20 u-fs-08"
-          style="padding-bottom: 20px; color: #888; opacity: 0.8; display: flex; align-items: center; justify-content: center; gap: 10px;">
-          <span>YoShop Version <span id="app-version-display">...</span></span>
-          <button class="btn btn-secondary" onclick="triggerAppUpdate(true)"
-            style="font-size: 0.8em; padding: 2px 8px; margin: 0; background: #6c757d;">Check for Updates</button>
-        </div>
+      </section>
+      <div class="u-text-center u-mt-20 u-fs-08"
+        style="padding-bottom: 20px; color: #888; opacity: 0.8; display: flex; align-items: center; justify-content: center; gap: 10px;">
+        <span>YoShop Version <span id="app-version-display">...</span></span>
+        <button class="btn btn-secondary" onclick="triggerAppUpdate(true)"
+          style="font-size: 0.8em; padding: 2px 8px; margin: 0; background: #6c757d;">Check for Updates</button>
+      </div>
       </section>
 
       <!-- App Admin -->
