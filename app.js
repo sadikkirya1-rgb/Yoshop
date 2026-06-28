@@ -7906,6 +7906,7 @@ function showLoginOverlay(mode = 'login') {
     overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: linear-gradient(135deg, var(--primary) 0%, #d35400 100%), repeating-linear-gradient(45deg, rgba(255,255,255,0.05) 0px, rgba(255,255,255,0.05) 1px, transparent 1px, transparent 15px); z-index: 10000; display: flex; color: white; transition: opacity 0.5s;';
     document.body.appendChild(overlay);
   }
+  overlay.style.display = 'flex';
 
   if (!currentUser) {
     if (window._marketingInterval) clearInterval(window._marketingInterval);
