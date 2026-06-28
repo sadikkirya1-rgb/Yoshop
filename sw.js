@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v30';
+const CACHE_NAME = 'yoshop-v31';
 
 const APP_SHELL_URLS = [
   '/',
@@ -129,11 +129,22 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (request.mode === 'navigate') {
-    event.respondWith(
-      fetch(request)
-        .then((response) => putInCache(new Request('/index.html'), response))
-        .catch(async () => {
+  event.respondWith(
+    fetch(request)
+      .then((networkResponse) => {
+        if (!networkResponse || (!networkResponse.ok && networkResponse.type !== 'opaque')) {
+          throw new Error('Network error');
+        }
+        putInCache(request, networkResponse.clone()).catch(() => { });
+        return networkResponse;
+      })
+      .catch(async () => {
+        const cachedResponse = await caches.match(getCacheKey(request), { ignoreSearch: true });
+        if (cachedResponse) {
+          return cachedResponse;
+        }
+
+        if (request.mode === 'navigate') {
           return (
             await caches.match('/index.html') ||
             await caches.match('/') ||
@@ -142,44 +153,19 @@ self.addEventListener('fetch', (event) => {
               headers: { 'Content-Type': 'text/plain' }
             })
           );
-        })
-    );
-    return;
-  }
-
-  event.respondWith(
-    caches.match(getCacheKey(request), { ignoreSearch: true })
-      .then((cachedResponse) => {
-        const networkFetch = fetch(request)
-          .then((networkResponse) => {
-            if (!networkResponse || (!networkResponse.ok && networkResponse.type !== 'opaque')) {
-              return networkResponse;
-            }
-
-            putInCache(request, networkResponse.clone()).catch(() => { });
-            return networkResponse;
-          });
-
-        if (cachedResponse) {
-          networkFetch.catch(() => { });
-          return cachedResponse;
         }
 
-        return networkFetch.catch(async () => {
-          if (request.destination === 'style') {
-            return new Response('', {
-              headers: { 'Content-Type': 'text/css' }
-            });
-          }
+        if (request.destination === 'style') {
+          return new Response('', { headers: { 'Content-Type': 'text/css' } });
+        }
 
-          if (request.destination === 'image') {
-            return new Response('', { status: 204 });
-          }
+        if (request.destination === 'image') {
+          return new Response('', { status: 204 });
+        }
 
-          return new Response('Offline: resource not available', {
-            status: 408,
-            headers: { 'Content-Type': 'text/plain' }
-          });
+        return new Response('Offline: resource not available', {
+          status: 408,
+          headers: { 'Content-Type': 'text/plain' }
         });
       })
   );
