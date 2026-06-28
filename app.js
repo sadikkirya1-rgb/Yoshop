@@ -4,7 +4,7 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
-import { getFirestore, persistentLocalCache, persistentMultipleTabManager, doc, setDoc, getDoc, onSnapshot, initializeFirestore, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId } from './offline-architecture.mjs';
@@ -36,7 +36,7 @@ const analytics = getAnalytics(app);
 let dbFirestore;
 try {
   // Connecting to the named database "yoshop" which contains your data and rules
-  dbFirestore = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }, "yoshop");
+  dbFirestore = getFirestore(app, "yoshop");
   console.log("Firestore (yoshop) initialized successfully");
 } catch (error) {
   // Firestore will be re-initialized on demand if needed
@@ -58,6 +58,7 @@ let pendingSyncQueue = [];
 let currentUserPermissions = normalizePermissions(JSON.parse(sessionStorage.getItem('currentUserPermissions') || localStorage.getItem('currentUserPermissions') || '[]'));
 let isPinVerified = (sessionStorage.getItem('isPinVerified') || localStorage.getItem('isPinVerified')) === 'true' && !!currentUserRole;
 let auditTrail = [];
+let isLoggingOut = false;
 
 function getNormalizedRole(role = currentUserRole) {
   return String(role || '').trim().toLowerCase();
@@ -2337,8 +2338,6 @@ function updateAuthUI(user) {
     } else {
       setAppShellLocked(true);
       showLoginOverlay();
-      setAppShellLocked(true);
-      showLoginOverlay();
       const lockBtn = document.getElementById('nav-lock-btn');
       if (lockBtn) lockBtn.style.display = 'none';
       checkShopStatus();
@@ -2740,7 +2739,8 @@ async function handleChangePassword() {
     alert("This account doesn't have a password. Use the 'Create Password' button instead.");
   }
 }
-
+isLoggingOut = true;
+isInitialLoadComplete = false;
 async function logout() {
   const shouldLogout = await showAppConfirm("Are you sure you want to log out?", "Logout", "Logout", "Cancel");
   if (!shouldLogout) return;
@@ -2758,7 +2758,6 @@ async function logout() {
   sessionStorage.removeItem('isPinVerified');
   sessionStorage.removeItem('currentLoggedInStaffName');
   sessionStorage.removeItem('currentUserUid');
-  localStorage.removeItem('lastUserUid');
   clearPinSession();
 
   currentUser = null;
@@ -7751,13 +7750,11 @@ async function mainInit() {
         try {
           // Clear session and local storage items used for identity and caches
           sessionStorage.removeItem('currentUserUid');
-          localStorage.removeItem('lastUserUid');
           sessionStorage.removeItem('currentUserRole');
           sessionStorage.removeItem('currentUserPermissions');
           sessionStorage.removeItem('isPinVerified');
           sessionStorage.removeItem('currentLoggedInStaffName');
-          sessionStorage.clear();
-          // Reset in-memory state
+
           currentUser = null;
           userMetadata = null;
           currentUserRole = null;
@@ -7773,9 +7770,8 @@ async function mainInit() {
           restockHistory = [];
           settings = { ...defaultSettings };
 
-          // Close IndexedDB connection and delete the user-specific repository DB to avoid reuse across accounts
+          // Close IndexedDB connection without deleting local business data
           try {
-            const previousDbName = localRepository?.getDbName?.() || 'posDB_' + (sessionStorage.getItem('currentUserUid') || 'guest');
             if (db) {
               db.close();
               db = null;
@@ -7786,7 +7782,6 @@ async function mainInit() {
             }
             repositoryService = null;
             localRepositoryReady = false;
-            indexedDB.deleteDatabase(previousDbName);
           } catch (e) {
             console.warn('IndexedDB cleanup failed:', e);
           }
@@ -7837,7 +7832,7 @@ async function mainInit() {
     // cloud data with an empty in-memory state during app startup
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') {
-        if (isInitialLoadComplete) {
+        if (isInitialLoadComplete && !isLoggingOut && currentUser) {
           console.log('[SYNC] 📵 App backgrounding - saving data');
           saveData();
         } else {
@@ -8375,7 +8370,7 @@ if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(locatio
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
               // Immediately trigger update if not in an active checkout session
               if (!isCheckoutActive()) {
-                triggerAppUpdate(false);
+                showUpdateNotification();
               } else {
                 showUpdateNotification();
               }
@@ -8391,7 +8386,7 @@ if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(locatio
               console.warn('Service Worker update check failed:', err);
             }
           });
-        }, 30 * 1000);
+        }, 30 * 60 * 1000);
 
         // Immediately check for updates when the window is focused or tab becomes visible
         document.addEventListener('visibilitychange', () => {
@@ -8432,7 +8427,6 @@ if ('serviceWorker' in navigator && !['localhost', '127.0.0.1'].includes(locatio
         // 2. Clear browser CacheStorage (App Shell assets)
         if ('caches' in window) {
           const cacheNames = await caches.keys();
-          await Promise.all(cacheNames.map(name => caches.delete(name)));
         }
         setTimeout(() => { window.location.reload(); }, 1000);
       })();
