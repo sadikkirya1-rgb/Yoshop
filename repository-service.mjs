@@ -113,13 +113,28 @@ export function createRepositoryService(options = {}) {
       }
       return null;
     },
-    async flushSyncQueue() {
+    async flushSyncQueue(options = {}) {
       if (!cloudSyncHandler || typeof cloudSyncHandler !== 'function') {
         return [];
       }
+
+      const force = options.force === true;
       const queue = await repository.getSyncQueue();
       const results = [];
+      const now = Date.now();
+
       for (const action of queue) {
+        const nextRetryTime = action.nextRetryAt ? new Date(action.nextRetryAt).getTime() : 0;
+
+        if (!force && nextRetryTime && Number.isFinite(nextRetryTime) && nextRetryTime > now) {
+          results.push({
+            id: action.id,
+            status: 'scheduled',
+            nextRetryAt: action.nextRetryAt
+          });
+          continue;
+        }
+
         try {
           await cloudSyncHandler(action);
           await repository.markSyncActionProcessed(action.id);
@@ -129,6 +144,7 @@ export function createRepositoryService(options = {}) {
           results.push({ id: action.id, status: 'failed', error: error.message || 'Sync failed' });
         }
       }
+
       return results;
     },
     getRepository() {

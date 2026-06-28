@@ -1188,10 +1188,10 @@ async function syncCloudAction(action) {
   }
 }
 
-async function flushLocalSyncQueue() {
+async function flushLocalSyncQueue(options = {}) {
   if (!currentUser || !dbFirestore || !navigator.onLine || !localRepositoryReady || !repositoryService) return [];
 
-  const results = await repositoryService.flushSyncQueue();
+  const results = await repositoryService.flushSyncQueue(options);
 
   try {
     if (localRepository && typeof localRepository.getSyncQueue === 'function') {
@@ -2371,7 +2371,7 @@ async function syncNow() {
     }
 
     await saveData();
-    await flushLocalSyncQueue();
+    await flushLocalSyncQueue({ force: true });
 
     syncFailureCount = 0;
   } catch (e) {

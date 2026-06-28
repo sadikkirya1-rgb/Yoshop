@@ -494,9 +494,18 @@ export function createBusinessRepository(options = {}) {
             resolve();
             return;
           }
+          const now = new Date();
+          const retryCount = Number(current.retryCount || current.attempts || 0) + 1;
+          const delayMs = Math.min(15 * 60 * 1000, Math.pow(2, Math.min(retryCount, 8)) * 1000);
+
           current.syncStatus = 'retry';
+          current.retryCount = retryCount;
+          current.attempts = retryCount;
           current.lastError = errorMessage;
-          current.updatedAt = new Date().toISOString();
+          current.lastAttemptAt = now.toISOString();
+          current.nextRetryAt = new Date(now.getTime() + delayMs).toISOString();
+          current.updatedAt = now.toISOString();
+
           const putRequest = objectStore.put(current);
           putRequest.onsuccess = () => resolve();
           putRequest.onerror = () => reject(putRequest.error || new Error('Failed to update sync action status'));
