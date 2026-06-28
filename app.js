@@ -941,6 +941,89 @@ const RECORD_SYNC_COLLECTIONS = {
   unitRecord: 'units',
   inventoryHistoryRecord: 'inventory_history'
 };
+const RECORD_SYNC_LOCAL_STORES = {
+  productRecord: 'products',
+  customerRecord: 'customers',
+  staffRecord: 'staff',
+  unitRecord: 'units',
+  inventoryHistoryRecord: 'inventoryHistory'
+};
+
+function getLocalRecordArrayForSync(entityType) {
+  switch (entityType) {
+    case 'productRecord': return menu;
+    case 'customerRecord': return customers;
+    case 'staffRecord': return staff;
+    case 'unitRecord': return units;
+    case 'inventoryHistoryRecord': return restockHistory;
+    default: return null;
+  }
+}
+
+async function markEnterpriseRecordSyncedLocally(action = {}) {
+  const storeName = RECORD_SYNC_LOCAL_STORES[action.entityType];
+  if (!storeName || !localRepository) return;
+
+  const payload = action.payload || {};
+  if (payload.operation === 'delete' || action.operation === 'delete') return;
+
+  const recordId = payload.recordId || payload.id || action.recordId || action.id;
+  if (!recordId) return;
+
+  const now = new Date().toISOString();
+  const { operation, ...recordPayload } = payload;
+
+  const syncedRecord = {
+    ...recordPayload,
+    id: recordPayload.id || recordId,
+    recordId: recordPayload.recordId || recordId,
+    syncStatus: 'synced',
+    lastSyncAt: now,
+    lastSyncedAt: now
+  };
+
+  const records = getLocalRecordArrayForSync(action.entityType);
+  if (Array.isArray(records)) {
+    const index = records.findIndex(record =>
+      record && (record.recordId === recordId || record.id === recordId)
+    );
+
+    if (index >= 0) {
+      records[index] = {
+        ...records[index],
+        ...syncedRecord
+      };
+    }
+  }
+
+  await localRepository.saveEntity(storeName, syncedRecord, {
+    enqueueSync: false,
+    preserveVersion: true
+  });
+}
+
+async function markTransactionSyncedLocally(action = {}) {
+  const payload = action.payload || {};
+  const txId = payload.id || payload.recordId || action.id || payload.date;
+  if (!txId || !Array.isArray(transactions)) return;
+
+  const now = new Date().toISOString();
+  const index = transactions.findIndex(tx =>
+    tx && (tx.id === txId || tx.recordId === txId || tx.date === payload.date)
+  );
+
+  if (index >= 0) {
+    transactions[index] = {
+      ...transactions[index],
+      synced: true,
+      syncStatus: 'synced',
+      lastSyncAt: now,
+      lastSyncedAt: now
+    };
+
+    await saveState('transactions', transactions, { enqueueSync: false });
+  }
+}
 
 async function syncEnterpriseRecordAction(action) {
   const collectionName = RECORD_SYNC_COLLECTIONS[action.entityType];
@@ -965,6 +1048,8 @@ async function syncEnterpriseRecordAction(action) {
     lastSyncedAt: new Date().toISOString(),
     lastSyncAt: new Date().toISOString()
   }, { merge: true });
+
+  await markEnterpriseRecordSyncedLocally(action);
 
   return true;
 }
@@ -1076,6 +1161,8 @@ async function syncCloudAction(action) {
       lastSyncedAt: new Date().toISOString(),
       lastSyncAt: new Date().toISOString()
     }, { merge: true });
+
+    await markTransactionSyncedLocally(action);
     return;
   }
 
