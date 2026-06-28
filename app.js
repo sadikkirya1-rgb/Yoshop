@@ -2401,8 +2401,9 @@ async function login() {
     await signInWithPopup(auth, provider);
   } catch (error) {
     console.error("Login failed:", error);
-    alert("Login failed: " + error.message);
+    await showAppAlert("Login failed: " + error.message, "Login Failed");
     if (btn) btn.innerHTML = originalContent;
+    if (typeof showLoggedOutScreen === 'function') showLoggedOutScreen();
   }
 }
 
@@ -2415,10 +2416,11 @@ async function loginWithEmail() {
     await signInWithEmailAndPassword(auth, email, password);
   } catch (error) {
     if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
-      alert("Login failed: Incorrect email or password.");
+      await showAppAlert("Login failed: Incorrect email or password.", "Login Failed");
     } else {
-      alert("Login failed: " + error.message);
+      await showAppAlert("Login failed: " + error.message, "Login Failed");
     }
+    if (typeof showLoggedOutScreen === 'function') showLoggedOutScreen();
   }
 }
 
@@ -4713,7 +4715,8 @@ function populateReceiptContent(transaction) {
 
 async function deleteTransaction(index) {
   const pin = await showAppPrompt("Enter Admin PIN to delete transaction:", "Admin PIN Required", "Admin PIN");
-  if (!settings.ShopAdminPIN || pin !== settings.ShopAdmin) {
+  const adminPin = settings.ShopAdminPIN || settings.managerPIN;
+  if (!adminPin || pin !== adminPin) {
     await showAppAlert("Incorrect PIN. Access denied.", "Access Denied");
     return;
   }
@@ -8158,7 +8161,7 @@ function applyRolePermissions() {
   checkShopStatus();
 }
 
-function loginWithPIN() {
+async function loginWithPIN() {
   const loginSubStage = sessionStorage.getItem('loginSubStage');
   const staffNameInput = document.getElementById('loginStaffName');
   const staffName = staffNameInput ? staffNameInput.value.trim() : '';
@@ -8167,19 +8170,21 @@ function loginWithPIN() {
 
   if (loginSubStage === 'admin') {
     const isMasterAdmin = appAdminSettings.pin && enteredPin === appAdminSettings.pin;
-    const isOwner = settings.managerPIN && enteredPin === settings.managerPIN;
+    const adminPin = settings.ShopAdminPIN || settings.managerPIN;
+    const isOwner = adminPin && enteredPin === adminPin;
 
     if (isMasterAdmin || isOwner) {
       completePinLogin(isMasterAdmin ? 'appAdmin' : 'admin', [], 'Admin');
     } else {
-      alert("Incorrect Admin PIN.");
+      await showAppAlert("Incorrect Admin PIN.", "Login Failed");
       if (pinInput) pinInput.value = '';
+      if (typeof prepareLogin === 'function') prepareLogin('admin');
     }
     return;
   }
 
   if (!staffName || staffName.toLowerCase() === 'admin') {
-    alert("Identification Required: Please select your name.");
+    await showAppAlert("Identification Required: Please select your name.", "Login Failed");
     if (staffNameInput && staffNameInput.offsetParent !== null) {
       staffNameInput.focus();
       staffNameInput.style.boxShadow = '0 0 0 3px rgba(220, 53, 69, 0.5)';
@@ -8194,7 +8199,7 @@ function loginWithPIN() {
 
   if (staffMember) {
     if (staffMember.isActive === false) {
-      alert("This account is currently inactive. Please contact the admin.");
+      await showAppAlert("This account is currently inactive. Please contact the admin.", "Account Inactive");
       return;
     }
 
@@ -8212,8 +8217,9 @@ function loginWithPIN() {
     );
     console.log(`Unlocked as ${loginRole === 'admin' ? 'Admin' : 'Staff'}: ${staffMember.name}`);
   } else {
-    alert("Incorrect Name or PIN. Please try again.");
+    await showAppAlert("Incorrect Name or PIN. Please try again.", "Login Failed");
     if (document.getElementById('loginPIN')) document.getElementById('loginPIN').value = '';
+    if (typeof prepareLogin === 'function') prepareLogin('staff');
   }
 }
 
