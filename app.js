@@ -1102,8 +1102,20 @@ async function syncCloudAction(action) {
 }
 
 async function flushLocalSyncQueue() {
-  if (!currentUser || !dbFirestore || !navigator.onLine || !localRepositoryReady || !repositoryService) return;
-  await repositoryService.flushSyncQueue();
+  if (!currentUser || !dbFirestore || !navigator.onLine || !localRepositoryReady || !repositoryService) return [];
+
+  const results = await repositoryService.flushSyncQueue();
+
+  try {
+    if (localRepository && typeof localRepository.getSyncQueue === 'function') {
+      pendingSyncQueue = await localRepository.getSyncQueue();
+    }
+  } catch (error) {
+    console.warn('[SYNC] Could not refresh local sync queue after flush:', error);
+  }
+
+  updateOnlineStatus();
+  return results;
 }
 
 async function scheduleBackgroundSync() {
@@ -7698,8 +7710,8 @@ async function mainInit() {
 
     // Initialize Connectivity Status Indicator
     updateOnlineStatus();
-    window.addEventListener('online', updateOnlineStatus);
-    window.addEventListener('offline', updateOnlineStatus);
+    window.addEventListener('online', () => updateOnlineStatus().catch(console.warn));
+    window.addEventListener('offline', () => updateOnlineStatus().catch(console.warn));
 
     // Assign local settings immediately so login overlay can use them for branding
     settings = normalizeSettings(localData[3], defaultSettings);
@@ -8886,23 +8898,6 @@ async function syncRestoredBackupToCloud() {
         'restockHistory'
       ]
     });
-
-    async function flushLocalSyncQueue() {
-      if (!currentUser || !dbFirestore || !navigator.onLine || !localRepositoryReady || !repositoryService) return [];
-
-      const results = await repositoryService.flushSyncQueue();
-
-      try {
-        if (localRepository && typeof localRepository.getSyncQueue === 'function') {
-          pendingSyncQueue = await localRepository.getSyncQueue();
-        }
-      } catch (error) {
-        console.warn('[SYNC] Could not refresh local sync queue after flush:', error);
-      }
-
-      updateOnlineStatus();
-      return results;
-    }
 
     appendAuditEvent('restored_backup_synced_to_cloud', {
       syncedAt: new Date().toISOString()
