@@ -1139,15 +1139,34 @@ async function syncEnterpriseRecordAction(action) {
   const recordRef = doc(dbFirestore, 'users', currentUser.uid, collectionName, String(recordId));
 
   if (payload.operation === 'delete' || action.operation === 'delete') {
-    await deleteDoc(recordRef);
+    const now = new Date().toISOString();
+
+    await setDoc(recordRef, {
+      id: String(recordId),
+      recordId: String(recordId),
+      deleted: true,
+      operation: 'delete',
+      syncStatus: 'deleted',
+      deletedAt: now,
+      updatedAt: now,
+      lastSyncedAt: now,
+      lastSyncAt: now,
+      businessId: payload.businessId || action.businessId || getEffectiveUid(),
+      userId: payload.userId || action.userId || currentUser?.uid || getEffectiveUid(),
+      staffId: payload.staffId || action.staffId || getCurrentStaffId(),
+      deviceId: payload.deviceId || action.deviceId || getCurrentDeviceId()
+    }, { merge: true });
+
     await markEnterpriseRecordDeletedLocally(action);
     return true;
   }
-
   const { operation, ...recordPayload } = payload;
 
   await setDoc(recordRef, {
     ...recordPayload,
+    deleted: false,
+    deletedAt: null,
+    operation: null,
     syncStatus: 'synced',
     lastSyncedAt: new Date().toISOString(),
     lastSyncAt: new Date().toISOString()
@@ -7525,6 +7544,15 @@ function removeEnterpriseRecord(records = [], removedRecord = {}) {
   if (!removedId || !Array.isArray(records)) return records;
   return records.filter(record => getEnterpriseRecordId(record) !== removedId);
 }
+function isDeletedEnterpriseRecord(record = {}) {
+  return (
+    record.deleted === true ||
+    record.isDeleted === true ||
+    record.operation === 'delete' ||
+    record.syncStatus === 'deleted' ||
+    Boolean(record.deletedAt)
+  );
+}
 
 function setupEnterpriseRecordCollectionSync(uid) {
   if (!dbFirestore || !uid) return;
@@ -7611,7 +7639,7 @@ function setupEnterpriseRecordCollectionSync(uid) {
             recordId: change.doc.data().recordId || change.doc.data().id || change.doc.id
           };
 
-          if (change.type === 'removed') {
+          if (change.type === 'removed' || isDeletedEnterpriseRecord(record)) {
             nextRecords = removeEnterpriseRecord(nextRecords, record);
           } else {
             nextRecords = upsertEnterpriseRecord(nextRecords, record, config.entityType);
