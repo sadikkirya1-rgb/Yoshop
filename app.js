@@ -1094,6 +1094,16 @@ async function markEnterpriseRecordSyncedLocally(action = {}) {
     preserveVersion: true
   });
 }
+async function markEnterpriseRecordDeletedLocally(action = {}) {
+  const storeName = RECORD_SYNC_LOCAL_STORES[action.entityType];
+  if (!storeName || !localRepository || typeof localRepository.deleteEntity !== 'function') return;
+
+  const payload = action.payload || {};
+  const recordId = payload.recordId || payload.id || action.recordId || action.id;
+  if (!recordId) return;
+
+  await localRepository.deleteEntity(storeName, String(recordId));
+}
 
 async function markTransactionSyncedLocally(action = {}) {
   const payload = action.payload || {};
@@ -1130,6 +1140,7 @@ async function syncEnterpriseRecordAction(action) {
 
   if (payload.operation === 'delete' || action.operation === 'delete') {
     await deleteDoc(recordRef);
+    await markEnterpriseRecordDeletedLocally(action);
     return true;
   }
 
@@ -1663,8 +1674,8 @@ async function deleteShop(shopUid, shopName) {
       customers = [];
       restockHistory = [];
       settings = { ...defaultSettings };
-      // Save cleared state locally only, do NOT sync yet
-      await saveData(false);
+      // Save cleared state locally only, do NOT sync or mirror deleted records
+      await saveData(false, { skipEnterpriseMirror: true });
     }
 
     // 1. Delete transactions sub-collection (all historical data)
@@ -3120,7 +3131,7 @@ async function logout() {
   try {
     appendAuditEvent('logout', { message: 'User logged out' });
     await persistAuditTrail();
-    await saveData(false);
+    await saveData(false, { skipEnterpriseMirror: true });
   } catch (error) {
     console.warn('Logout save warning:', error);
   }
