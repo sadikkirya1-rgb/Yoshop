@@ -2244,9 +2244,10 @@ async function saveData(syncToCloud = true, options = {}) {
         allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
       })
     ]);
-    await mirrorEnterpriseRecordsToLocalStores();
+    if (options.skipEnterpriseMirror !== true) {
+      await mirrorEnterpriseRecordsToLocalStores();
+    }
     await persistImageCache();
-
     // Debounce cloud sync to prevent excessive Firebase writes
     const effectiveUid = getEffectiveUid();
     if (syncToCloud && effectiveUid && isInitialLoadComplete && dbFirestore) {
@@ -7610,7 +7611,7 @@ function setupEnterpriseRecordCollectionSync(uid) {
         config.render();
         updateDashboard();
 
-        await saveData(false);
+        await saveData(false, { skipEnterpriseMirror: true });
       },
       error => {
         console.warn(`[SYNC] ${config.collectionName} record listener failed:`, error);
