@@ -184,6 +184,46 @@ export function createSyncEnvelope(entityType, payload = {}, context = {}) {
     lastSyncAt: null
   };
 }
+function getQueueRecordId(action = {}) {
+  const payload = action.payload || {};
+  return payload.recordId || payload.id || action.recordId || action.id || '';
+}
+
+function getQueueDedupeKey(action = {}) {
+  const entityType = action.entityType || 'snapshot';
+  const recordId = getQueueRecordId(action);
+  if (!recordId) return '';
+
+  return [
+    action.businessId || '',
+    action.userId || '',
+    entityType,
+    recordId
+  ].join('|');
+}
+
+function canDedupeSyncAction(action = {}) {
+  const payload = action.payload || {};
+  const operation = payload.operation || action.operation || 'upsert';
+
+  if (operation === 'delete') return false;
+
+  return [
+    'productRecord',
+    'customerRecord',
+    'staffRecord',
+    'unitRecord',
+    'inventoryHistoryRecord',
+    'products',
+    'customers',
+    'staff',
+    'units',
+    'inventoryHistory',
+    'settings',
+    'appAdminSettings',
+    'businessProfile'
+  ].includes(action.entityType);
+}
 
 export function buildBusinessSnapshot(payload = {}, context = {}) {
   const now = new Date().toISOString();
@@ -454,9 +494,43 @@ export function createBusinessRepository(options = {}) {
       await new Promise((resolve, reject) => {
         const transaction = database.transaction([queueStoreName], 'readwrite');
         const objectStore = transaction.objectStore(queueStoreName);
-        const request = objectStore.put(envelope);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error || new Error('Failed to enqueue sync action'));
+
+        const writeEnvelope = () => {
+          const request = objectStore.put(envelope);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error || new Error('Failed to enqueue sync action'));
+        };
+
+        if (!canDedupeSyncAction(envelope)) {
+          writeEnvelope();
+          return;
+        }
+
+        const dedupeKey = getQueueDedupeKey(envelope);
+        if (!dedupeKey) {
+          writeEnvelope();
+          return;
+        }
+
+        const allRequest = objectStore.getAll();
+        allRequest.onsuccess = () => {
+          const existingItems = allRequest.result || [];
+          const duplicates = existingItems.filter(existing =>
+            existing &&
+            existing.id !== envelope.id &&
+            existing.syncStatus !== 'processing' &&
+            canDedupeSyncAction(existing) &&
+            getQueueDedupeKey(existing) === dedupeKey
+          );
+
+          duplicates.forEach(existing => objectStore.delete(existing.id));
+
+          envelope.dedupeKey = dedupeKey;
+          envelope.replacedQueuedActions = duplicates.length;
+          writeEnvelope();
+        };
+
+        allRequest.onerror = () => reject(allRequest.error || new Error('Failed to inspect sync queue'));
       });
 
       return envelope;
