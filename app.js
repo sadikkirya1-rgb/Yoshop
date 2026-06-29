@@ -799,7 +799,9 @@ async function enqueueLocalSyncAction(action) {
   const envelope = await repositoryService.enqueueSyncAction(action);
   if (envelope) {
     pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
-    updateOnlineStatus();
+    updateOnlineStatus().catch(error => {
+      console.warn('[SYNC] Could not refresh sync status after queue update:', error);
+    });
   }
   return envelope;
 }
