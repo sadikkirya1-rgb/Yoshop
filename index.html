@@ -909,6 +909,17 @@
               <button class="btn" onclick="restoreData()" style="background: #28a745;">Restore</button>
               <button class="btn" onclick="resetApp()" style="background: #dc3545;">Reset App</button>
             </div>
+            <div id="syncHealthPanel"
+              style="margin-top: 14px; padding: 12px; border: 1px solid var(--border-color); border-radius: 6px;">
+              <div
+                style="display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <strong>Sync Health</strong>
+                <button class="btn btn-secondary" onclick="renderSyncHealthPanel()"
+                  style="margin: 0; padding: 6px 10px;">Refresh</button>
+              </div>
+              <div id="syncHealthSummary" class="u-fs-08 u-mt-10">Checking sync status...</div>
+              <div id="syncHealthDetails" class="u-fs-08 u-mt-10"></div>
+            </div>
           </div>
         </div>
       </section>

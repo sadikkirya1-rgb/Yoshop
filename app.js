@@ -2513,6 +2513,58 @@ async function getPendingSyncSummary() {
     unsyncedTransactions
   };
 }
+async function renderSyncHealthPanel() {
+  const summaryEl = document.getElementById('syncHealthSummary');
+  const detailsEl = document.getElementById('syncHealthDetails');
+  if (!summaryEl || !detailsEl) return;
+
+  try {
+    const summary = await getPendingSyncSummary();
+    const queue = Array.isArray(summary.queue) ? summary.queue : [];
+    const conflicts = Array.isArray(auditTrail)
+      ? auditTrail.filter(event => event && event.type === 'sync_conflict_ignored').slice(-5).reverse()
+      : [];
+
+    summaryEl.innerHTML = `
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap:8px;">
+        <div><strong>${navigator.onLine ? 'Online' : 'Offline'}</strong><br><span>Connection</span></div>
+        <div><strong>${summary.pendingCount}</strong><br><span>Pending</span></div>
+        <div><strong>${summary.retryCount}</strong><br><span>Retry Items</span></div>
+        <div><strong>${summary.unsyncedTransactions}</strong><br><span>Offline Sales</span></div>
+      </div>
+    `;
+
+    const recentQueue = queue.slice(-6).reverse();
+    const queueHtml = recentQueue.length
+      ? recentQueue.map(item => `
+          <div style="padding:6px 0; border-top:1px solid var(--border-color);">
+            <strong>${item.entityType || 'sync item'}</strong>
+            <span>${item.syncStatus || 'pending'}</span>
+            ${item.lastError ? `<div style="color:#dc3545;">${item.lastError}</div>` : ''}
+            ${item.nextRetryAt ? `<div>Retry: ${new Date(item.nextRetryAt).toLocaleString()}</div>` : ''}
+          </div>
+        `).join('')
+      : '<div>No queued sync items.</div>';
+
+    const conflictHtml = conflicts.length
+      ? conflicts.map(event => `
+          <div style="padding:6px 0; border-top:1px solid var(--border-color);">
+            <strong>${event.details?.entityType || 'record'}</strong>
+            <span>${event.details?.recordId || ''}</span>
+            <div>Older incoming record ignored.</div>
+          </div>
+        `).join('')
+      : '<div>No recent sync conflicts.</div>';
+
+    detailsEl.innerHTML = `
+      <div style="margin-top:10px;"><strong>Recent Queue</strong>${queueHtml}</div>
+      <div style="margin-top:10px;"><strong>Recent Conflicts</strong>${conflictHtml}</div>
+    `;
+  } catch (error) {
+    summaryEl.textContent = 'Could not read sync health.';
+    detailsEl.textContent = error.message || String(error);
+  }
+}
 
 function renderSyncStatus({ state, label, title, background, showBadge = true }) {
   const statusEl = document.getElementById('connectivity-status');
@@ -2636,6 +2688,7 @@ async function updateOnlineStatus() {
     showBadge: false
   });
 }
+renderSyncHealthPanel().catch(console.warn);
 
 function setAppShellLocked(isLocked) {
   const layout = document.querySelector('.app-layout');
@@ -3287,6 +3340,7 @@ function showTab(tabId, btn) {
       break;
     case 'settingsTab':
       loadSettings();
+      renderSyncHealthPanel().catch(console.warn);
       break;
     case 'stockTab':
       renderInventoryReport(); // For the low stock report
