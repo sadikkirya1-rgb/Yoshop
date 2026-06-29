@@ -174,6 +174,27 @@ function enrichEnterpriseRecord(entityType, record = {}, existingRecord = null) 
   };
 }
 
+function touchSettingsRecord(record = {}, recordId = 'settings') {
+  const now = new Date().toISOString();
+  const context = getSyncMetadataContext();
+  const currentVersion = Number(record.version || 0);
+
+  return {
+    ...record,
+    id: record.id || recordId,
+    recordId: record.recordId || recordId,
+    businessId: record.businessId || context.businessId,
+    userId: record.userId || context.userId,
+    staffId: context.staffId,
+    deviceId: context.deviceId,
+    createdAt: record.createdAt || now,
+    updatedAt: now,
+    version: currentVersion + 1,
+    syncStatus: 'pending',
+    lastSyncAt: record.lastSyncAt || null
+  };
+}
+
 function hydrateEnterpriseRecord(entityType, record = {}, index = 0) {
   if (!record || typeof record !== 'object') return record;
 
@@ -6156,6 +6177,8 @@ async function saveSettings() {
     }
   }
 
+  settings = touchSettingsRecord(settings, 'settings');
+
   saveData();
   alert('Settings saved!');
   loadSettings(); // Reload to show preview
@@ -8665,8 +8688,12 @@ function updateAppAdminCredentials() {
   if (!name) return showAppAlert("Username required.", 'Admin Required');
   if (pin.length < 4) return showAppAlert("PIN/Password must be at least 4 characters.", 'Invalid PIN');
 
-  appAdminSettings.username = name;
-  appAdminSettings.pin = pin;
+  appAdminSettings = touchSettingsRecord({
+    ...appAdminSettings,
+    username: name,
+    pin
+  }, 'appAdminSettings');
+
   saveData();
   if (typeof showAppAlert === 'function') showAppAlert("App Admin credentials updated.", 'Credentials Updated');
   else alert("App Admin credentials updated.");
@@ -8677,7 +8704,11 @@ async function updateShopStatus(status) {
     const resp = await showAppConfirm(`Switch shop to ${status.toUpperCase()}?`, 'Update Shop Status', 'Continue', 'Cancel');
     if (!resp || !resp.confirmed) return;
   }
-  appAdminSettings.shopStatus = status;
+  appAdminSettings = touchSettingsRecord({
+    ...appAdminSettings,
+    shopStatus: status
+  }, 'appAdminSettings');
+
   saveData();
   const display = document.getElementById('currentShopStatusDisplay');
   if (display) display.textContent = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
