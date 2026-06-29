@@ -1294,7 +1294,9 @@ async function flushLocalSyncQueue(options = {}) {
     console.warn('[SYNC] Could not refresh local sync queue after flush:', error);
   }
 
-  updateOnlineStatus();
+  await updateOnlineStatus().catch(error => {
+    console.warn('[SYNC] Could not refresh sync status after queue flush:', error);
+  });
   return results;
 }
 
@@ -2297,11 +2299,15 @@ async function saveData(syncToCloud = true, options = {}) {
     if (syncToCloud && navigator.onLine) {
       scheduleBackgroundSync();
     }
-    updateOnlineStatus();
+    await updateOnlineStatus().catch(error => {
+      console.warn('[SYNC] Could not refresh sync status after save:', error);
+    });
   } catch (error) {
     console.error("[SYNC] ❌ Local save failed:", error);
     syncFailureCount++;
-    updateOnlineStatus();
+    await updateOnlineStatus().catch(error => {
+      console.warn('[SYNC] Could not refresh sync status after save failure:', error);
+    });
   }
 }
 
@@ -7983,7 +7989,7 @@ async function mainInit() {
     ]);
 
     // Initialize Connectivity Status Indicator
-    updateOnlineStatus();
+    updateOnlineStatus().catch(console.warn);
     window.addEventListener('online', () => updateOnlineStatus().catch(console.warn));
     window.addEventListener('offline', () => updateOnlineStatus().catch(console.warn));
 
