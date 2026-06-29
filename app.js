@@ -262,6 +262,7 @@ function getEnterpriseMirrorSignature() {
 
   return JSON.stringify({
     products: summarize(menu),
+    categories: summarize(getCategoryRecordsFromList(dishCategories)),
     sales: summarize(transactions),
     staff: summarize(staff),
     customers: summarize(customers),
@@ -287,6 +288,7 @@ async function mirrorEnterpriseRecordsToLocalStores(options = {}) {
 
   const mirrorJobs = [
     ...(Array.isArray(menu) ? menu.map(record => ['products', record]) : []),
+    ...(Array.isArray(dishCategories) ? getCategoryRecordsFromList(dishCategories).map(record => ['categories', record]) : []),
     ...(Array.isArray(transactions) ? transactions.map(record => ['sales', record]) : []),
     ...(Array.isArray(staff) ? staff.map(record => ['staff', record]) : []),
     ...(Array.isArray(customers) ? customers.map(record => ['customers', record]) : []),
