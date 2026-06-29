@@ -2343,17 +2343,41 @@ async function getPendingSyncSummary() {
     console.warn('[SYNC] Could not read local sync queue:', error);
   }
 
+  const now = Date.now();
+
   const unsyncedTransactions = Array.isArray(transactions)
     ? transactions.filter(tx => tx && tx.synced !== true).length
     : 0;
 
-  const retryCount = queue.filter(item => item && (item.syncStatus === 'retry' || item.syncStatus === 'failed')).length;
+  const retryItems = queue.filter(item =>
+    item && (item.syncStatus === 'retry' || item.syncStatus === 'failed')
+  );
+
+  const retryNowCount = retryItems.filter(item => {
+    const retryAt = item.nextRetryAt ? new Date(item.nextRetryAt).getTime() : 0;
+    return !retryAt || !Number.isFinite(retryAt) || retryAt <= now;
+  }).length;
+
+  const retryLaterItems = retryItems.filter(item => {
+    const retryAt = item.nextRetryAt ? new Date(item.nextRetryAt).getTime() : 0;
+    return retryAt && Number.isFinite(retryAt) && retryAt > now;
+  });
+
+  const nextRetryAt = retryLaterItems
+    .map(item => new Date(item.nextRetryAt).getTime())
+    .filter(time => Number.isFinite(time))
+    .sort((a, b) => a - b)[0] || null;
+
+  const retryLaterCount = retryLaterItems.length;
   const pendingCount = queue.length + unsyncedTransactions;
 
   return {
     queue,
     pendingCount,
-    retryCount,
+    retryCount: retryItems.length,
+    retryNowCount,
+    retryLaterCount,
+    nextRetryAt,
     unsyncedTransactions
   };
 }
@@ -2420,7 +2444,7 @@ async function updateOnlineStatus() {
   const statusEl = document.getElementById('connectivity-status');
   if (!statusEl) return;
 
-  const { pendingCount, retryCount } = await getPendingSyncSummary();
+  const { pendingCount, retryCount, retryNowCount, retryLaterCount, nextRetryAt } = await getPendingSyncSummary();
 
   if (!navigator.onLine) {
     renderSyncStatus({
@@ -2435,11 +2459,26 @@ async function updateOnlineStatus() {
     return;
   }
 
-  if (syncFailureCount > 0 || retryCount > 0) {
+  if (retryLaterCount > 0 && retryNowCount === 0 && syncFailureCount === 0) {
+    const retryTime = nextRetryAt
+      ? new Date(nextRetryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      : 'soon';
+
+    renderSyncStatus({
+      state: '🟠',
+      label: `${pendingCount} Retry Later`,
+      title: `Online • ${retryLaterCount} item(s) waiting to retry at ${retryTime}`,
+      background: '#f97316',
+      showBadge: true
+    });
+    return;
+  }
+
+  if (syncFailureCount > 0 || retryNowCount > 0) {
     renderSyncStatus({
       state: '🟠',
       label: pendingCount > 0 ? `${pendingCount} Retry` : 'Retry',
-      title: `Online • sync needs retry (${syncFailureCount || retryCount} issue(s))`,
+      title: `Online • sync needs retry (${syncFailureCount || retryNowCount} issue(s))`,
       background: '#dc2626',
       showBadge: true
     });
