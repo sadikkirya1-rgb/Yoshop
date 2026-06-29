@@ -194,6 +194,29 @@ function touchSettingsRecord(record = {}, recordId = 'settings') {
     lastSyncAt: record.lastSyncAt || null
   };
 }
+function pickNewestSettingsRecord(localRecord = {}, cloudRecord = {}, defaults = {}) {
+  if (!cloudRecord || typeof cloudRecord !== 'object' || Object.keys(cloudRecord).length === 0) {
+    return { ...defaults, ...(localRecord || {}) };
+  }
+
+  const localVersion = Number(localRecord?.version || 0);
+  const cloudVersion = Number(cloudRecord?.version || 0);
+  const localTime = localRecord?.updatedAt ? new Date(localRecord.updatedAt).getTime() : 0;
+  const cloudTime = cloudRecord?.updatedAt ? new Date(cloudRecord.updatedAt).getTime() : 0;
+
+  if (cloudVersion > localVersion) return { ...defaults, ...cloudRecord };
+  if (cloudVersion < localVersion) return { ...defaults, ...(localRecord || {}) };
+  if (cloudTime >= localTime) return { ...defaults, ...cloudRecord };
+
+  console.warn('[SYNC_CONFLICT] Older cloud settings ignored', {
+    localVersion,
+    cloudVersion,
+    localUpdatedAt: localRecord?.updatedAt,
+    cloudUpdatedAt: cloudRecord?.updatedAt
+  });
+
+  return { ...defaults, ...(localRecord || {}) };
+}
 
 function hydrateEnterpriseRecord(entityType, record = {}, index = 0) {
   if (!record || typeof record !== 'object') return record;
@@ -7662,16 +7685,13 @@ function setupRealTimeSync(uid) {
               pendingUpdate = {
                 menu: hydrateEnterpriseRecords('products', safeArray(getCloudMenuItems(cloudData), menu)),
                 activeOrders: safeObj(cloudData.activeOrders, activeOrders),
-                settings: cloudData.settings ? { ...defaultSettings, ...cloudData.settings } : settings,
+                settings: pickNewestSettingsRecord(settings, cloudData.settings, defaultSettings),
                 staff: hydrateEnterpriseRecords('staff', safeArray(cloudData.staff, staff)),
                 dishCategories: safeArray(getCloudCategoryList(cloudData), dishCategories),
                 customers: hydrateEnterpriseRecords('customers', safeArray(cloudData.customers, customers)),
                 units: hydrateEnterpriseRecords('units', safeArray(cloudData.units, units)),
                 restockHistory: hydrateEnterpriseRecords('inventoryHistory', safeArray(cloudData.restockHistory, restockHistory)),
-                appAdminSettings: {
-                  ...defaultAppAdminSettings,
-                  ...(cloudData.appAdminSettings || {})
-                }
+                appAdminSettings: pickNewestSettingsRecord(appAdminSettings, cloudData.appAdminSettings, defaultAppAdminSettings)
               };
 
               // ANTI-DATA-LOSS GUARD: If cloud has significantly fewer menu items than
