@@ -1205,6 +1205,26 @@ async function flushLocalSyncQueue(options = {}) {
   return results;
 }
 
+function summarizeSyncResults(results = []) {
+  const summary = {
+    processed: 0,
+    failed: 0,
+    scheduled: 0,
+    total: Array.isArray(results) ? results.length : 0
+  };
+
+  if (!Array.isArray(results)) return summary;
+
+  results.forEach(result => {
+    if (!result || !result.status) return;
+    if (result.status === 'processed') summary.processed += 1;
+    if (result.status === 'failed') summary.failed += 1;
+    if (result.status === 'scheduled') summary.scheduled += 1;
+  });
+
+  return summary;
+}
+
 async function scheduleBackgroundSync() {
   if (!localRepositoryReady || !localRepository || !navigator.onLine || !currentUser) return;
   if (syncDebounceTimer) return;
@@ -2150,9 +2170,16 @@ async function saveData(syncToCloud = true, options = {}) {
             return;
           }
 
-          await flushLocalSyncQueue();
+          const syncResults = await flushLocalSyncQueue();
+          const syncSummary = summarizeSyncResults(syncResults);
+
           lastSyncTime = Date.now();
-          syncFailureCount = 0;
+
+          if (syncSummary.failed > 0) {
+            syncFailureCount += syncSummary.failed;
+          } else if (syncSummary.scheduled === 0) {
+            syncFailureCount = 0;
+          }
 
           if (statusEl) {
             statusEl.style.opacity = '1';
@@ -2164,7 +2191,7 @@ async function saveData(syncToCloud = true, options = {}) {
           if (syncBtn) {
             syncBtn.setAttribute('data-tooltip', 'Last synced: ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
           }
-          console.log('[SYNC] ✅ Local queue flushed to cloud successfully');
+          console.log('[SYNC] Queue flush complete:', syncSummary);
         } catch (firestoreError) {
           syncFailureCount++;
           handleFirebaseError(firestoreError, "Firestore Sync", `users/${effectiveUid}/data/shop_profile`);
@@ -2371,9 +2398,15 @@ async function syncNow() {
     }
 
     await saveData();
-    await flushLocalSyncQueue({ force: true });
+    const syncResults = await flushLocalSyncQueue({ force: true });
+    const syncSummary = summarizeSyncResults(syncResults);
 
-    syncFailureCount = 0;
+    if (syncSummary.failed > 0) {
+      syncFailureCount += syncSummary.failed;
+      alert(`${syncSummary.failed} sync item(s) could not upload. They will retry automatically.`);
+    } else {
+      syncFailureCount = 0;
+    }
   } catch (e) {
     syncFailureCount++;
     alert("Sync failed: " + e.message);
