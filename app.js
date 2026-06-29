@@ -7772,8 +7772,8 @@ function setupRealTimeSync(uid) {
                   // Mark initial load as complete
                   isInitialLoadComplete = true;
 
-                  // Persist cloud data to local IndexedDB only (skip cloud push to avoid loops)
-                  await saveData(false);
+                  // Persist cloud data to local IndexedDB only (skip cloud push and mirror to avoid loops)
+                  await saveData(false, { skipEnterpriseMirror: true });
 
                   // Force a complete refresh of the current view so changes show immediately
                   // CRITICAL FIX: Prevent image flashing in ALL categories by using surgical updates
