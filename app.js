@@ -756,7 +756,7 @@ const enterpriseStateMap = {
   customers: { entityType: 'customers', id: 'customers' },
   units: { entityType: 'units', id: 'units' },
   restockHistory: { entityType: 'inventoryHistory', id: 'restockHistory' },
-  appAdminSettings: { entityType: 'settings', id: 'appAdminSettings' },
+  appAdminSettings: { entityType: 'appAdminSettings', id: 'appAdminSettings' },
   auditTrail: { entityType: 'auditLog', id: 'auditTrail' },
   notifications: { entityType: 'notifications', id: 'notifications' },
   suppliers: { entityType: 'suppliers', id: 'suppliers' },
@@ -9086,16 +9086,19 @@ async function restoreData() {
       menu = restoredMenu;
       activeOrders = restoredData.activeOrders || {};
       transactions = restoredTransactions;
-      settings = normalizeSettings(restoredData.settings, defaultSettings);
+      settings = touchSettingsRecord(
+        normalizeSettings(restoredData.settings, defaultSettings),
+        'settings'
+      );
       staff = restoredStaff;
       dishCategories = Array.isArray(restoredData.dishCategories) ? restoredData.dishCategories : defaultDishCategories;
       customers = restoredCustomers;
       units = restoredUnits;
       restockHistory = restoredRestockHistory;
-      appAdminSettings = {
+      appAdminSettings = touchSettingsRecord({
         ...defaultAppAdminSettings,
         ...(restoredData.appAdminSettings || {})
-      };
+      }, 'appAdminSettings');
       auditTrail = Array.isArray(restoredData.auditTrail) ? hydrateEnterpriseRecords('auditLog', restoredData.auditTrail) : [];
 
       appendAuditEvent('backup_restored', {

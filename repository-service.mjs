@@ -9,7 +9,7 @@ const DEFAULT_ENTITY_MAPPINGS = {
   customers: { entityType: 'customers', id: 'customers' },
   units: { entityType: 'units', id: 'units' },
   restockHistory: { entityType: 'inventoryHistory', id: 'restockHistory' },
-  appAdminSettings: { entityType: 'settings', id: 'appAdminSettings' },
+  appAdminSettings: { entityType: 'appAdminSettings', id: 'appAdminSettings' },
   auditTrail: { entityType: 'auditLog', id: 'auditTrail' },
   notifications: { entityType: 'notifications', id: 'notifications' },
   customers: { entityType: 'customers', id: 'customers' },
