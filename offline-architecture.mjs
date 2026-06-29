@@ -210,6 +210,7 @@ function canDedupeSyncAction(action = {}) {
 
   return [
     'productRecord',
+    'categoryRecord',
     'customerRecord',
     'staffRecord',
     'unitRecord',

@@ -933,9 +933,52 @@ function getCloudCategoryList(cloudData = {}) {
   if (normalizedExplicit.length > 0) return normalizedExplicit;
   return deriveCategoriesFromProducts(getCloudMenuItems(cloudData));
 }
+function createCategoryRecord(categoryName, existingRecord = null) {
+  const name = normalizeCategoryValue(categoryName);
+  if (!name) return null;
+
+  const baseId = existingRecord?.recordId || existingRecord?.id || `category-${name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')}`;
+
+  return enrichEnterpriseRecord('categories', {
+    ...(existingRecord && typeof existingRecord === 'object' ? existingRecord : {}),
+    id: baseId,
+    recordId: baseId,
+    name
+  }, existingRecord);
+}
+
+function getCategoryNameFromRecord(record) {
+  return normalizeCategoryValue(record);
+}
+
+function getCategoryRecordsFromList(categories = []) {
+  return normalizeCategoryList(categories)
+    .map(categoryName => createCategoryRecord(categoryName))
+    .filter(Boolean);
+}
+
+function mergeCategoryRecordIntoList(categories = [], incomingRecord = {}) {
+  const incomingName = getCategoryNameFromRecord(incomingRecord);
+  if (!incomingName) return normalizeCategoryList(categories);
+
+  return normalizeCategoryList([
+    ...(Array.isArray(categories) ? categories : []),
+    incomingName
+  ]);
+}
+
+function removeCategoryRecordFromList(categories = [], removedRecord = {}) {
+  const removedName = getCategoryNameFromRecord(removedRecord);
+  if (!removedName) return normalizeCategoryList(categories);
+
+  return normalizeCategoryList((Array.isArray(categories) ? categories : []).filter(categoryName =>
+    normalizeCategoryValue(categoryName) !== removedName
+  ));
+}
 
 const RECORD_SYNC_COLLECTIONS = {
   productRecord: 'products',
+  categoryRecord: 'categories',
   customerRecord: 'customers',
   staffRecord: 'staff',
   unitRecord: 'units',
@@ -943,6 +986,7 @@ const RECORD_SYNC_COLLECTIONS = {
 };
 const RECORD_SYNC_LOCAL_STORES = {
   productRecord: 'products',
+  categoryRecord: 'categories',
   customerRecord: 'customers',
   staffRecord: 'staff',
   unitRecord: 'units',
@@ -952,6 +996,7 @@ const RECORD_SYNC_LOCAL_STORES = {
 function getLocalRecordArrayForSync(entityType) {
   switch (entityType) {
     case 'productRecord': return menu;
+    case 'categoryRecord': return dishCategories;
     case 'customerRecord': return customers;
     case 'staffRecord': return staff;
     case 'unitRecord': return units;
@@ -1059,6 +1104,7 @@ async function enqueueEnterpriseRecordChange(collectionName, record, operation =
 
   const entityTypeMap = {
     products: 'productRecord',
+    categories: 'categoryRecord',
     customers: 'customerRecord',
     staff: 'staffRecord',
     units: 'unitRecord',
@@ -1096,6 +1142,7 @@ async function backfillEnterpriseRecordCollectionsOnce(uid) {
 
   const backfillGroups = [
     { collectionName: 'products', entityType: 'products', records: menu },
+    { collectionName: 'categories', entityType: 'categories', records: getCategoryRecordsFromList(dishCategories) },
     { collectionName: 'customers', entityType: 'customers', records: customers },
     { collectionName: 'staff', entityType: 'staff', records: staff },
     { collectionName: 'units', entityType: 'units', records: units },
@@ -6529,6 +6576,8 @@ function addCategory() {
 
   dishCategories.push(name);
   dishCategories.sort();
+  const categoryRecord = createCategoryRecord(name);
+  enqueueEnterpriseRecordChange('categories', categoryRecord, 'upsert').catch(console.warn);
   nameInput.value = '';
   saveData();
   renderCategoryList();
@@ -6560,6 +6609,11 @@ async function editCategory(index) {
   // Update category in the list
   dishCategories[index] = trimmedNewName;
   dishCategories.sort();
+  const oldCategoryRecord = createCategoryRecord(oldCategoryName);
+  const newCategoryRecord = createCategoryRecord(trimmedNewName);
+
+  enqueueEnterpriseRecordChange('categories', oldCategoryRecord, 'delete').catch(console.warn);
+  enqueueEnterpriseRecordChange('categories', newCategoryRecord, 'upsert').catch(console.warn);
 
   // Update all menu items with the old category
   menu.forEach(dish => {
@@ -6590,6 +6644,8 @@ async function deleteCategory(index) {
   if (confirmed?.confirmed) {
     // Update items to remove the category reference
     itemsUsingCategory.forEach(item => item.category = '');
+    const categoryRecord = createCategoryRecord(categoryName);
+    enqueueEnterpriseRecordChange('categories', categoryRecord, 'delete').catch(console.warn);
 
     dishCategories.splice(index, 1);
     saveData();
@@ -7419,6 +7475,20 @@ function setupEnterpriseRecordCollectionSync(uid) {
         renderStockListTable();
         renderInventoryReport();
         populateCategoryFilter();
+      }
+    },
+    {
+      collectionName: 'categories',
+      entityType: 'categories',
+      getRecords: () => dishCategories,
+      setRecords: records => {
+        dishCategories = normalizeCategoryList((records || []).map(getCategoryNameFromRecord));
+      },
+      render: () => {
+        renderCategoryList();
+        populateCategoryDropdown();
+        populateCategoryFilter();
+        updateDashboard();
       }
     },
 
@@ -9041,6 +9111,7 @@ async function syncRestoredBackupToCloud() {
 
     await Promise.allSettled([
       ...(Array.isArray(menu) ? menu.map(record => enqueueEnterpriseRecordChange('products', record, 'upsert')) : []),
+      ...(Array.isArray(dishCategories) ? getCategoryRecordsFromList(dishCategories).map(record => enqueueEnterpriseRecordChange('categories', record, 'upsert')) : []),
       ...(Array.isArray(customers) ? customers.map(record => enqueueEnterpriseRecordChange('customers', record, 'upsert')) : []),
       ...(Array.isArray(staff) ? staff.map(record => enqueueEnterpriseRecordChange('staff', record, 'upsert')) : []),
       ...(Array.isArray(units) ? units.map(record => enqueueEnterpriseRecordChange('units', record, 'upsert')) : []),
