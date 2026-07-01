@@ -140,8 +140,8 @@
     background: var(--primary);
     color: white;
     display: flex;
-    align-items: center; /* This keeps content vertically centered */
-    justify-content: flex-start; /* Align items to the left */
+    align-items: center;
+    justify-content: flex-start;
     padding: 10px 15px;
     font-size: 1.5em;
     font-weight: bold;
@@ -149,10 +149,11 @@
     top: 0;
     z-index: 10;
     text-align: center;
-    /* Add padding to account for the safe area on top (e.g., iPhone notch) */
-    /* The 10px is the original padding, env() will be 0 on unsupported devices */
+    width: 100vw;
+    margin-left: calc(50% - 50vw);
+    box-sizing: border-box;
     padding-top: calc(10px + env(safe-area-inset-top));
-    height: calc(50px + env(safe-area-inset-top)); /* 50px was implicit height, now explicit */
+    height: calc(50px + env(safe-area-inset-top));
   }
   header .header-logo {
     height: 30px;
