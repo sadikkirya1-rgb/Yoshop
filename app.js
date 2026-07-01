@@ -4782,7 +4782,7 @@ function renderDishesTable() {
   tbody.innerHTML = '';
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
   // Show items that either have a recipe OR have a selling price and category (sellable stock items)
-  menu.filter(dish => (dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0 && dish.category)).forEach((dish) => {
+  menu.filter(dish => (dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0 && dish.category)).forEach((dish, rowIndex) => {
     const i = menu.indexOf(dish); // Get the original index for edit/delete functions
     const stock = calculateDishStock(dish);
     const costPrice = calculateDishCost(dish);
@@ -4796,7 +4796,9 @@ function renderDishesTable() {
     }
 
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td><img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.removeAttribute('crossorigin'); this.src='https://placehold.co/100';"></td>
+    tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('dishesTableBody','selectAllProducts')"></td>
+        <td>${rowIndex + 1}</td>
+        <td><img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.removeAttribute('crossorigin'); this.src='https://placehold.co/100';"></td>
         <td>${dish.name}</td> 
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(sellingPrice)}</td>
@@ -5308,7 +5310,7 @@ function renderTransactions() {
 
     // "Click anywhere" preview logic for the entire row
     tr.onclick = (e) => {
-      if (!e.target.closest('button') && !e.target.closest('.icon-btn')) {
+      if (!e.target.closest('button') && !e.target.closest('.icon-btn') && !e.target.closest('input')) {
         previewOrder(t);
       }
     };
@@ -5319,6 +5321,8 @@ function renderTransactions() {
     const syncStatus = t.synced ? '' : ' <span style="font-size:0.8em; color:orange;" title="Pending Sync">⏳</span>';
 
     tr.innerHTML = `
+        <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('transactionHistoryBody','selectAllSales')"></td>
+        <td>${i + 1}</td>
         <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}${syncStatus}</td>
         <td class="u-text-right u-fs-08 u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
         <td class="u-text-right">
@@ -5356,7 +5360,7 @@ function renderTransactions() {
   tbody.innerHTML = ''; // Clear existing rows
 
   if (tableRows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="3" class="u-text-center">No transactions found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="4" class="u-text-center">No transactions found.</td></tr>';
     return;
   }
 
@@ -5474,6 +5478,15 @@ function populateReceiptContent(transaction) {
   const methodLine = paymentMethod ? `<div class="summary-line"><span>Method</span> <span>${paymentMethod}</span></div>` : '';
   const noteLine = note ? `<div class="summary-line"><span>Note</span> <span>${note}</span></div>` : '';
   const paidLine = amountPaid !== undefined ? `<div class="summary-line"><span>Amount Paid</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(amountPaid)}</span></div>` : '';
+  const totalAmountLine = isAdjustmentReceipt && transaction.totalAmount !== undefined
+    ? `<div class="summary-line"><span>Total Amount</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(transaction.totalAmount)}</span></div>`
+    : '';
+  const paidAmountLine = isAdjustmentReceipt && transaction.amountPaid !== undefined
+    ? `<div class="summary-line"><span>Paid Amount</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(transaction.amountPaid)}</span></div>`
+    : '';
+  const balanceLine = isAdjustmentReceipt && transaction.balance !== undefined
+    ? `<div class="summary-line"><span>Balance</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(transaction.balance)}</span></div>`
+    : '';
   const receiptHtml = `
         <div class="receipt-header">
           <div class="logo">${logoHtml}</div>
@@ -5495,6 +5508,9 @@ function populateReceiptContent(transaction) {
           ${customerLine}
           ${methodLine}
           ${noteLine}
+          ${totalAmountLine}
+          ${paidAmountLine}
+          ${balanceLine}
           ${paidLine}
           <div class="summary-line" style="font-size:0.9em; color:${navigator.onLine ? '#166534' : '#b45309'};"><span>Status</span> <span>${syncLabel}</span></div>
           ${taxHtml}
@@ -6789,6 +6805,23 @@ function previewLogo(input) {
   }
 }
 
+function toggleSelectAllRows(bodyId, checked) {
+  const body = document.getElementById(bodyId);
+  if (!body) return;
+  body.querySelectorAll('.table-row-select').forEach(checkbox => {
+    checkbox.checked = checked;
+  });
+}
+
+function updateSelectAllHeader(bodyId, headerId) {
+  const body = document.getElementById(bodyId);
+  const header = document.getElementById(headerId);
+  if (!body || !header) return;
+  const checkboxes = body.querySelectorAll('.table-row-select');
+  const checkedBoxes = body.querySelectorAll('.table-row-select:checked');
+  header.checked = checkboxes.length > 0 && checkboxes.length === checkedBoxes.length;
+}
+
 // ===== Staff Management =====
 function renderStaffList() {
   const tbody = document.getElementById('staffListBody');
@@ -6806,6 +6839,8 @@ function renderStaffList() {
 
     tr.style.opacity = isActive ? '1' : '0.5';
     tr.innerHTML =
+      `<td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('staffListBody','selectAllStaff')"></td>` +
+      `<td>${i + 1}</td>` +
       `<td>${member.name} ${isActive ? '' : '<small>(Inactive)</small>'}</td>` +
       `<td>${member.role}</td>` +
       `<td>****</td>` +
@@ -7073,10 +7108,12 @@ function populateCurrencies() {
 function renderCategoryList() {
   const tbody = document.getElementById('categoryListBody');
   tbody.innerHTML = '';
-  dishCategories.forEach(cat => {
+  dishCategories.forEach((cat, rowIndex) => {
     const index = dishCategories.indexOf(cat); // Get index for functions
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${cat}</td>
+    tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('categoryListBody','selectAllCategories')"></td>
+                      <td>${rowIndex + 1}</td>
+                      <td>${cat}</td>
                       <td style="text-align: right; white-space: nowrap;">
                         <button class="icon-btn" title="Edit Category" onclick="editCategory(${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
                         <button class="icon-btn" title="Delete Category" onclick="deleteCategory(${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
@@ -7215,7 +7252,9 @@ function renderUnitList() {
 
   units.forEach((unit, i) => {
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${unit.full}</td>
+    tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('unitListBody','selectAllUnits')"></td>
+                      <td>${i + 1}</td>
+                      <td>${unit.full}</td>
                       <td>${unit.short}</td>
                       <td style="text-align: right;">
                         <button class="icon-btn" title="Delete Unit" onclick="deleteUnit(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
@@ -7336,7 +7375,7 @@ function renderCustomerList() {
     const detailRow = document.createElement('tr');
     detailRow.id = `customerAdjustmentRow-${i}`;
     detailRow.style.display = 'none';
-    detailRow.innerHTML = `<td colspan="9" style="padding: 0 0 12px 0; background: #f8f9fa;">
+    detailRow.innerHTML = `<td colspan="11" style="padding: 0 0 12px 0; background: #f8f9fa;">
       <div style="border: 1px solid #dee2e6; border-radius: 10px; padding: 0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
         <div style="display:flex; justify-content:space-between; align-items:center; background:#f1f3f5; padding:10px 12px; border-bottom:1px solid #dee2e6;">
           <div style="font-weight:700; color:#495057;">Customer Adjustments</div>
@@ -7423,6 +7462,8 @@ function showCustomerAdjustmentReceipt(index, adjustmentIndex = null) {
 
   if (!adjustment) return;
 
+  const totalAmount = Math.max(parseFloat(customer.totalSales) || 0, parseFloat(customer.subtotalSales) || 0, parseFloat(adjustment.amount) || 0);
+  const balance = parseFloat(customer.balance) || 0;
   const receiptData = {
     date: adjustment.date || new Date().toISOString(),
     customerName: customer.name,
@@ -7437,7 +7478,9 @@ function showCustomerAdjustmentReceipt(index, adjustmentIndex = null) {
     paymentMethod: adjustment.method || 'Cash',
     customerId: customer.id,
     note: adjustment.note || '',
-    amountPaid: adjustment.amount
+    amountPaid: adjustment.amount,
+    totalAmount,
+    balance
   };
 
   const receiptModal = document.getElementById('receiptModal');
@@ -7763,7 +7806,7 @@ function renderStockListTable() {
   // Filter to show only raw ingredients (items with a 'stock' property)
   const stockItems = menu.filter(item => item.stock !== undefined && (!searchTerm || item.name.toLowerCase().includes(searchTerm)));
 
-  stockItems.forEach((item) => {
+  stockItems.forEach((item, rowIndex) => {
     const index = menu.indexOf(item);
     const stock = calculateDishStock(item, true);
     const costPrice = item.costPrice || 0;
@@ -7772,6 +7815,8 @@ function renderStockListTable() {
 
 
     tr.innerHTML = `
+        <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('stockListBody','selectAllStock')"></td>
+        <td>${rowIndex + 1}</td>
         <td class="u-fs-08 u-text-break">${item.name}</td> 
         <td class="u-fs-08">${(item.recipe && item.recipe.length > 0) ? 'Recipe' : (item.unit || 'N/A')}</td>
         <td class="u-fs-08 u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>

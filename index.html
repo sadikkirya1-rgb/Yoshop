@@ -467,6 +467,8 @@
           <table>
             <thead>
               <tr>
+                <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllProducts" onchange="toggleSelectAllRows('dishesTableBody', this.checked); updateSelectAllHeader('dishesTableBody','selectAllProducts')"></th>
+                <th>#</th>
                 <th>Image</th>
                 <th>Product</th>
                 <th style="text-align: right;">Cost</th>
@@ -491,6 +493,8 @@
           <table class="u-mt-15">
             <thead>
               <tr>
+                <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllCategories" onchange="toggleSelectAllRows('categoryListBody', this.checked); updateSelectAllHeader('categoryListBody','selectAllCategories')"></th>
+                <th>#</th>
                 <th>Category Name</th>
                 <th style="text-align: right;">Action</th>
               </tr>
@@ -513,6 +517,8 @@
           <table class="u-mt-15">
             <thead>
               <tr>
+                <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllUnits" onchange="toggleSelectAllRows('unitListBody', this.checked); updateSelectAllHeader('unitListBody','selectAllUnits')"></th>
+                <th>#</th>
                 <th>Full Name</th>
                 <th>Short Name</th>
                 <th style="text-align: right;">Action</th>
@@ -559,6 +565,8 @@
           <table class="u-mt-15">
             <thead>
               <tr>
+                <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllStaff" onchange="toggleSelectAllRows('staffListBody', this.checked); updateSelectAllHeader('staffListBody','selectAllStaff')"></th>
+                <th>#</th>
                 <th>Name</th>
                 <th>Role</th>
                 <th>PIN</th>
@@ -712,6 +720,8 @@
           </thead>
           <thead>
             <tr>
+              <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllStock" onchange="toggleSelectAllRows('stockListBody', this.checked); updateSelectAllHeader('stockListBody','selectAllStock')"></th>
+              <th>#</th>
               <th>Items</th> <!-- 1 -->
               <th>Unit</th>
               <th class="u-text-right">Cost</th> <!-- 2 -->
@@ -734,6 +744,8 @@
           <table>
             <thead>
               <tr>
+                <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllSales" onchange="toggleSelectAllRows('transactionHistoryBody', this.checked); updateSelectAllHeader('transactionHistoryBody','selectAllSales')"></th>
+                <th>#</th>
                 <th>Date</th>
                 <th style="text-align: right;">Total</th>
                 <th style="text-align: right;">Action</th>
