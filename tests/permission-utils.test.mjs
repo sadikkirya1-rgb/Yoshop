@@ -6,8 +6,12 @@ test('normalizePermissions collapses duplicates and filters empty values', () =>
   assert.deepEqual(normalizePermissions(['menuTab', '', 'menuTab', 'reportsTab']), ['menuTab', 'reportsTab']);
 });
 
-test('hasPermission allows admins and managers without explicit permission lists', () => {
+test('hasPermission allows AppAdmin and ShopAdmin without explicit permission lists', () => {
   assert.equal(hasPermission('appAdmin', [], 'reports'), true);
+  assert.equal(hasPermission('shopAdmin', [], 'inventory'), true);
+});
+
+test('hasPermission maps old manager data to ShopAdmin for compatibility', () => {
   assert.equal(hasPermission('manager', [], 'inventory'), true);
 });
 

@@ -42,6 +42,10 @@ const FEATURE_ALIASES = {
   discount: 'discountApproval',
   price: 'priceOverride'
 };
+const FEATURE_LEGACY_ALIASES = {
+  inventory: ['inventoryTab'],
+  stock: ['inventoryTab']
+};
 
 function normalizeRole(role = '') {
   const normalized = String(role || '').trim().toLowerCase();
@@ -69,8 +73,10 @@ function hasPermission(role, permissions = [], feature = '') {
 
   const normalizedPermissions = normalizePermissions(permissions, []);
   const featureKey = String(feature || '').trim();
-  const alias = FEATURE_ALIASES[featureKey.toLowerCase()];
-  const targets = [featureKey, alias].filter(Boolean);
+  const featureName = featureKey.toLowerCase();
+  const alias = FEATURE_ALIASES[featureName];
+  const legacyAliases = FEATURE_LEGACY_ALIASES[featureName] || [];
+  const targets = [featureKey, alias, ...legacyAliases].filter(Boolean);
 
   return targets.length === 0
     ? normalizedPermissions.length > 0
