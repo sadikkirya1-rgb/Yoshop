@@ -3257,6 +3257,8 @@ window.closeAuthModal = closeAuthModal;
 window.submitAuthAction = submitAuthAction;
 window.toggleCashPaymentFields = toggleCashPaymentFields;
 window.onPaymentCustomerChange = onPaymentCustomerChange;
+window.processBill = processBill;
+window.finalizePayment = finalizePayment;
 window.updateOrderCustomer = updateOrderCustomer;
 
 async function handleChangePassword() {
@@ -4322,6 +4324,10 @@ function processBill() { // This now opens the payment modal
   totalDueEl.dataset.currentTotal = totals.total;
 
   document.getElementById('discountInput').value = '';
+  document.getElementById('paymentAmountPaid').value = totals.total.toFixed(2);
+  document.getElementById('paymentAmountPaid').dataset.autoSet = 'true';
+  document.getElementById('amountTendered').value = '';
+  document.getElementById('changeDue').textContent = '0.00';
 
   // Pre-populate customer selection in payment modal from the Shop tab dropdown
   const orderCustomerSelect = document.getElementById('orderCustomerSelect');
@@ -4359,31 +4365,36 @@ function updatePaymentTotals() {
   totalDueEl.textContent = formatCurrency(newTotal);
   totalDueEl.dataset.currentTotal = newTotal;
 
-  // Update customer balance preview if customer selected
   const paymentSelect = document.getElementById('paymentCustomerSelect');
   const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
+  const amountPaidInput = document.getElementById('paymentAmountPaid');
+  const remainingBalanceEl = document.getElementById('paymentRemainingBalanceVal');
+  const remainingBalanceRow = document.getElementById('paymentRemainingBalanceRow');
+  const confirmBtn = document.getElementById('confirmPaymentBtn');
+  const amountTendered = parseFloat(document.getElementById('amountTendered').value) || 0;
+  const currencySymbol = getCurrencySymbol();
+
   if (isCustomerSelected) {
     const customer = customers[parseInt(paymentSelect.value, 10)];
     if (customer) {
       const currentBalance = parseFloat(customer.balance) || 0;
-      const amountPaidInput = document.getElementById('paymentAmountPaid');
-      
-      // Auto-set balance amount field to newTotal when it hasn't been manually changed
       if (amountPaidInput && (amountPaidInput.value === '' || amountPaidInput.dataset.autoSet === 'true')) {
         amountPaidInput.value = newTotal.toFixed(2);
         amountPaidInput.dataset.autoSet = 'true';
       }
-      
+
       const amountPaid = parseFloat(amountPaidInput ? amountPaidInput.value : 0) || 0;
       const balanceChange = amountPaid - newTotal;
       const newBalance = currentBalance + balanceChange;
-      
+      const remainingBalance = Math.max(0, newTotal - amountPaid);
+
+      if (remainingBalanceRow) remainingBalanceRow.style.display = 'flex';
+      if (remainingBalanceEl) remainingBalanceEl.innerHTML = `<span style="${remainingBalance > 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${remainingBalance > 0 ? '-' : ''}${currencySymbol}${formatCurrency(remainingBalance)}</span>`;
+
       const labelEl = document.getElementById('paymentNewBalanceLabel');
       const valEl = document.getElementById('paymentNewBalanceVal');
       const newBalanceRow = document.getElementById('paymentNewBalanceRow');
       if (newBalanceRow) newBalanceRow.style.display = 'flex';
-      
-      const currencySymbol = getCurrencySymbol();
       if (labelEl && valEl) {
         if (newBalance < 0) {
           labelEl.textContent = 'New Balance (Debt):';
@@ -4396,13 +4407,14 @@ function updatePaymentTotals() {
           valEl.innerHTML = `No Balance (${currencySymbol}0.00)`;
         }
       }
+      if (confirmBtn) confirmBtn.disabled = false;
     }
   } else {
-    // No customer selected - hide new balance row
     const newBalanceRow = document.getElementById('paymentNewBalanceRow');
     if (newBalanceRow) newBalanceRow.style.display = 'none';
-    // Clear auto-set flag
-    const amountPaidInput = document.getElementById('paymentAmountPaid');
+    if (remainingBalanceRow) remainingBalanceRow.style.display = 'flex';
+    if (remainingBalanceEl) remainingBalanceEl.innerHTML = `<span style="${amountTendered >= newTotal ? 'color:#28a745' : 'color:#dc3545'}; font-weight:bold;">${currencySymbol}${formatCurrency(Math.max(0, newTotal - amountTendered))}</span>`;
+    if (confirmBtn) confirmBtn.disabled = !(amountTendered >= newTotal);
     if (amountPaidInput) amountPaidInput.dataset.autoSet = '';
   }
 
@@ -4457,7 +4469,6 @@ async function finalizePayment(isSplit = false) {
   const customerIndex = isCustomerSelected ? parseInt(paymentSelect.value, 10) : -1;
   const customer = isCustomerSelected ? customers[customerIndex] : null;
 
-  // Determine amount paid
   let amountPaid = finalTotal;
   if (isCustomerSelected) {
     const paidInputVal = parseFloat(document.getElementById('paymentAmountPaid').value);
@@ -4466,9 +4477,11 @@ async function finalizePayment(isSplit = false) {
       return;
     }
     amountPaid = paidInputVal;
+  } else if (isNaN(amountTendered) || amountTendered < finalTotal) {
+    await showAppAlert(`Amount tendered must be greater than or equal to ${formatCurrency(finalTotal)}.`, "Invalid Amount");
+    return;
   }
 
-  // Validate Cash payment
   if (paymentMethod === 'Cash') {
     const minTender = isCustomerSelected ? amountPaid : finalTotal;
     if (isNaN(amountTendered) || amountTendered < minTender) {
@@ -4514,10 +4527,12 @@ async function finalizePayment(isSplit = false) {
 
     // 1. Update customer balance in local state and db
     if (customer) {
-      const currentBalance = customer.balance || 0;
+      const currentBalance = parseFloat(customer.balance) || 0;
       customer.balance = currentBalance + balanceChange;
-      
-      // Push customer update to db
+      customer.totalSales = (parseFloat(customer.totalSales) || 0) + finalTotal;
+      customer.totalPaid = (parseFloat(customer.totalPaid) || 0) + amountPaid;
+      customer.lastTransactionDate = transaction.date;
+
       enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
     }
 
@@ -7128,21 +7143,29 @@ function renderCustomerList() {
   tbody.innerHTML = '';
   const currencySymbol = getCurrencySymbol();
   customers.forEach((customer, i) => {
-    const bal = customer.balance || 0;
-    let debtText = `${currencySymbol}0.00`;
-    let creditText = `${currencySymbol}0.00`;
-    if (bal < 0) {
-      debtText = `<span style="color:#dc3545; font-weight:bold;">${currencySymbol}${formatCurrency(Math.abs(bal))}</span>`;
-    } else if (bal > 0) {
-      creditText = `<span style="color:#28a745; font-weight:bold;">${currencySymbol}${formatCurrency(bal)}</span>`;
-    }
+    const customerTransactions = (Array.isArray(transactions) ? transactions : []).filter(transaction => {
+      const matchesCustomerId = customer?.id && transaction?.customerId && transaction.customerId === customer.id;
+      const matchesCustomerName = transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
+      return matchesCustomerId || matchesCustomerName;
+    });
+    const totalSales = parseFloat(customer.totalSales ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.total) || 0), 0)) || 0;
+    const totalPaid = parseFloat(customer.totalPaid ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.amountPaid) || 0), 0)) || 0;
+    const balance = parseFloat(customer.balance) || 0;
+    const balanceText = balance === 0
+      ? `${currencySymbol}0.00`
+      : `<span style="${balance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</span>`;
+    const lastDate = customer.lastTransactionDate
+      ? new Date(customer.lastTransactionDate).toLocaleDateString()
+      : (customerTransactions.length > 0 ? new Date(customerTransactions[customerTransactions.length - 1].date).toLocaleDateString() : '—');
 
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${customer.name}</td>
                         <td>${customer.contact}</td>
                         <td>${customer.address || ''}</td>
-                        <td style="text-align: right;">${debtText}</td>
-                        <td style="text-align: right;">${creditText}</td>
+                        <td style="text-align: right;">${currencySymbol}${formatCurrency(totalSales)}</td>
+                        <td style="text-align: right;">${currencySymbol}${formatCurrency(totalPaid)}</td>
+                        <td style="text-align: right;">${balanceText}</td>
+                        <td style="text-align: right;">${lastDate}</td>
                         <td style="text-align: right; white-space: nowrap;">
                             <button class="icon-btn" title="Edit Customer" onclick="editCustomer(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
                             <button class="icon-btn" title="Delete Customer" onclick="deleteCustomer(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
@@ -7246,7 +7269,10 @@ function addCustomer() {
     name: nameInput.value.trim(),
     contact: contactInput.value.trim(),
     address: addressInput.value.trim(),
-    balance: parseFloat(balanceInput.value) || 0
+    balance: parseFloat(balanceInput.value) || 0,
+    totalSales: existingCustomer?.totalSales || 0,
+    totalPaid: existingCustomer?.totalPaid || 0,
+    lastTransactionDate: existingCustomer?.lastTransactionDate || null
   }, existingCustomer);
 
   if (index !== '') {

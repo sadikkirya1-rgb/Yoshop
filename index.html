@@ -159,13 +159,17 @@
           <span id="paymentCustomerBalanceVal" style="font-weight:bold;">$0.00</span>
         </div>
         <div class="input-row">
-          <label for="paymentAmountPaid">Balance Amount:</label>
+          <label for="paymentAmountPaid">Amount Paid:</label>
           <input type="number" id="paymentAmountPaid" placeholder="0.00" step="0.01" oninput="this.dataset.autoSet=''; updatePaymentTotals()">
+        </div>
+        <div id="paymentRemainingBalanceRow" style="display:flex; justify-content:space-between; margin-bottom:10px; padding:8px; background:rgba(0,0,0,0.04); border-radius:6px; font-size:0.9em;">
+          <span>Remaining Balance:</span>
+          <span id="paymentRemainingBalanceVal" style="font-weight:bold;">$0.00</span>
         </div>
         <div id="cashPaymentFields">
           <div class="input-row">
             <label for="amountTendered" class="amount-tendered-wrapper">Amount Tendered:</label>
-            <input type="number" id="amountTendered" oninput="calculateChange()" placeholder="0.00" step="0.01">
+            <input type="number" id="amountTendered" oninput="updatePaymentTotals()" placeholder="0.00" step="0.01">
           </div>
           <div class="total change-due">Change Due: <span class="currency-symbol">$</span><span id="changeDue">0.00</span></div>
         </div>
@@ -605,8 +609,10 @@
                 <th>Name</th>
                 <th>Contact</th>
                 <th>Address</th>
-                <th style="text-align: right;">Debt</th>
-                <th style="text-align: right;">Credit</th>
+                <th style="text-align: right;">Total</th>
+                <th style="text-align: right;">Paid</th>
+                <th style="text-align: right;">Balance</th>
+                <th style="text-align: right;">Date</th>
                 <th style="text-align: right; white-space: nowrap;">Action</th>
               </tr>
             </thead>
