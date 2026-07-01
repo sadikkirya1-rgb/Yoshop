@@ -4316,10 +4316,21 @@ function processBill() { // This now opens the payment modal
 
   document.getElementById('discountInput').value = '';
 
+  // Pre-populate customer selection in payment modal from the Shop tab dropdown
+  const orderCustomerSelect = document.getElementById('orderCustomerSelect');
+  const paymentCustomerSelect = document.getElementById('paymentCustomerSelect');
+  if (orderCustomerSelect && paymentCustomerSelect) {
+    paymentCustomerSelect.value = orderCustomerSelect.value;
+  }
+
   document.getElementById('splitPaymentContainer').style.display = 'none'; // Hide split view
   document.getElementById('paymentDetails').style.display = 'block'; // Show single payment view
   document.getElementById('confirmPaymentBtn').onclick = () => finalizePayment(); // Set correct handler
   document.getElementById('paymentModal').style.display = 'flex';
+  
+  // Call onPaymentCustomerChange to update balance display, Amount Paid default, etc.
+  onPaymentCustomerChange();
+
   setPaymentProcessingState(false, 'Review the total and confirm payment.', 'info');
   toggleCashPaymentFields(); // Initialize view based on default selection
   calculateChange(); // Initialize change calculation
@@ -4341,6 +4352,52 @@ function updatePaymentTotals() {
   totalDueEl.textContent = formatCurrency(newTotal);
   totalDueEl.dataset.currentTotal = newTotal;
 
+  // Update customer balance preview if customer selected
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
+  if (isCustomerSelected) {
+    const customer = customers[parseInt(paymentSelect.value, 10)];
+    if (customer) {
+      const currentBalance = parseFloat(customer.balance) || 0;
+      const amountPaidInput = document.getElementById('paymentAmountPaid');
+      
+      // Auto-set balance amount field to newTotal when it hasn't been manually changed
+      if (amountPaidInput && (amountPaidInput.value === '' || amountPaidInput.dataset.autoSet === 'true')) {
+        amountPaidInput.value = newTotal.toFixed(2);
+        amountPaidInput.dataset.autoSet = 'true';
+      }
+      
+      const amountPaid = parseFloat(amountPaidInput ? amountPaidInput.value : 0) || 0;
+      const balanceChange = amountPaid - newTotal;
+      const newBalance = currentBalance + balanceChange;
+      
+      const labelEl = document.getElementById('paymentNewBalanceLabel');
+      const valEl = document.getElementById('paymentNewBalanceVal');
+      const newBalanceRow = document.getElementById('paymentNewBalanceRow');
+      if (newBalanceRow) newBalanceRow.style.display = 'flex';
+      
+      if (labelEl && valEl) {
+        if (newBalance < 0) {
+          labelEl.textContent = 'New Balance (Debt):';
+          valEl.innerHTML = `<span style="color:#dc3545; font-weight:bold;">-${formatCurrency(Math.abs(newBalance))}</span>`;
+        } else if (newBalance > 0) {
+          labelEl.textContent = 'New Balance (Credit):';
+          valEl.innerHTML = `<span style="color:#28a745; font-weight:bold;">${formatCurrency(newBalance)}</span>`;
+        } else {
+          labelEl.textContent = 'New Account Balance:';
+          valEl.innerHTML = `No Balance ($0.00)`;
+        }
+      }
+    }
+  } else {
+    // No customer selected - hide new balance row
+    const newBalanceRow = document.getElementById('paymentNewBalanceRow');
+    if (newBalanceRow) newBalanceRow.style.display = 'none';
+    // Clear auto-set flag
+    const amountPaidInput = document.getElementById('paymentAmountPaid');
+    if (amountPaidInput) amountPaidInput.dataset.autoSet = '';
+  }
+
   calculateChange();
 }
 
@@ -4353,9 +4410,19 @@ function toggleCashPaymentFields() {
 function calculateChange() {
   const totalDueEl = document.getElementById('paymentTotalDue');
   const totalDue = totalDueEl.dataset.currentTotal ? parseFloat(totalDueEl.dataset.currentTotal) : (parseFloat(totalDueEl.textContent.replace(/,/g, '')) || 0);
+  
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
+  const amountPaidInput = document.getElementById('paymentAmountPaid');
+  
+  let targetAmount = totalDue;
+  if (isCustomerSelected && amountPaidInput && amountPaidInput.value !== '') {
+    targetAmount = parseFloat(amountPaidInput.value) || 0;
+  }
+  
   const amountTendered = parseFloat(document.getElementById('amountTendered').value) || 0;
-  const change = amountTendered - totalDue;
-  document.getElementById('changeDue').textContent = change > 0 ? formatCurrency(change) : '0';
+  const change = amountTendered - targetAmount;
+  document.getElementById('changeDue').textContent = change > 0 ? formatCurrency(change) : '0.00';
 }
 
 async function finalizePayment(isSplit = false) {
@@ -4376,9 +4443,30 @@ async function finalizePayment(isSplit = false) {
   if (discountAmount < 0) discountAmount = 0;
   const finalTotal = totals.total - discountAmount;
 
-  if (paymentMethod === 'Cash' && (isNaN(amountTendered) || amountTendered < finalTotal)) {
-    await showAppAlert("Amount tendered must be greater than or equal to the total due.", "Invalid Amount");
-    return;
+  // Read customer selection
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
+  const customerIndex = isCustomerSelected ? parseInt(paymentSelect.value, 10) : -1;
+  const customer = isCustomerSelected ? customers[customerIndex] : null;
+
+  // Determine amount paid
+  let amountPaid = finalTotal;
+  if (isCustomerSelected) {
+    const paidInputVal = parseFloat(document.getElementById('paymentAmountPaid').value);
+    if (isNaN(paidInputVal) || paidInputVal < 0) {
+      await showAppAlert("Please enter a valid amount paid.", "Invalid Amount");
+      return;
+    }
+    amountPaid = paidInputVal;
+  }
+
+  // Validate Cash payment
+  if (paymentMethod === 'Cash') {
+    const minTender = isCustomerSelected ? amountPaid : finalTotal;
+    if (isNaN(amountTendered) || amountTendered < minTender) {
+      await showAppAlert(`Amount tendered must be greater than or equal to ${formatCurrency(minTender)}.`, "Invalid Amount");
+      return;
+    }
   }
 
   setPaymentProcessingState(true, navigator.onLine ? 'Processing payment…' : 'Offline mode: saving your sale locally and syncing it when the connection returns.', navigator.onLine ? 'info' : 'success');
@@ -4391,16 +4479,24 @@ async function finalizePayment(isSplit = false) {
       }
     });
 
+    const balanceChange = isCustomerSelected ? (amountPaid - finalTotal) : 0;
+
     const transaction = {
       date: new Date().toISOString(),
-      customerName: getCurrentServerName(),
+      customerName: getCurrentServerName(), // This is the staff name for compatibility
       tableNo: 'Shop',
       items: [...currentOrder.items],
       total: finalTotal,
       subtotal: totals.subtotal,
       tax: totals.tax,
       paymentMethod: paymentMethod,
-      discount: { value: discountInput, type: 'fixed', amount: discountAmount }
+      discount: { value: discountInput, type: 'fixed', amount: discountAmount },
+      
+      // Integrate customer debt/credit details:
+      customerId: customer ? customer.id || customer.recordId : null,
+      customerNameReal: customer ? customer.name : 'Walk-in Customer',
+      amountPaid: amountPaid,
+      balanceChange: balanceChange
     };
 
     if (isSplit) {
@@ -4408,11 +4504,25 @@ async function finalizePayment(isSplit = false) {
       return transaction;
     }
 
+    // 1. Update customer balance in local state and db
+    if (customer) {
+      const currentBalance = customer.balance || 0;
+      customer.balance = currentBalance + balanceChange;
+      
+      // Push customer update to db
+      enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
+    }
+
     await recordTransaction(transaction);
-    const changeDue = amountTendered - finalTotal;
+    const changeDue = amountTendered - amountPaid;
     delete activeOrders[CART_ID];
     await saveData();
     renderMenu();
+    
+    // Reset order customer selection dropdown
+    const orderSelect = document.getElementById('orderCustomerSelect');
+    if (orderSelect) orderSelect.value = '';
+
     document.getElementById('paymentModal').style.display = 'none';
     setPaymentProcessingState(false);
     showSaleSuccessCelebration(transaction, changeDue > 0 ? changeDue : 0);
@@ -5396,6 +5506,10 @@ function renderReport() {
     const staffPerformance = {};
     const monthlyRevenueData = {};
 
+    let totalPaid = 0;
+    let totalDebtAdded = 0;
+    let totalCreditAdded = 0;
+
     filteredTransactions.forEach(t => {
       const sName = t.customerName || 'Unknown';
       staffPerformance[sName] = (staffPerformance[sName] || 0) + (t.total || 0);
@@ -5403,6 +5517,17 @@ function renderReport() {
       if (t.date) {
         const month = t.date.substring(0, 7); // YYYY-MM
         monthlyRevenueData[month] = (monthlyRevenueData[month] || 0) + (t.total || 0);
+      }
+
+      // Add payment breakdown
+      const amtPaid = t.amountPaid !== undefined ? t.amountPaid : (t.total || 0);
+      totalPaid += amtPaid;
+      
+      const balChange = t.balanceChange || 0;
+      if (balChange < 0) {
+        totalDebtAdded += Math.abs(balChange);
+      } else if (balChange > 0) {
+        totalCreditAdded += balChange;
       }
 
       (t.items || []).forEach(item => {
@@ -5462,28 +5587,56 @@ function renderReport() {
         </div>
         ${cardsHtml}
         ${chartsHtml}
-        <div class="u-mb-20">
-          <h5>Collected by Payment Method</h5>
-          <table id="reportTable">
-            <thead>
-              <tr><th class="u-text-center">Method</th><th class="u-text-center">Total Revenue</th><th class="u-text-center">% Share</th></tr>
-            </thead>
-            <tbody>
-              ${Object.entries(paymentMethods).map(([method, total]) => `
+        <div class="u-mb-20" style="display: flex; gap: 20px; flex-wrap: wrap;">
+          <div style="flex: 1; min-width: 280px;">
+            <h5>Collected by Payment Method</h5>
+            <table id="reportTable">
+              <thead>
+                <tr><th class="u-text-center">Method</th><th class="u-text-center">Total Revenue</th><th class="u-text-center">% Share</th></tr>
+              </thead>
+              <tbody>
+                ${Object.entries(paymentMethods).map(([method, total]) => `
+                  <tr>
+                    <td>${method}</td>
+                    <td class="u-text-right"><span class="currency-symbol">$</span>${formatCurrency(total)}</td>
+                    <td class="u-text-right">${((total / totalRevenue) * 100).toFixed(1)}%</td>
+                  </tr>`).join('')}
+              </tbody>
+              <tfoot>
+                <tr class="u-bold">
+                  <td>ToTal</td>
+                  <td class="u-text-right"><span class="currency-symbol">$</span>${formatCurrency(totalRevenue)}</td>
+                  <td class="u-text-right">100%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <div style="flex: 1; min-width: 280px;">
+            <h5>Customer Accounts Summary</h5>
+            <table>
+              <thead>
+                <tr><th class="u-text-center">Metric</th><th class="u-text-center">Amount</th></tr>
+              </thead>
+              <tbody>
                 <tr>
-                  <td>${method}</td>
-                  <td class="u-text-right"><span class="currency-symbol">$</span>${formatCurrency(total)}</td>
-                  <td class="u-text-right">${((total / totalRevenue) * 100).toFixed(1)}%</td>
-                </tr>`).join('')}
-            </tbody>
-            <tfoot>
-              <tr class="u-bold">
-                <td>ToTal</td>
-                <td class="u-text-right"><span class="currency-symbol">$</span>${formatCurrency(totalRevenue)}</td>
-                <td class="u-text-right">100%</td>
-              </tr>
-            </tfoot>
-          </table>
+                  <td>Total Sales (Revenue)</td>
+                  <td class="u-text-right"><span class="currency-symbol">$</span>${formatCurrency(totalRevenue)}</td>
+                </tr>
+                <tr>
+                  <td>Total Payments Received</td>
+                  <td class="u-text-right"><span class="currency-symbol">$</span>${formatCurrency(totalPaid)}</td>
+                </tr>
+                <tr>
+                  <td>New Debt Accumulated</td>
+                  <td class="u-text-right" style="color: #dc3545; font-weight: bold;"><span class="currency-symbol">$</span>${formatCurrency(totalDebtAdded)}</td>
+                </tr>
+                <tr>
+                  <td>New Credit Accumulated</td>
+                  <td class="u-text-right" style="color: #28a745; font-weight: bold;"><span class="currency-symbol">$</span>${formatCurrency(totalCreditAdded)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>`;
 
     if (showCharts) {
@@ -6954,7 +7107,7 @@ function toggleAddCustomerForm(show) {
     document.getElementById('customerNameInput').value = '';
     document.getElementById('customerContactInput').value = '';
     document.getElementById('customerAddressInput').value = '';
-    document.getElementById('customerAddressInput').value = '';
+    document.getElementById('customerBalanceInput').value = '';
   } else {
     formContainer.style.display = 'none';
     if (toggleButton) toggleButton.style.display = 'inline-block'; // Show the 'Add New' button
@@ -6963,24 +7116,114 @@ function toggleAddCustomerForm(show) {
 
 function renderCustomerList() {
   const tbody = document.getElementById('customerListBody');
+  if (!tbody) return;
   tbody.innerHTML = '';
   customers.forEach((customer, i) => {
+    const bal = customer.balance || 0;
+    let debtText = '$0.00';
+    let creditText = '$0.00';
+    if (bal < 0) {
+      debtText = `<span style="color:#dc3545; font-weight:bold;">${formatCurrency(Math.abs(bal))}</span>`;
+    } else if (bal > 0) {
+      creditText = `<span style="color:#28a745; font-weight:bold;">${formatCurrency(bal)}</span>`;
+    }
+
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${customer.name}</td>
                         <td>${customer.contact}</td>
                         <td>${customer.address || ''}</td>
+                        <td style="text-align: right;">${debtText}</td>
+                        <td style="text-align: right;">${creditText}</td>
                         <td style="text-align: right; white-space: nowrap;">
                             <button class="icon-btn" title="Edit Customer" onclick="editCustomer(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
                             <button class="icon-btn" title="Delete Customer" onclick="deleteCustomer(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
                         </td>`;
     tbody.appendChild(tr);
   });
+  
+  populateCustomerDropdowns();
+}
+
+function populateCustomerDropdowns() {
+  const orderSelect = document.getElementById('orderCustomerSelect');
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  
+  const optionsHtml = `
+    <option value="">Walk-in Customer</option>
+    ${customers.map((c, i) => {
+      const bal = c.balance || 0;
+      const balStr = bal < 0 ? 'Debt: -' + formatCurrency(Math.abs(bal)) : (bal > 0 ? 'Credit: ' + formatCurrency(bal) : 'No Balance');
+      return `<option value="${i}">${c.name} (${balStr})</option>`;
+    }).join('')}
+  `;
+  
+  if (orderSelect) {
+    const currentVal = orderSelect.value;
+    orderSelect.innerHTML = optionsHtml;
+    orderSelect.value = currentVal;
+  }
+  
+  if (paymentSelect) {
+    const currentVal = paymentSelect.value;
+    paymentSelect.innerHTML = optionsHtml;
+    paymentSelect.value = currentVal;
+  }
+}
+
+function updateOrderCustomer() {
+  const orderSelect = document.getElementById('orderCustomerSelect');
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  if (orderSelect && paymentSelect) {
+    paymentSelect.value = orderSelect.value;
+    onPaymentCustomerChange();
+  }
+}
+
+function onPaymentCustomerChange() {
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const balanceRow = document.getElementById('paymentCustomerBalanceRow');
+  const balanceVal = document.getElementById('paymentCustomerBalanceVal');
+  const newBalanceRow = document.getElementById('paymentNewBalanceRow');
+  const amountPaidInput = document.getElementById('paymentAmountPaid');
+  const totalDueEl = document.getElementById('paymentTotalDue');
+  const totalDue = totalDueEl.dataset.currentTotal ? parseFloat(totalDueEl.dataset.currentTotal) : (parseFloat(totalDueEl.textContent.replace(/,/g, '')) || 0);
+
+  if (!paymentSelect) return;
+  const customerIndex = paymentSelect.value;
+  if (customerIndex !== '') {
+    const customer = customers[parseInt(customerIndex, 10)];
+    const currentBalance = customer.balance || 0;
+    
+    if (balanceRow && balanceVal) {
+      balanceRow.style.display = 'flex';
+      if (currentBalance < 0) {
+        balanceVal.innerHTML = `<span style="color:#dc3545; font-weight:bold;">Debt: -${formatCurrency(Math.abs(currentBalance))}</span>`;
+      } else if (currentBalance > 0) {
+        balanceVal.innerHTML = `<span style="color:#28a745; font-weight:bold;">Credit: ${formatCurrency(currentBalance)}</span>`;
+      } else {
+        balanceVal.innerHTML = `No Balance ($0.00)`;
+      }
+    }
+    
+    if (newBalanceRow) newBalanceRow.style.display = 'flex';
+    
+    if (amountPaidInput) {
+      amountPaidInput.value = totalDue.toFixed(2);
+    }
+  } else {
+    if (balanceRow) balanceRow.style.display = 'none';
+    if (newBalanceRow) newBalanceRow.style.display = 'none';
+    if (amountPaidInput) amountPaidInput.value = '';
+  }
+  
+  updatePaymentTotals();
 }
 
 function addCustomer() {
   const nameInput = document.getElementById('customerNameInput');
   const contactInput = document.getElementById('customerContactInput');
   const addressInput = document.getElementById('customerAddressInput');
+  const balanceInput = document.getElementById('customerBalanceInput');
   const index = document.getElementById('customerIndex').value;
 
   if (!nameInput.value.trim()) return showAppAlert("Customer name is required.", 'Customer Required');
@@ -6991,7 +7234,8 @@ function addCustomer() {
   const customerData = enrichEnterpriseRecord('customers', {
     name: nameInput.value.trim(),
     contact: contactInput.value.trim(),
-    address: addressInput.value.trim()
+    address: addressInput.value.trim(),
+    balance: parseFloat(balanceInput.value) || 0
   }, existingCustomer);
 
   if (index !== '') {
@@ -7015,6 +7259,7 @@ function editCustomer(index) {
   document.getElementById('customerNameInput').value = customer.name;
   document.getElementById('customerContactInput').value = customer.contact;
   document.getElementById('customerAddressInput').value = customer.address;
+  document.getElementById('customerBalanceInput').value = customer.balance || 0;
   document.getElementById('customerIndex').value = index;
   document.getElementById('saveCustomerBtn').textContent = 'Update Customer';
 }
