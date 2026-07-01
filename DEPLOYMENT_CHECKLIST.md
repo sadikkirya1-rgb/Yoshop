@@ -62,7 +62,7 @@ CRITICAL ITEMS - DO NOT DEPLOY WITHOUT:
 - [ ] Firebase Storage rules set to private
 - [ ] No test/demo data in production database
 - [ ] Admin PIN is NOT hardcoded
-- [ ] Manager PIN is NOT hardcoded
+- [ ] ShopAdmin PIN is NOT hardcoded
 - [ ] Staff PINs are encrypted (encrypted by Firebase)
 - [ ] Backup strategy verified
 - [ ] Disaster recovery plan documented

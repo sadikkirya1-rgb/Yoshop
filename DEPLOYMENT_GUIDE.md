@@ -97,7 +97,7 @@ ENABLE_HEALTH_CHECKS=true
 Update `sw.js` cache version for each deployment:
 
 ```javascript
-const CACHE_NAME = 'yoshop-v23'; // Increment this version
+const CACHE_NAME = 'yoshop-v33'; // Increment this version on each release
 ```
 
 ### 6. **Production Deployment Checklist**

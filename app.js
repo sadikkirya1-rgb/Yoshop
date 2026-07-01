@@ -264,6 +264,8 @@ function getEnterpriseMirrorSignature() {
     products: summarize(menu),
     categories: summarize(getCategoryRecordsFromList(dishCategories)),
     sales: summarize(transactions),
+    saleItems: summarize(Array.isArray(transactions) ? transactions.flatMap(buildSaleItemRecords) : []),
+    payments: summarize(Array.isArray(transactions) ? transactions.map(buildPaymentRecord) : []),
     staff: summarize(staff),
     customers: summarize(customers),
     units: summarize(units),
@@ -290,6 +292,8 @@ async function mirrorEnterpriseRecordsToLocalStores(options = {}) {
     ...(Array.isArray(menu) ? menu.map(record => ['products', record]) : []),
     ...(Array.isArray(dishCategories) ? getCategoryRecordsFromList(dishCategories).map(record => ['categories', record]) : []),
     ...(Array.isArray(transactions) ? transactions.map(record => ['sales', record]) : []),
+    ...(Array.isArray(transactions) ? transactions.flatMap(buildSaleItemRecords).map(record => ['saleItems', record]) : []),
+    ...(Array.isArray(transactions) ? transactions.map(buildPaymentRecord).map(record => ['payments', record]) : []),
     ...(Array.isArray(staff) ? staff.map(record => ['staff', record]) : []),
     ...(Array.isArray(customers) ? customers.map(record => ['customers', record]) : []),
     ...(Array.isArray(units) ? units.map(record => ['units', record]) : []),
@@ -1230,7 +1234,9 @@ async function backfillEnterpriseRecordCollectionsOnce(uid) {
     { collectionName: 'customers', entityType: 'customers', records: customers },
     { collectionName: 'staff', entityType: 'staff', records: staff },
     { collectionName: 'units', entityType: 'units', records: units },
-    { collectionName: 'inventory_history', entityType: 'inventoryHistory', records: restockHistory }
+    { collectionName: 'inventory_history', entityType: 'inventoryHistory', records: restockHistory },
+    { collectionName: 'sale_items', entityType: 'saleItems', records: Array.isArray(transactions) ? transactions.flatMap(buildSaleItemRecords) : [] },
+    { collectionName: 'payments', entityType: 'payments', records: Array.isArray(transactions) ? transactions.map(buildPaymentRecord) : [] }
   ];
 
   for (const group of backfillGroups) {
@@ -9177,7 +9183,7 @@ function exportTransactionsToCSV() {
 
 function backupAllData() {
   const dataToBackup = {
-    backupVersion: 2,
+    backupVersion: 3,
     exportedAt: new Date().toISOString(),
     businessId: getEffectiveUid?.() || currentUser?.uid || 'guest',
     menu,
