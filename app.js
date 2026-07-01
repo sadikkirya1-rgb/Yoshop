@@ -14,7 +14,7 @@ import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
-import { deduplicateRecords } from './record-utils.mjs';
+import { deduplicateRecords, getCanonicalProductCatalog } from './record-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -243,7 +243,7 @@ function hydrateEnterpriseRecord(entityType, record = {}, index = 0) {
 }
 
 function normalizeProductCatalog(products = []) {
-  return deduplicateRecords(Array.isArray(products) ? products : [], 'products');
+  return getCanonicalProductCatalog(Array.isArray(products) ? products : [], { includeOnlySellable: false });
 }
 
 function hydrateEnterpriseRecords(entityType, records = []) {
@@ -1280,7 +1280,7 @@ async function cleanupDuplicateProductRecordsInCloud(uid) {
     if (duplicates.length === 0) return;
 
     for (const group of duplicates) {
-      const canonicalRecord = normalizeProductCatalog(group)[0] || group[0];
+      const canonicalRecord = getCanonicalProductCatalog(group, { includeOnlySellable: false })[0] || group[0];
       const canonicalId = String(canonicalRecord?.recordId || canonicalRecord?.id || group[0]?.recordId || group[0]?.id || '').trim();
       if (!canonicalId) continue;
 
@@ -3569,12 +3569,13 @@ function renderMenu() {
   container.innerHTML = '';
 
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
+  const sellableMenu = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
   const searchTerm = document.getElementById('menuSearch')?.value.toLowerCase() || '';
   const categoryFilter = document.getElementById('categoryFilter')?.value || '';
 
   // Filter for the search term AND ensure the item is a sellable dish (has a recipe).
   // Also filter out items that don't have a category.
-  const filteredMenu = (Array.isArray(menu) ? menu : []).filter(dish => {
+  const filteredMenu = sellableMenu.filter(dish => {
     const matchesSearch = dish && dish.category && (dish.name.toLowerCase().includes(searchTerm) || (dish.barcode && dish.barcode.toLowerCase().includes(searchTerm)));
     const isSellable = dish && ((dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0));
     const matchesCategory = categoryFilter === '' || (dish && dish.category === categoryFilter);
@@ -4781,8 +4782,9 @@ function renderDishesTable() {
   const tbody = document.getElementById('dishesTableBody');
   tbody.innerHTML = '';
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
+  const productsForTable = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
   // Show items that either have a recipe OR have a selling price and category (sellable stock items)
-  menu.filter(dish => (dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0 && dish.category)).forEach((dish, rowIndex) => {
+  productsForTable.forEach((dish, rowIndex) => {
     const i = menu.indexOf(dish); // Get the original index for edit/delete functions
     const stock = calculateDishStock(dish);
     const costPrice = calculateDishCost(dish);
@@ -6297,7 +6299,7 @@ function updateDashboard() {
   if (!transactions) transactions = [];
 
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
-  const allProducts = menu;
+  const allProducts = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
   const categoriesForDashboard = new Set([
     ...allProducts.map(d => d && d.category).filter(Boolean),
     ...(Array.isArray(dishCategories) ? dishCategories : []).filter(Boolean)

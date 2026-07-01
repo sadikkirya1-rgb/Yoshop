@@ -17,6 +17,13 @@ function getRecordIdentity(record = {}, entityType = '') {
   return '';
 }
 
+function isSellableProduct(record = {}) {
+  const price = Number(record?.price || 0);
+  const category = typeof record?.category === 'string' ? record.category.trim() : '';
+  const hasRecipe = Array.isArray(record?.recipe) && record.recipe.length > 0;
+  return hasRecipe || (price > 0 && Boolean(category));
+}
+
 export function deduplicateRecords(records = [], entityType = '') {
   if (!Array.isArray(records)) return [];
 
@@ -54,4 +61,10 @@ export function deduplicateRecords(records = [], entityType = '') {
   });
 
   return deduped;
+}
+
+export function getCanonicalProductCatalog(records = [], options = {}) {
+  const includeOnlySellable = options.includeOnlySellable !== undefined ? options.includeOnlySellable : true;
+  const deduped = deduplicateRecords(Array.isArray(records) ? records : [], 'products');
+  return includeOnlySellable ? deduped.filter(isSellableProduct) : deduped;
 }
