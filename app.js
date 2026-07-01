@@ -7281,6 +7281,12 @@ function toggleAddCustomerForm(show) {
   }
 }
 
+function toggleSelectAllCustomers(checked) {
+  document.querySelectorAll('.customer-row-select').forEach(checkbox => {
+    checkbox.checked = checked;
+  });
+}
+
 function renderCustomerList() {
   const tbody = document.getElementById('customerListBody');
   if (!tbody) return;
@@ -7307,10 +7313,12 @@ function renderCustomerList() {
     const tr = document.createElement('tr');
     tr.style.cursor = 'pointer';
     tr.addEventListener('click', (event) => {
-      if (event.target.closest('button')) return;
+      if (event.target.closest('button') || event.target.closest('input')) return;
       toggleCustomerAdjustmentPanel(i);
     });
-    tr.innerHTML = `<td>${customer.name}</td>
+    tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
+                        <td>${i + 1}</td>
+                        <td>${customer.name}</td>
                         <td>${customer.contact}</td>
                         <td>${customer.address || ''}</td>
                         <td style="text-align: right;">${currencySymbol}${formatCurrency(subtotalSales)}</td>
@@ -7327,7 +7335,7 @@ function renderCustomerList() {
 
     const detailRow = document.createElement('tr');
     detailRow.id = `customerAdjustmentRow-${i}`;
-    detailRow.style.display = adjustments.length > 0 ? 'table-row' : 'none';
+    detailRow.style.display = 'none';
     detailRow.innerHTML = `<td colspan="9" style="padding: 0 0 12px 0; background: #f8f9fa;">
       <div style="border: 1px solid #dee2e6; border-radius: 10px; padding: 0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
         <div style="display:flex; justify-content:space-between; align-items:center; background:#f1f3f5; padding:10px 12px; border-bottom:1px solid #dee2e6;">
