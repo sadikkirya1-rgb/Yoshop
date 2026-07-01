@@ -2629,6 +2629,7 @@ async function updateOnlineStatus() {
   if (!statusEl) return;
 
   const { pendingCount, retryCount, retryNowCount, retryLaterCount, nextRetryAt } = await getPendingSyncSummary();
+  renderSyncHealthPanel().catch(console.warn);
 
   if (!navigator.onLine) {
     renderSyncStatus({
@@ -2688,7 +2689,6 @@ async function updateOnlineStatus() {
     showBadge: false
   });
 }
-renderSyncHealthPanel().catch(console.warn);
 
 function setAppShellLocked(isLocked) {
   const layout = document.querySelector('.app-layout');
@@ -10091,8 +10091,7 @@ Object.assign(window, {
   renderStockListTable, editStockItem, toggleStockAdjustmentForm,
   saveStockAdjustment, toggleNewStockItemForm, saveNewStockItem,
   triggerAppUpdate, exportTransactionsToCSV, backupAllData, restoreData, syncRestoredBackupToCloud, prepareLogin,
-  manualBarcodeInput, startCameraScan, closeCameraScanner, startMobileConnection, login, loginWithEmail, registerWithEmail, handleForgotPassword, logout, syncNow,
-  closeMobileConnectModal, generateAndPrintBarcodes, requestNotificationPermission,
+  manualBarcodeInput, startCameraScan, closeCameraScanner, startMobileConnection, login, loginWithEmail, registerWithEmail, handleForgotPassword, logout, syncNow, renderSyncHealthPanel, closeMobileConnectModal, generateAndPrintBarcodes, requestNotificationPermission,
   showLoginOverlay, testLocalNotification, toggleNotifications, dismissNotification, selectLoginRole, resetLoginStage,
   clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage
   ,
