@@ -4324,8 +4324,6 @@ function processBill() { // This now opens the payment modal
   totalDueEl.dataset.currentTotal = totals.total;
 
   document.getElementById('discountInput').value = '';
-  document.getElementById('paymentAmountPaid').value = totals.total.toFixed(2);
-  document.getElementById('paymentAmountPaid').dataset.autoSet = 'true';
   document.getElementById('amountTendered').value = '';
   document.getElementById('changeDue').textContent = '0.00';
 
@@ -4338,7 +4336,7 @@ function processBill() { // This now opens the payment modal
 
   document.getElementById('splitPaymentContainer').style.display = 'none'; // Hide split view
   document.getElementById('paymentDetails').style.display = 'block'; // Show single payment view
-  document.getElementById('confirmPaymentBtn').onclick = () => finalizePayment(); // Set correct handler
+  document.getElementById('confirmPaymentBtn').onclick = () => handleConfirmPaymentClick(); // Set correct handler
   document.getElementById('paymentModal').style.display = 'flex';
   
   // Call onPaymentCustomerChange to update balance display, Amount Paid default, etc.
@@ -4347,6 +4345,29 @@ function processBill() { // This now opens the payment modal
   setPaymentProcessingState(false, 'Review the total and confirm payment.', 'info');
   toggleCashPaymentFields(); // Initialize view based on default selection
   calculateChange(); // Initialize change calculation
+}
+
+async function handleConfirmPaymentClick() {
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
+  const tenderedInput = document.getElementById('amountTendered');
+  const amountTendered = parseFloat(tenderedInput?.value) || 0;
+  const currentOrder = activeOrders[CART_ID];
+  const totals = currentOrder && Array.isArray(currentOrder.items) ? calculateTransactionTotals(currentOrder.items) : { total: 0 };
+
+  const discountInput = parseFloat(document.getElementById('discountInput').value) || 0;
+  let discountAmount = discountInput;
+  if (discountAmount > totals.total) discountAmount = totals.total;
+  if (discountAmount < 0) discountAmount = 0;
+  const finalTotal = totals.total - discountAmount;
+
+  const canConfirm = isCustomerSelected || (tenderedInput && tenderedInput.value !== '' && amountTendered >= finalTotal);
+  if (!canConfirm) {
+    await showAppAlert(`Amount is low. Select a customer for credit or enter at least ${formatCurrency(finalTotal)}.`, 'Amount Below Total');
+    return;
+  }
+
+  await finalizePayment();
 }
 
 function updatePaymentTotals() {
@@ -4367,26 +4388,22 @@ function updatePaymentTotals() {
 
   const paymentSelect = document.getElementById('paymentCustomerSelect');
   const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
-  const amountPaidInput = document.getElementById('paymentAmountPaid');
   const remainingBalanceEl = document.getElementById('paymentRemainingBalanceVal');
   const remainingBalanceRow = document.getElementById('paymentRemainingBalanceRow');
   const confirmBtn = document.getElementById('confirmPaymentBtn');
-  const amountTendered = parseFloat(document.getElementById('amountTendered').value) || 0;
+  const tenderedInput = document.getElementById('amountTendered');
+  const amountTendered = parseFloat(tenderedInput?.value) || 0;
   const currencySymbol = getCurrencySymbol();
+  const isValidTendered = amountTendered >= newTotal && tenderedInput && tenderedInput.value !== '';
+  const canConfirm = isCustomerSelected || isValidTendered;
 
   if (isCustomerSelected) {
     const customer = customers[parseInt(paymentSelect.value, 10)];
     if (customer) {
       const currentBalance = parseFloat(customer.balance) || 0;
-      if (amountPaidInput && (amountPaidInput.value === '' || amountPaidInput.dataset.autoSet === 'true')) {
-        amountPaidInput.value = newTotal.toFixed(2);
-        amountPaidInput.dataset.autoSet = 'true';
-      }
-
-      const amountPaid = parseFloat(amountPaidInput ? amountPaidInput.value : 0) || 0;
-      const balanceChange = amountPaid - newTotal;
+      const balanceChange = amountTendered - newTotal;
       const newBalance = currentBalance + balanceChange;
-      const remainingBalance = Math.max(0, newTotal - amountPaid);
+      const remainingBalance = Math.max(0, newTotal - amountTendered);
 
       if (remainingBalanceRow) remainingBalanceRow.style.display = 'flex';
       if (remainingBalanceEl) remainingBalanceEl.innerHTML = `<span style="${remainingBalance > 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${remainingBalance > 0 ? '-' : ''}${currencySymbol}${formatCurrency(remainingBalance)}</span>`;
@@ -4407,15 +4424,22 @@ function updatePaymentTotals() {
           valEl.innerHTML = `No Balance (${currencySymbol}0)`;
         }
       }
-      if (confirmBtn) confirmBtn.disabled = false;
+      if (confirmBtn) {
+        confirmBtn.disabled = false;
+        confirmBtn.style.opacity = canConfirm ? '1' : '0.5';
+        confirmBtn.style.cursor = canConfirm ? 'pointer' : 'not-allowed';
+      }
     }
   } else {
     const newBalanceRow = document.getElementById('paymentNewBalanceRow');
     if (newBalanceRow) newBalanceRow.style.display = 'none';
     if (remainingBalanceRow) remainingBalanceRow.style.display = 'flex';
     if (remainingBalanceEl) remainingBalanceEl.innerHTML = `<span style="${amountTendered >= newTotal ? 'color:#28a745' : 'color:#dc3545'}; font-weight:bold;">${currencySymbol}${formatCurrency(Math.max(0, newTotal - amountTendered))}</span>`;
-    if (confirmBtn) confirmBtn.disabled = !(amountTendered >= newTotal);
-    if (amountPaidInput) amountPaidInput.dataset.autoSet = '';
+    if (confirmBtn) {
+      confirmBtn.disabled = false;
+      confirmBtn.style.opacity = canConfirm ? '1' : '0.5';
+      confirmBtn.style.cursor = canConfirm ? 'pointer' : 'not-allowed';
+    }
   }
 
   calculateChange();
@@ -4433,11 +4457,10 @@ function calculateChange() {
   
   const paymentSelect = document.getElementById('paymentCustomerSelect');
   const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
-  const amountPaidInput = document.getElementById('paymentAmountPaid');
   
   let targetAmount = totalDue;
-  if (isCustomerSelected && amountPaidInput && amountPaidInput.value !== '') {
-    targetAmount = parseFloat(amountPaidInput.value) || 0;
+  if (isCustomerSelected) {
+    targetAmount = parseFloat(document.getElementById('amountTendered').value) || 0;
   }
   
   const amountTendered = parseFloat(document.getElementById('amountTendered').value) || 0;
@@ -4455,6 +4478,8 @@ async function finalizePayment(isSplit = false) {
   const paymentMethod = document.getElementById('paymentMethod').value;
   const amountTendered = parseFloat(document.getElementById('amountTendered').value);
   const totals = calculateTransactionTotals(currentOrder.items);
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
 
   const discountInput = parseFloat(document.getElementById('discountInput').value) || 0;
   let discountAmount = discountInput;
@@ -4463,31 +4488,25 @@ async function finalizePayment(isSplit = false) {
   if (discountAmount < 0) discountAmount = 0;
   const finalTotal = totals.total - discountAmount;
 
-  // Read customer selection
-  const paymentSelect = document.getElementById('paymentCustomerSelect');
-  const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
   const customerIndex = isCustomerSelected ? parseInt(paymentSelect.value, 10) : -1;
   const customer = isCustomerSelected ? customers[customerIndex] : null;
 
   let amountPaid = finalTotal;
-  if (isCustomerSelected) {
-    const paidInputVal = parseFloat(document.getElementById('paymentAmountPaid').value);
-    if (isNaN(paidInputVal) || paidInputVal < 0) {
-      await showAppAlert("Please enter a valid amount paid.", "Invalid Amount");
-      return;
-    }
-    amountPaid = paidInputVal;
-  } else if (isNaN(amountTendered) || amountTendered < finalTotal) {
-    await showAppAlert(`Amount tendered must be greater than or equal to ${formatCurrency(finalTotal)}.`, "Invalid Amount");
+  if (isNaN(amountTendered) || amountTendered < 0) {
+    await showAppAlert("Please enter a valid amount tendered.", "Invalid Amount");
     return;
   }
 
-  if (paymentMethod === 'Cash') {
-    const minTender = isCustomerSelected ? amountPaid : finalTotal;
-    if (isNaN(amountTendered) || amountTendered < minTender) {
-      await showAppAlert(`Amount tendered must be greater than or equal to ${formatCurrency(minTender)}.`, "Invalid Amount");
-      return;
-    }
+  if (!isCustomerSelected && amountTendered < finalTotal) {
+    await showAppAlert(`Amount tendered is below the total. Please enter at least ${formatCurrency(finalTotal)} or select a customer account to continue.`, "Amount Below Total");
+    return;
+  }
+
+  amountPaid = amountTendered;
+
+  if (paymentMethod === 'Cash' && amountTendered < finalTotal && !isCustomerSelected) {
+    await showAppAlert(`Amount tendered is below the total. Please enter at least ${formatCurrency(finalTotal)} or select a customer account to continue.`, "Amount Below Total");
+    return;
   }
 
   setPaymentProcessingState(true, navigator.onLine ? 'Processing payment…' : 'Offline mode: saving your sale locally and syncing it when the connection returns.', navigator.onLine ? 'info' : 'success');
@@ -4530,6 +4549,7 @@ async function finalizePayment(isSplit = false) {
       const currentBalance = parseFloat(customer.balance) || 0;
       customer.balance = currentBalance + balanceChange;
       customer.totalSales = (parseFloat(customer.totalSales) || 0) + finalTotal;
+      customer.subtotalSales = (parseFloat(customer.subtotalSales) || 0) + totals.subtotal;
       customer.totalPaid = (parseFloat(customer.totalPaid) || 0) + amountPaid;
       customer.lastTransactionDate = transaction.date;
 
@@ -7148,6 +7168,7 @@ function renderCustomerList() {
       const matchesCustomerName = transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
       return matchesCustomerId || matchesCustomerName;
     });
+    const subtotalSales = parseFloat(customer.subtotalSales ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.subtotal) || 0), 0)) || 0;
     const totalSales = parseFloat(customer.totalSales ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.total) || 0), 0)) || 0;
     const totalPaid = parseFloat(customer.totalPaid ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.amountPaid) || 0), 0)) || 0;
     const balance = parseFloat(customer.balance) || 0;
@@ -7156,12 +7177,13 @@ function renderCustomerList() {
       : `<span style="${balance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</span>`;
     const lastDate = customer.lastTransactionDate
       ? new Date(customer.lastTransactionDate).toLocaleDateString()
-      : (customerTransactions.length > 0 ? new Date(customerTransactions[customerTransactions.length - 1].date).toLocaleDateString() : '—');
+      : (customerTransactions.length > 0 ? new Date(customerTransactions[customerTransactions.length - 1].date).toLocaleDateString() : new Date().toLocaleDateString());
 
     const tr = document.createElement('tr');
     tr.innerHTML = `<td>${customer.name}</td>
                         <td>${customer.contact}</td>
                         <td>${customer.address || ''}</td>
+                        <td style="text-align: right;">${currencySymbol}${formatCurrency(subtotalSales)}</td>
                         <td style="text-align: right;">${currencySymbol}${formatCurrency(totalSales)}</td>
                         <td style="text-align: right;">${currencySymbol}${formatCurrency(totalPaid)}</td>
                         <td style="text-align: right;">${balanceText}</td>
@@ -7217,9 +7239,6 @@ function onPaymentCustomerChange() {
   const balanceRow = document.getElementById('paymentCustomerBalanceRow');
   const balanceVal = document.getElementById('paymentCustomerBalanceVal');
   const newBalanceRow = document.getElementById('paymentNewBalanceRow');
-  const amountPaidInput = document.getElementById('paymentAmountPaid');
-  const totalDueEl = document.getElementById('paymentTotalDue');
-  const totalDue = totalDueEl.dataset.currentTotal ? parseFloat(totalDueEl.dataset.currentTotal) : (parseFloat(totalDueEl.textContent.replace(/,/g, '')) || 0);
 
   if (!paymentSelect) return;
   const customerIndex = paymentSelect.value;
@@ -7240,14 +7259,9 @@ function onPaymentCustomerChange() {
     }
     
     if (newBalanceRow) newBalanceRow.style.display = 'flex';
-    
-    if (amountPaidInput) {
-      amountPaidInput.value = totalDue.toFixed(2);
-    }
   } else {
     if (balanceRow) balanceRow.style.display = 'none';
     if (newBalanceRow) newBalanceRow.style.display = 'none';
-    if (amountPaidInput) amountPaidInput.value = '';
   }
   
   updatePaymentTotals();
@@ -7270,9 +7284,10 @@ function addCustomer() {
     contact: contactInput.value.trim(),
     address: addressInput.value.trim(),
     balance: parseFloat(balanceInput.value) || 0,
+    subtotalSales: existingCustomer?.subtotalSales || 0,
     totalSales: existingCustomer?.totalSales || 0,
     totalPaid: existingCustomer?.totalPaid || 0,
-    lastTransactionDate: existingCustomer?.lastTransactionDate || null
+    lastTransactionDate: existingCustomer?.lastTransactionDate || new Date().toISOString()
   }, existingCustomer);
 
   if (index !== '') {
