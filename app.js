@@ -2891,19 +2891,19 @@ function updateAuthUI(user) {
   const existingAuth = document.getElementById('auth-header-container');
   if (existingAuth) existingAuth.remove();
 
-  const authContainer = document.createElement('div'); // Adjusted right position
+  const authContainer = document.createElement('div');
   authContainer.id = 'auth-header-container';
-  authContainer.style.cssText = 'position: absolute; right: 64px; display: flex; align-items: center; gap: 10px; font-size: 0.85em;';
+  authContainer.style.cssText = 'display: flex; align-items: center; gap: 8px; font-size: 0.85em; margin-left: 8px;';
 
   const subInfo = getSubscriptionInfo();
   const statusBadge = `<div style="background: ${subInfo.color}; color: white; padding: 2px 8px; border-radius: 20px; font-size: 0.7em; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">${subInfo.label}</div>`;
 
   if (user) {
     authContainer.innerHTML = `
-        <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 2px;">
-          ${statusBadge}
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <div style="background: ${subInfo.color}; color: white; padding: 2px 8px; border-radius: 20px; font-size: 0.7em; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">${subInfo.label}</div>
+          <img src="${user.photoURL || 'https://placehold.co/30'}" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid white;">
         </div>
-        <img src="${user.photoURL || 'https://placehold.co/30'}" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid white;">
       `;
 
     const nav = document.querySelector('nav');
@@ -2977,7 +2977,19 @@ function updateAuthUI(user) {
   }
   const header = document.querySelector('header');
   if (header) {
-    header.appendChild(authContainer);
+    const headerActions = document.querySelector('.header-actions');
+    if (headerActions) {
+      const themeButton = document.getElementById('theme-toggle-header');
+      if (themeButton) {
+        headerActions.insertBefore(authContainer, themeButton);
+      } else {
+        headerActions.appendChild(authContainer);
+      }
+    } else if (document.getElementById('header-sync-status')) {
+      header.insertBefore(authContainer, document.getElementById('header-sync-status'));
+    } else {
+      header.appendChild(authContainer);
+    }
   }
 }
 

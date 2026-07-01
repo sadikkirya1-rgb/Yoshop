@@ -59,36 +59,36 @@
 
   <header>
     <button id="menu-toggle" class="icon-btn" onclick="toggleNav()">&#9776;</button>
-    <!-- Mini Thermal Printer Emoji -->
     <span class="header-logo">🖨️</span>
-    YoShop
     <button id="header-printer-status" class="icon-btn" title="Printer Connected">
       <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" fill="currentColor" viewBox="0 0 16 16">
         <path
           d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 1 0 0 4 2 2 0 0 0 0-4zm0 1a1 1 0 1 1 0 2 1 1 0 0 1 0-2z" />
       </svg>
     </button>
-    <button id="header-sync-status" class="icon-btn" onclick="syncNow()" title="Cloud Sync">
-      <span id="connectivity-status"></span>
-      <span id="sync-badge" class="sync-badge" style="display:none;">Pending</span>
-    </button>
-    <button id="update-notification-btn" class="icon-btn" onclick="toggleNotifications()" title="Notifications">
-      <span>🔔</span>
-      <span id="update-badge"></span>
-    </button>
-    <!-- Notification Dropdown -->
-    <div id="notificationDropdown">
-      <div class="notification-header">
-        <span>Notifications</span>
-        <button onclick="clearAllNotifications()" class="clear-all-btn">Clear All</button>
+    <div class="header-actions">
+      <button id="header-sync-status" class="icon-btn" onclick="syncNow()" title="Cloud Sync">
+        <span id="connectivity-status"></span>
+        <span id="sync-badge" class="sync-badge" style="display:none;">Pending</span>
+      </button>
+      <button id="update-notification-btn" class="icon-btn" onclick="toggleNotifications()" title="Notifications">
+        <span>🔔</span>
+        <span id="update-badge"></span>
+      </button>
+      <!-- Notification Dropdown -->
+      <div id="notificationDropdown">
+        <div class="notification-header">
+          <span>Notifications</span>
+          <button onclick="clearAllNotifications()" class="clear-all-btn">Clear All</button>
+        </div>
+        <div id="notificationList">
+          <div class="no-notifications">No notifications</div>
+        </div>
       </div>
-      <div id="notificationList">
-        <div class="no-notifications">No notifications</div>
-      </div>
+      <button id="theme-toggle-header" class="icon-btn" onclick="toggleTheme()">
+        <span id="theme-icon"></span>
+      </button>
     </div>
-    <button id="theme-toggle-header" class="icon-btn" onclick="toggleTheme()">
-      <span id="theme-icon"></span>
-    </button>
   </header>
 
   <!-- Bill Split Modal -->

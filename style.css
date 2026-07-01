@@ -163,15 +163,18 @@
     font-size: 24px;
     margin-right: 10px; /* Add space between toggle and icon */
   }
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    margin-right: 8px;
+  }
   #theme-toggle-header {
-    position: absolute;
-    right: 8px;
     font-size: 22px;
     color: white;
   }
   #update-notification-btn {
-    position: absolute;
-    right: 34px;
     font-size: 22px;
     color: white;
   }
@@ -978,9 +981,7 @@
 
 /* Sync Status Styles */
 #header-sync-status {
-  position: absolute;
-  right: 185px;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
   color: white;
@@ -1026,8 +1027,7 @@
 /* Header Printer Status Button */
 #header-printer-status {
   display: none;
-  position: absolute;
-  right: 215px;
+  margin-left: 8px;
 }
 
 /* Update Badge */
