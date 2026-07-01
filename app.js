@@ -4404,7 +4404,7 @@ function updatePaymentTotals() {
           valEl.innerHTML = `<span style="color:#28a745; font-weight:bold;">${currencySymbol}${formatCurrency(newBalance)}</span>`;
         } else {
           labelEl.textContent = 'New Account Balance:';
-          valEl.innerHTML = `No Balance (${currencySymbol}0.00)`;
+          valEl.innerHTML = `No Balance (${currencySymbol}0)`;
         }
       }
       if (confirmBtn) confirmBtn.disabled = false;
@@ -7152,7 +7152,7 @@ function renderCustomerList() {
     const totalPaid = parseFloat(customer.totalPaid ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.amountPaid) || 0), 0)) || 0;
     const balance = parseFloat(customer.balance) || 0;
     const balanceText = balance === 0
-      ? `${currencySymbol}0.00`
+      ? `${currencySymbol}0`
       : `<span style="${balance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</span>`;
     const lastDate = customer.lastTransactionDate
       ? new Date(customer.lastTransactionDate).toLocaleDateString()
@@ -7235,7 +7235,7 @@ function onPaymentCustomerChange() {
       } else if (currentBalance > 0) {
         balanceVal.innerHTML = `<span style="color:#28a745; font-weight:bold;">Credit: ${currencySymbol}${formatCurrency(currentBalance)}</span>`;
       } else {
-        balanceVal.innerHTML = `No Balance (${currencySymbol}0.00)`;
+        balanceVal.innerHTML = `No Balance (${currencySymbol}0)`;
       }
     }
     
