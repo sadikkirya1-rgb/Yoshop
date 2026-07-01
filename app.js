@@ -14,6 +14,7 @@ import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
+import { deduplicateRecords } from './record-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -241,11 +242,17 @@ function hydrateEnterpriseRecord(entityType, record = {}, index = 0) {
   };
 }
 
+function normalizeProductCatalog(products = []) {
+  return deduplicateRecords(Array.isArray(products) ? products : [], 'products');
+}
+
 function hydrateEnterpriseRecords(entityType, records = []) {
   if (!Array.isArray(records)) return [];
-  return records
+  const hydrated = records
     .filter(record => record && typeof record === 'object')
     .map((record, index) => hydrateEnterpriseRecord(entityType, record, index));
+
+  return entityType === 'products' ? normalizeProductCatalog(hydrated) : deduplicateRecords(hydrated, entityType);
 }
 function getEnterpriseMirrorSignature() {
   const summarize = (records = []) => {
@@ -1144,6 +1151,24 @@ async function syncEnterpriseRecordAction(action) {
   const recordId = payload.recordId || payload.id || action.recordId || action.id;
   if (!recordId) return true;
 
+  if (collectionName === 'products') {
+    const normalizedPayload = normalizeProductCatalog([payload])[0] || payload;
+    const canonicalId = normalizedPayload.recordId || normalizedPayload.id || String(recordId);
+    if (canonicalId && canonicalId !== String(recordId)) {
+      await setDoc(doc(dbFirestore, 'users', currentUser.uid, collectionName, String(canonicalId)), {
+        ...normalizedPayload,
+        id: String(canonicalId),
+        recordId: String(canonicalId),
+        deleted: false,
+        deletedAt: null,
+        operation: null,
+        syncStatus: 'synced',
+        lastSyncedAt: new Date().toISOString(),
+        lastSyncAt: new Date().toISOString()
+      }, { merge: true });
+    }
+  }
+
   const recordRef = doc(dbFirestore, 'users', currentUser.uid, collectionName, String(recordId));
 
   if (payload.operation === 'delete' || action.operation === 'delete') {
@@ -1219,6 +1244,68 @@ async function enqueueEnterpriseRecordChange(collectionName, record, operation =
   });
 }
 
+function getProductDuplicateKey(record = {}) {
+  const id = String(record?.recordId || record?.id || '').trim();
+  const name = String(record?.name || '').trim().toLowerCase();
+  const barcode = String(record?.barcode || '').trim();
+  const category = String(record?.category || '').trim().toLowerCase();
+
+  if (id) return `id:${id}`;
+  if (barcode) return `barcode:${barcode}`;
+  if (name) return `name:${name}|cat:${category}`;
+  return '';
+}
+
+async function cleanupDuplicateProductRecordsInCloud(uid) {
+  if (!uid || !dbFirestore) return;
+
+  try {
+    const productsRef = collection(dbFirestore, 'users', uid, 'products');
+    const snapshot = await getDocs(productsRef);
+    const documents = snapshot.docs.map(docSnapshot => ({
+      id: docSnapshot.id,
+      ...docSnapshot.data()
+    }));
+
+    if (!Array.isArray(documents) || documents.length < 2) return;
+
+    const groups = new Map();
+    documents.forEach(record => {
+      const key = getProductDuplicateKey(record) || `${record.id || ''}|${record.name || ''}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(record);
+    });
+
+    const duplicates = [...groups.values()].filter(group => group.length > 1);
+    if (duplicates.length === 0) return;
+
+    for (const group of duplicates) {
+      const canonicalRecord = normalizeProductCatalog(group)[0] || group[0];
+      const canonicalId = String(canonicalRecord?.recordId || canonicalRecord?.id || group[0]?.recordId || group[0]?.id || '').trim();
+      if (!canonicalId) continue;
+
+      await setDoc(doc(dbFirestore, 'users', uid, 'products', canonicalId), {
+        ...canonicalRecord,
+        id: canonicalId,
+        recordId: canonicalId,
+        deleted: false,
+        deletedAt: null,
+        operation: null,
+        syncStatus: 'synced',
+        lastSyncedAt: new Date().toISOString(),
+        lastSyncAt: new Date().toISOString()
+      }, { merge: true });
+
+      const duplicatesToDelete = group.filter(record => String(record?.recordId || record?.id || '').trim() !== canonicalId);
+      await Promise.allSettled(duplicatesToDelete.map(record => deleteDoc(doc(dbFirestore, 'users', uid, 'products', String(record?.id || record?.recordId || '')))));
+    }
+
+    console.info('[DB_CLEANUP] Consolidated duplicate product records in Firestore.');
+  } catch (error) {
+    console.warn('[DB_CLEANUP] Duplicate product cleanup failed:', error);
+  }
+}
+
 async function backfillEnterpriseRecordCollectionsOnce(uid) {
   if (!uid || !dbFirestore || !localRepositoryReady || !localRepository) return;
 
@@ -1248,6 +1335,22 @@ async function backfillEnterpriseRecordCollectionsOnce(uid) {
       const hydratedRecord = hydrateEnterpriseRecord(group.entityType, record);
       const recordId = hydratedRecord.recordId || hydratedRecord.id;
       if (!recordId) continue;
+
+      if (group.collectionName === 'products') {
+        const deduped = normalizeProductCatalog([hydratedRecord])[0] || hydratedRecord;
+        const canonicalId = deduped.recordId || deduped.id || String(recordId);
+        if (canonicalId !== String(recordId)) {
+          await setDoc(doc(dbFirestore, 'users', uid, group.collectionName, String(canonicalId)), {
+            ...deduped,
+            id: String(canonicalId),
+            recordId: String(canonicalId),
+            syncStatus: 'synced',
+            lastSyncedAt: new Date().toISOString(),
+            lastSyncAt: new Date().toISOString()
+          }, { merge: true });
+          continue;
+        }
+      }
 
       await setDoc(
         doc(dbFirestore, 'users', uid, group.collectionName, String(recordId)),
@@ -2238,6 +2341,8 @@ function handleFirebaseError(error, context = "Firebase Operation", path = "unkn
  */
 async function saveData(syncToCloud = true, options = {}) {
   try {
+    menu = normalizeProductCatalog(menu || []);
+
     // Save to local IndexedDB immediately (always, synchronous)
     // Use Promise.allSettled instead of Promise.all to handle individual errors gracefully
     await Promise.allSettled([
@@ -3463,6 +3568,7 @@ function renderMenu() {
   const container = document.getElementById('menuCategories');
   container.innerHTML = '';
 
+  menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
   const searchTerm = document.getElementById('menuSearch')?.value.toLowerCase() || '';
   const categoryFilter = document.getElementById('categoryFilter')?.value || '';
 
@@ -4674,6 +4780,7 @@ function deductStock(itemName, quantity, visited = new Set()) {
 function renderDishesTable() {
   const tbody = document.getElementById('dishesTableBody');
   tbody.innerHTML = '';
+  menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
   // Show items that either have a recipe OR have a selling price and category (sellable stock items)
   menu.filter(dish => (dish.recipe && dish.recipe.length > 0) || (parseFloat(dish.price) > 0 && dish.category)).forEach((dish) => {
     const i = menu.indexOf(dish); // Get the original index for edit/delete functions
@@ -6173,7 +6280,8 @@ function updateDashboard() {
   if (!menu) menu = [];
   if (!transactions) transactions = [];
 
-  const allProducts = Array.isArray(menu) ? menu : [];
+  menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
+  const allProducts = menu;
   const categoriesForDashboard = new Set([
     ...allProducts.map(d => d && d.category).filter(Boolean),
     ...(Array.isArray(dishCategories) ? dishCategories : []).filter(Boolean)
@@ -8156,7 +8264,7 @@ function setupEnterpriseRecordCollectionSync(uid) {
       collectionName: 'products',
       entityType: 'products',
       getRecords: () => menu,
-      setRecords: records => { menu = records; },
+      setRecords: records => { menu = normalizeProductCatalog(records); },
       render: () => {
         renderMenu();
         renderDishesTable();
@@ -8282,6 +8390,9 @@ function setupRealTimeSync(uid) {
     console.log('🟢 [SYNC] Setting up real-time listener for cross-device sync...');
     setupRealTimeTransactionsSync(uid);
     setupEnterpriseRecordCollectionSync(uid);
+    cleanupDuplicateProductRecordsInCloud(uid).catch(error => {
+      console.warn('[DB_CLEANUP] Duplicate product cleanup skipped:', error);
+    });
     backfillEnterpriseRecordCollectionsOnce(uid).catch(error => {
       console.warn('[MIGRATION] Enterprise record backfill skipped:', error);
     });
@@ -8387,7 +8498,7 @@ function setupRealTimeSync(uid) {
                       return pd;
                     });
                   }
-                  menu = updateData.menu;
+                  menu = normalizeProductCatalog(updateData.menu || []);
                   activeOrders = updateData.activeOrders;
                   settings = updateData.settings;
                   staff = updateData.staff;

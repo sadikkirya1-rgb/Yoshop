@@ -1606,6 +1606,21 @@
   background: var(--card);
 }
 
+#customerTab {
+  width: 100%;
+}
+
+#customerTab .form-panel {
+  width: 100%;
+  box-sizing: border-box;
+  overflow-x: auto;
+}
+
+#customerTab table {
+  width: 100%;
+  min-width: 100%;
+}
+
 .recipe-builder-box {
   margin-top: 15px;
   border-top: 1px solid var(--border-color);
