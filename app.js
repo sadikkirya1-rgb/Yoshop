@@ -2788,7 +2788,7 @@ function updateAuthUI(user) {
 
   const authContainer = document.createElement('div'); // Adjusted right position
   authContainer.id = 'auth-header-container';
-  authContainer.style.cssText = 'position: absolute; right: 135px; display: flex; align-items: center; gap: 10px; font-size: 0.85em;';
+  authContainer.style.cssText = 'position: absolute; right: 64px; display: flex; align-items: center; gap: 10px; font-size: 0.85em;';
 
   const subInfo = getSubscriptionInfo();
   const statusBadge = `<div style="background: ${subInfo.color}; color: white; padding: 2px 8px; border-radius: 20px; font-size: 0.7em; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">${subInfo.label}</div>`;

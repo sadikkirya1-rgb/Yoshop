@@ -171,7 +171,7 @@
   }
   #update-notification-btn {
     position: absolute;
-    right: 38px;
+    right: 34px;
     font-size: 22px;
     color: white;
   }
@@ -979,7 +979,7 @@
 /* Sync Status Styles */
 #header-sync-status {
   position: absolute;
-  right: 98px;
+  right: 185px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -991,6 +991,16 @@
   display: inline-block;
   transition: transform 0.2s;
   border-radius: 50%;
+}
+
+.sync-badge {
+  color: white;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 0.7em;
+  margin-left: 5px;
+  font-weight: bold;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
 }
 
 @keyframes sync-pulse {
@@ -1017,7 +1027,7 @@
 #header-printer-status {
   display: none;
   position: absolute;
-  right: 68px;
+  right: 215px;
 }
 
 /* Update Badge */
