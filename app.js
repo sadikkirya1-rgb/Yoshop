@@ -3262,6 +3262,7 @@ window.finalizePayment = finalizePayment;
 window.updateOrderCustomer = updateOrderCustomer;
 window.toggleCustomerAdjustmentPanel = toggleCustomerAdjustmentPanel;
 window.recordCustomerAdjustment = recordCustomerAdjustment;
+window.showCustomerAdjustmentReceipt = showCustomerAdjustmentReceipt;
 window.editCustomer = editCustomer;
 window.deleteCustomer = deleteCustomer;
 
@@ -5318,7 +5319,7 @@ async function downloadBillAsPDF(transactionIndex) {
  * This is a helper for PDF generation.
  */
 function populateReceiptContent(transaction) {
-  const { date, customerName, tableNo, items, total, subtotal, tax, discount } = transaction;
+  const { date, customerName, tableNo, items, total, subtotal, tax, discount, receiptType, paymentMethod, note, amountPaid } = transaction;
   const syncLabel = navigator.onLine ? 'Synced' : 'Saved offline • will sync later';
   const transactionId = new Date(date).getTime();
   const currencySymbol = settings.currency || '$';
@@ -5360,6 +5361,12 @@ function populateReceiptContent(transaction) {
 
   const logoHtml = finalLogoUrl ? `<img src="${finalLogoUrl}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width:50px; height:50px; object-fit:contain;">` : '🧾';
 
+  const isAdjustmentReceipt = receiptType === 'customerAdjustment';
+  const titleText = isAdjustmentReceipt ? 'CUSTOMER PAYMENT RECEIPT' : 'TRANSACTION RECEIPT';
+  const customerLine = customerName ? `<div class="summary-line"><span>Customer</span> <span>${customerName}</span></div>` : '';
+  const methodLine = paymentMethod ? `<div class="summary-line"><span>Method</span> <span>${paymentMethod}</span></div>` : '';
+  const noteLine = note ? `<div class="summary-line"><span>Note</span> <span>${note}</span></div>` : '';
+  const paidLine = amountPaid !== undefined ? `<div class="summary-line"><span>Amount Paid</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(amountPaid)}</span></div>` : '';
   const receiptHtml = `
         <div class="receipt-header">
           <div class="logo">${logoHtml}</div>
@@ -5367,6 +5374,7 @@ function populateReceiptContent(transaction) {
           <p>${settings.address || '123 Business Avenue, Suite 100'}</p>
         </div>
         <div class="receipt-details">
+          <div><span>Receipt Type:</span> <span>${isAdjustmentReceipt ? 'Customer Adjustment' : 'Transaction'}</span></div>
           <div><span>Transaction ID:</span> <span>${transactionId}</span></div>
           <div><span>Date:</span> <span>${new Date(date).toLocaleDateString()}</span></div>
           <div><span>Time:</span> <span>${new Date(date).toLocaleTimeString()}</span></div>
@@ -5377,12 +5385,16 @@ function populateReceiptContent(transaction) {
         </div>
         <div class="receipt-summary">
           <div class="summary-line"><span>Subtotal</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(displaySubtotal)}</span></div>
+          ${customerLine}
+          ${methodLine}
+          ${noteLine}
+          ${paidLine}
           <div class="summary-line" style="font-size:0.9em; color:${navigator.onLine ? '#166534' : '#b45309'};"><span>Status</span> <span>${syncLabel}</span></div>
           ${taxHtml}
           ${discountHtml}
           <div class="summary-line total"><span>TOTAL</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(total)}</span></div>
         </div>
-        <div class="receipt-footer"><p style="font-weight: bold; margin-bottom: 10px;">THANK YOU FOR YOUR PATRONAGE!</p>${barcodeHtml}<p class="promo">Get 10% off on your next visit!</p><p style="font-size:0.75em; margin-top:15px; opacity:0.5;">Power by YoShop POS</p></div>`;
+        <div class="receipt-footer"><p style="font-weight: bold; margin-bottom: 10px;">${titleText}</p>${barcodeHtml}<p class="promo">Get 10% off on your next visit!</p><p style="font-size:0.75em; margin-top:15px; opacity:0.5;">Power by YoShop POS</p></div>`;
   document.getElementById('receiptContent').innerHTML = receiptHtml;
 }
 
@@ -7212,7 +7224,10 @@ function renderCustomerList() {
       <div style="border: 1px solid #dee2e6; border-radius: 10px; padding: 0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
         <div style="display:flex; justify-content:space-between; align-items:center; background:#f1f3f5; padding:10px 12px; border-bottom:1px solid #dee2e6;">
           <div style="font-weight:700; color:#495057;">Customer Adjustments</div>
-          <button class="icon-btn" title="Close" onclick="toggleCustomerAdjustmentPanel(${i})" style="padding:6px;">✕</button>
+          <div style="display:flex; gap:6px; align-items:center;">
+            <button class="btn btn-info" type="button" onclick="showCustomerAdjustmentReceipt(${i})" style="padding:6px 10px; font-size:0.85rem;">Receipt</button>
+            <button class="icon-btn" title="Close" onclick="toggleCustomerAdjustmentPanel(${i})" style="padding:6px;">✕</button>
+          </div>
         </div>
         <div style="padding: 12px; background: #fff;">
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items:end; margin-bottom: 10px;">
@@ -7281,6 +7296,42 @@ function toggleCustomerAdjustmentPanel(index) {
   if (!isVisible) row.style.display = 'table-row';
 }
 
+function showCustomerAdjustmentReceipt(index, adjustmentIndex = null) {
+  const customer = customers[index];
+  if (!customer) return;
+
+  const adjustments = Array.isArray(customer.adjustments) ? customer.adjustments : [];
+  const adjustment = adjustmentIndex !== null && adjustments[adjustmentIndex]
+    ? adjustments[adjustmentIndex]
+    : adjustments[adjustments.length - 1];
+
+  if (!adjustment) return;
+
+  const receiptData = {
+    date: adjustment.date || new Date().toISOString(),
+    customerName: customer.name,
+    customerNameReal: customer.name,
+    tableNo: 'Customer Account',
+    items: [{ name: 'Customer Payment Adjustment', qty: 1, price: adjustment.amount, notes: adjustment.note || '' }],
+    total: adjustment.amount,
+    subtotal: adjustment.amount,
+    tax: 0,
+    discount: { amount: 0 },
+    receiptType: 'customerAdjustment',
+    paymentMethod: adjustment.method || 'Cash',
+    customerId: customer.id,
+    note: adjustment.note || '',
+    amountPaid: adjustment.amount
+  };
+
+  const receiptModal = document.getElementById('receiptModal');
+  if (receiptModal) {
+    receiptModal._transactionData = receiptData;
+    populateReceiptContent(receiptData);
+    receiptModal.style.display = 'flex';
+  }
+}
+
 async function recordCustomerAdjustment(index) {
   const customer = customers[index];
   if (!customer) return;
@@ -7313,6 +7364,7 @@ async function recordCustomerAdjustment(index) {
   enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
   saveData();
   renderCustomerList();
+  showCustomerAdjustmentReceipt(index, customer.adjustments.length - 1);
   await showAppAlert(`Adjustment recorded for ${customer.name}.`, 'Adjustment Saved');
 }
 
