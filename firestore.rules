@@ -37,6 +37,13 @@ service cloud.firestore {
       match /transactions/{transactionId} {
         allow read, write: if isOwnerOrAdmin(userId);
       }
+      match /sale_items/{recordId} {
+      allow read, write: if isOwnerOrAdmin(userId);
+      }
+
+      match /payments/{recordId} {
+      allow read, write: if isOwnerOrAdmin(userId);
+      }
 
       // Production per-record collections
       match /customers/{recordId} {

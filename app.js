@@ -1030,7 +1030,9 @@ const RECORD_SYNC_COLLECTIONS = {
   customerRecord: 'customers',
   staffRecord: 'staff',
   unitRecord: 'units',
-  inventoryHistoryRecord: 'inventory_history'
+  inventoryHistoryRecord: 'inventory_history',
+  saleItemRecord: 'sale_items',
+  paymentRecord: 'payments'
 };
 const RECORD_SYNC_LOCAL_STORES = {
   productRecord: 'products',
@@ -1038,7 +1040,9 @@ const RECORD_SYNC_LOCAL_STORES = {
   customerRecord: 'customers',
   staffRecord: 'staff',
   unitRecord: 'units',
-  inventoryHistoryRecord: 'inventoryHistory'
+  inventoryHistoryRecord: 'inventoryHistory',
+  saleItemRecord: 'saleItems',
+  paymentRecord: 'payments'
 };
 
 function getLocalRecordArrayForSync(entityType) {
@@ -1186,7 +1190,9 @@ async function enqueueEnterpriseRecordChange(collectionName, record, operation =
     customers: 'customerRecord',
     staff: 'staffRecord',
     units: 'unitRecord',
-    inventory_history: 'inventoryHistoryRecord'
+    inventory_history: 'inventoryHistoryRecord',
+    sale_items: 'saleItemRecord',
+    payments: 'paymentRecord'
   };
 
   const entityType = entityTypeMap[collectionName];
@@ -2417,9 +2423,15 @@ async function recordTransaction(transaction) {
   if (transactions.length > 1000) transactions.pop();
 
   // 2. Save locally to IndexedDB without re-enqueueing the entire transactions list
-  // 2. Save locally to IndexedDB without re-enqueueing the entire transactions list
   await saveState('transactions', transactions, { enqueueSync: false });
   await mirrorSaleDetailsLocally(transaction);
+  const saleItems = buildSaleItemRecords(transaction);
+  const paymentRecord = buildPaymentRecord(transaction);
+
+  await Promise.allSettled([
+    ...saleItems.map(record => enqueueEnterpriseRecordChange('sale_items', record, 'upsert')),
+    enqueueEnterpriseRecordChange('payments', paymentRecord, 'upsert')
+  ]);
 
   const effectiveUid = getEffectiveUid();
   if (effectiveUid && dbFirestore) {
