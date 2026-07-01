@@ -215,6 +215,8 @@ function canDedupeSyncAction(action = {}) {
     'staffRecord',
     'unitRecord',
     'inventoryHistoryRecord',
+    'saleItemRecord',
+    'paymentRecord',
     'products',
     'customers',
     'staff',

@@ -9183,6 +9183,8 @@ function backupAllData() {
     menu,
     activeOrders,
     transactions,
+    saleItems: (Array.isArray(transactions) ? transactions.flatMap(buildSaleItemRecords) : []),
+    payments: (Array.isArray(transactions) ? transactions.map(buildPaymentRecord) : []),
     settings,
     staff,
     dishCategories,
@@ -9277,6 +9279,10 @@ async function restoreData() {
 
       await saveData(false);
       await mirrorEnterpriseRecordsToLocalStores({ force: true });
+
+      if (Array.isArray(transactions)) {
+        await Promise.allSettled(transactions.map(transaction => mirrorSaleDetailsLocally(transaction)));
+      }
       if (typeof localRepository?.setMetadata === 'function') {
         await localRepository.setMetadata('restoredBackupPendingCloudSync', {
           fileName: file.name,
@@ -9331,13 +9337,18 @@ async function syncRestoredBackupToCloud() {
   try {
     await mirrorEnterpriseRecordsToLocalStores({ force: true });
 
+    const restoredSaleItems = Array.isArray(transactions) ? transactions.flatMap(buildSaleItemRecords) : [];
+    const restoredPayments = Array.isArray(transactions) ? transactions.map(buildPaymentRecord) : [];
+
     await Promise.allSettled([
       ...(Array.isArray(menu) ? menu.map(record => enqueueEnterpriseRecordChange('products', record, 'upsert')) : []),
       ...(Array.isArray(dishCategories) ? getCategoryRecordsFromList(dishCategories).map(record => enqueueEnterpriseRecordChange('categories', record, 'upsert')) : []),
       ...(Array.isArray(customers) ? customers.map(record => enqueueEnterpriseRecordChange('customers', record, 'upsert')) : []),
       ...(Array.isArray(staff) ? staff.map(record => enqueueEnterpriseRecordChange('staff', record, 'upsert')) : []),
       ...(Array.isArray(units) ? units.map(record => enqueueEnterpriseRecordChange('units', record, 'upsert')) : []),
-      ...(Array.isArray(restockHistory) ? restockHistory.map(record => enqueueEnterpriseRecordChange('inventory_history', record, 'upsert')) : [])
+      ...(Array.isArray(restockHistory) ? restockHistory.map(record => enqueueEnterpriseRecordChange('inventory_history', record, 'upsert')) : []),
+      ...restoredSaleItems.map(record => enqueueEnterpriseRecordChange('sale_items', record, 'upsert')),
+      ...restoredPayments.map(record => enqueueEnterpriseRecordChange('payments', record, 'upsert'))
     ]);
 
     await saveData(true, {
