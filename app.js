@@ -2343,6 +2343,56 @@ async function saveData(syncToCloud = true, options = {}) {
     });
   }
 }
+function buildSaleItemRecords(transaction = {}) {
+  const saleId = transaction.recordId || transaction.id || transaction.date || createEntityId('sales', transaction);
+  const items = Array.isArray(transaction.items) ? transaction.items : [];
+
+  return items.map((item, index) => enrichEnterpriseRecord('saleItems', {
+    id: `${saleId}-item-${index + 1}`,
+    recordId: `${saleId}-item-${index + 1}`,
+    saleId,
+    productName: item.name || '',
+    productId: item.productId || item.recordId || item.id || '',
+    qty: Number(item.qty || 0),
+    unitPrice: Number(item.price || 0),
+    lineTotal: Number(item.qty || 0) * Number(item.price || 0),
+    notes: item.notes || '',
+    date: transaction.date || new Date().toISOString()
+  }));
+}
+
+function buildPaymentRecord(transaction = {}) {
+  const saleId = transaction.recordId || transaction.id || transaction.date || createEntityId('sales', transaction);
+  const amount = Number(transaction.total || 0);
+
+  return enrichEnterpriseRecord('payments', {
+    id: `${saleId}-payment-1`,
+    recordId: `${saleId}-payment-1`,
+    saleId,
+    amount,
+    method: transaction.paymentMethod || 'Cash',
+    status: 'paid',
+    date: transaction.date || new Date().toISOString()
+  });
+}
+
+async function mirrorSaleDetailsLocally(transaction = {}) {
+  if (!localRepositoryReady || !localRepository || typeof localRepository.saveEntity !== 'function') return;
+
+  const saleItems = buildSaleItemRecords(transaction);
+  const payment = buildPaymentRecord(transaction);
+
+  await Promise.allSettled([
+    ...saleItems.map(record => localRepository.saveEntity('saleItems', record, {
+      enqueueSync: false,
+      preserveVersion: true
+    })),
+    localRepository.saveEntity('payments', payment, {
+      enqueueSync: false,
+      preserveVersion: true
+    })
+  ]);
+}
 
 /**
  * Records a single transaction to local storage and Firestore sub-collection
@@ -2367,7 +2417,9 @@ async function recordTransaction(transaction) {
   if (transactions.length > 1000) transactions.pop();
 
   // 2. Save locally to IndexedDB without re-enqueueing the entire transactions list
+  // 2. Save locally to IndexedDB without re-enqueueing the entire transactions list
   await saveState('transactions', transactions, { enqueueSync: false });
+  await mirrorSaleDetailsLocally(transaction);
 
   const effectiveUid = getEffectiveUid();
   if (effectiveUid && dbFirestore) {
