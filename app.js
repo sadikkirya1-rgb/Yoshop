@@ -3255,6 +3255,9 @@ async function submitAuthAction() {
 window.openAuthModal = openAuthModal;
 window.closeAuthModal = closeAuthModal;
 window.submitAuthAction = submitAuthAction;
+window.toggleCashPaymentFields = toggleCashPaymentFields;
+window.onPaymentCustomerChange = onPaymentCustomerChange;
+window.updateOrderCustomer = updateOrderCustomer;
 
 async function handleChangePassword() {
   const isEmailUser = currentUser?.providerData.some(p => p.providerId === 'password');
@@ -3359,8 +3362,12 @@ async function refreshApp() {
   }
 }
 
+function getCurrencySymbol() {
+  return settings?.currency || '$';
+}
+
 function updateCurrencyDisplay() {
-  const symbol = settings.currency || '$';
+  const symbol = getCurrencySymbol();
   document.querySelectorAll('.currency-symbol').forEach(el => el.textContent = symbol);
 }
 
@@ -3823,7 +3830,7 @@ function addRecipeItem(selectedItem, quantity) {
   };
 
   itemDiv.innerHTML = `<span class="u-flex-grow-1">${quantity} x ${selectedItem}</span>
-                         <span><span class="currency-symbol">$</span>${formatCurrency(unitCost * quantity)}</span>`;
+                         <span><span class="currency-symbol">${getCurrencySymbol()}</span>${formatCurrency(unitCost * quantity)}</span>`;
   itemDiv.appendChild(removeBtn);
   container.appendChild(itemDiv);
 }
@@ -4027,7 +4034,7 @@ function renderSplitBillUI() {
   splitState.unassigned.forEach((item, index) => {
     const itemEl = document.createElement('div');
     itemEl.className = 'split-item';
-    itemEl.innerHTML = `<span>${item.qty}x ${item.name}</span><span><span class="currency-symbol">$</span>${formatCurrency(item.price * item.qty)}</span>`;
+    itemEl.innerHTML = `<span>${item.qty}x ${item.name}</span><span><span class="currency-symbol">${getCurrencySymbol()}</span>${formatCurrency(item.price * item.qty)}</span>`;
     itemEl.onclick = () => moveItemToFirstBill(index);
     unassignedContainer.appendChild(itemEl);
   });
@@ -4042,7 +4049,7 @@ function renderSplitBillUI() {
       billTotal += item.price * item.qty;
       return `<div class="split-item" onclick="moveItemToUnassigned(${billIndex}, ${itemIndex})">
                   <span>${item.qty}x ${item.name}</span>
-                  <span><span class="currency-symbol">$</span>${formatCurrency(item.price * item.qty)}</span>
+                  <span><span class="currency-symbol">${getCurrencySymbol()}</span>${formatCurrency(item.price * item.qty)}</span>
                 </div>`;
     }).join('');
 
@@ -4052,7 +4059,7 @@ function renderSplitBillUI() {
           <button class="icon-btn" onclick="removeSplitBill(${billIndex})" title="Remove Bill" style="font-size: 14px;">✖</button>
         </h5>
         <div style="display: flex; flex-direction: column; gap: 8px; flex-grow: 1;">${itemsHtml}</div>
-        <div class="total" style="margin-top: 10px;">Total: <span class="currency-symbol">$</span>${formatCurrency(billTotal)}</div>
+        <div class="total" style="margin-top: 10px;">Total: <span class="currency-symbol">${getCurrencySymbol()}</span>${formatCurrency(billTotal)}</div>
       `;
     splitBillsContainer.appendChild(billBox);
   });
@@ -4376,16 +4383,17 @@ function updatePaymentTotals() {
       const newBalanceRow = document.getElementById('paymentNewBalanceRow');
       if (newBalanceRow) newBalanceRow.style.display = 'flex';
       
+      const currencySymbol = getCurrencySymbol();
       if (labelEl && valEl) {
         if (newBalance < 0) {
           labelEl.textContent = 'New Balance (Debt):';
-          valEl.innerHTML = `<span style="color:#dc3545; font-weight:bold;">-${formatCurrency(Math.abs(newBalance))}</span>`;
+          valEl.innerHTML = `<span style="color:#dc3545; font-weight:bold;">-${currencySymbol}${formatCurrency(Math.abs(newBalance))}</span>`;
         } else if (newBalance > 0) {
           labelEl.textContent = 'New Balance (Credit):';
-          valEl.innerHTML = `<span style="color:#28a745; font-weight:bold;">${formatCurrency(newBalance)}</span>`;
+          valEl.innerHTML = `<span style="color:#28a745; font-weight:bold;">${currencySymbol}${formatCurrency(newBalance)}</span>`;
         } else {
           labelEl.textContent = 'New Account Balance:';
-          valEl.innerHTML = `No Balance ($0.00)`;
+          valEl.innerHTML = `No Balance (${currencySymbol}0.00)`;
         }
       }
     }
@@ -7118,14 +7126,15 @@ function renderCustomerList() {
   const tbody = document.getElementById('customerListBody');
   if (!tbody) return;
   tbody.innerHTML = '';
+  const currencySymbol = getCurrencySymbol();
   customers.forEach((customer, i) => {
     const bal = customer.balance || 0;
-    let debtText = '$0.00';
-    let creditText = '$0.00';
+    let debtText = `${currencySymbol}0.00`;
+    let creditText = `${currencySymbol}0.00`;
     if (bal < 0) {
-      debtText = `<span style="color:#dc3545; font-weight:bold;">${formatCurrency(Math.abs(bal))}</span>`;
+      debtText = `<span style="color:#dc3545; font-weight:bold;">${currencySymbol}${formatCurrency(Math.abs(bal))}</span>`;
     } else if (bal > 0) {
-      creditText = `<span style="color:#28a745; font-weight:bold;">${formatCurrency(bal)}</span>`;
+      creditText = `<span style="color:#28a745; font-weight:bold;">${currencySymbol}${formatCurrency(bal)}</span>`;
     }
 
     const tr = document.createElement('tr');
@@ -7148,11 +7157,12 @@ function populateCustomerDropdowns() {
   const orderSelect = document.getElementById('orderCustomerSelect');
   const paymentSelect = document.getElementById('paymentCustomerSelect');
   
+  const currencySymbol = getCurrencySymbol();
   const optionsHtml = `
     <option value="">Walk-in Customer</option>
     ${customers.map((c, i) => {
       const bal = c.balance || 0;
-      const balStr = bal < 0 ? 'Debt: -' + formatCurrency(Math.abs(bal)) : (bal > 0 ? 'Credit: ' + formatCurrency(bal) : 'No Balance');
+      const balStr = bal < 0 ? 'Debt: -' + currencySymbol + formatCurrency(Math.abs(bal)) : (bal > 0 ? 'Credit: ' + currencySymbol + formatCurrency(bal) : 'No Balance');
       return `<option value="${i}">${c.name} (${balStr})</option>`;
     }).join('')}
   `;
@@ -7194,14 +7204,15 @@ function onPaymentCustomerChange() {
     const customer = customers[parseInt(customerIndex, 10)];
     const currentBalance = customer.balance || 0;
     
+    const currencySymbol = getCurrencySymbol();
     if (balanceRow && balanceVal) {
       balanceRow.style.display = 'flex';
       if (currentBalance < 0) {
-        balanceVal.innerHTML = `<span style="color:#dc3545; font-weight:bold;">Debt: -${formatCurrency(Math.abs(currentBalance))}</span>`;
+        balanceVal.innerHTML = `<span style="color:#dc3545; font-weight:bold;">Debt: -${currencySymbol}${formatCurrency(Math.abs(currentBalance))}</span>`;
       } else if (currentBalance > 0) {
-        balanceVal.innerHTML = `<span style="color:#28a745; font-weight:bold;">Credit: ${formatCurrency(currentBalance)}</span>`;
+        balanceVal.innerHTML = `<span style="color:#28a745; font-weight:bold;">Credit: ${currencySymbol}${formatCurrency(currentBalance)}</span>`;
       } else {
-        balanceVal.innerHTML = `No Balance ($0.00)`;
+        balanceVal.innerHTML = `No Balance (${currencySymbol}0.00)`;
       }
     }
     
