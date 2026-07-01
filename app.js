@@ -3260,6 +3260,10 @@ window.onPaymentCustomerChange = onPaymentCustomerChange;
 window.processBill = processBill;
 window.finalizePayment = finalizePayment;
 window.updateOrderCustomer = updateOrderCustomer;
+window.toggleCustomerAdjustmentPanel = toggleCustomerAdjustmentPanel;
+window.recordCustomerAdjustment = recordCustomerAdjustment;
+window.editCustomer = editCustomer;
+window.deleteCustomer = deleteCustomer;
 
 async function handleChangePassword() {
   const isEmailUser = currentUser?.providerData.some(p => p.providerId === 'password');
@@ -7172,6 +7176,7 @@ function renderCustomerList() {
     const totalSales = parseFloat(customer.totalSales ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.total) || 0), 0)) || 0;
     const totalPaid = parseFloat(customer.totalPaid ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.amountPaid) || 0), 0)) || 0;
     const balance = parseFloat(customer.balance) || 0;
+    const adjustments = Array.isArray(customer.adjustments) ? customer.adjustments : [];
     const balanceText = balance === 0
       ? `${currencySymbol}0`
       : `<span style="${balance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</span>`;
@@ -7180,6 +7185,11 @@ function renderCustomerList() {
       : (customerTransactions.length > 0 ? new Date(customerTransactions[customerTransactions.length - 1].date).toLocaleDateString() : new Date().toLocaleDateString());
 
     const tr = document.createElement('tr');
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', (event) => {
+      if (event.target.closest('button')) return;
+      toggleCustomerAdjustmentPanel(i);
+    });
     tr.innerHTML = `<td>${customer.name}</td>
                         <td>${customer.contact}</td>
                         <td>${customer.address || ''}</td>
@@ -7189,13 +7199,121 @@ function renderCustomerList() {
                         <td style="text-align: right;">${balanceText}</td>
                         <td style="text-align: right;">${lastDate}</td>
                         <td style="text-align: right; white-space: nowrap;">
+                            <button class="icon-btn" title="Adjust Payment" onclick="toggleCustomerAdjustmentPanel(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M11.5 2.5A.5.5 0 0 1 12 3v10a.5.5 0 0 1-1 0V3a.5.5 0 0 1 .5-.5zm-8 3A.5.5 0 0 1 4 5v4a.5.5 0 0 1-1 0V5a.5.5 0 0 1 .5-.5zm4-2A.5.5 0 0 1 8 3v8a.5.5 0 0 1-1 0V3a.5.5 0 0 1 .5-.5z"/></svg></button>
                             <button class="icon-btn" title="Edit Customer" onclick="editCustomer(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
                             <button class="icon-btn" title="Delete Customer" onclick="deleteCustomer(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
                         </td>`;
     tbody.appendChild(tr);
+
+    const detailRow = document.createElement('tr');
+    detailRow.id = `customerAdjustmentRow-${i}`;
+    detailRow.style.display = adjustments.length > 0 ? 'table-row' : 'none';
+    detailRow.innerHTML = `<td colspan="9" style="padding: 0 0 12px 0; background: #f8f9fa;">
+      <div style="border: 1px solid #dee2e6; border-radius: 10px; padding: 0; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.06);">
+        <div style="display:flex; justify-content:space-between; align-items:center; background:#f1f3f5; padding:10px 12px; border-bottom:1px solid #dee2e6;">
+          <div style="font-weight:700; color:#495057;">Customer Adjustments</div>
+          <button class="icon-btn" title="Close" onclick="toggleCustomerAdjustmentPanel(${i})" style="padding:6px;">✕</button>
+        </div>
+        <div style="padding: 12px; background: #fff;">
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; align-items:end; margin-bottom: 10px;">
+            <div>
+              <label style="display:block; font-size:0.8rem; margin-bottom:4px; color:#495057;">Date</label>
+              <input id="customerAdjustmentDate-${i}" type="date" value="${new Date().toISOString().slice(0, 10)}" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ced4da; background:#fff;">
+            </div>
+            <div>
+              <label style="display:block; font-size:0.8rem; margin-bottom:4px; color:#495057;">Amount</label>
+              <input id="customerAdjustmentAmount-${i}" type="number" min="0" step="0.01" placeholder="0.00" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ced4da; background:#fff;">
+            </div>
+            <div>
+              <label style="display:block; font-size:0.8rem; margin-bottom:4px; color:#495057;">Method</label>
+              <select id="customerAdjustmentMethod-${i}" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ced4da; background:#fff;">
+                <option value="Cash">Cash</option>
+                <option value="Bank">Bank</option>
+                <option value="Mobile Money">Mobile Money</option>
+              </select>
+            </div>
+            <div>
+              <label style="display:block; font-size:0.8rem; margin-bottom:4px; color:#495057;">Note</label>
+              <input id="customerAdjustmentNote-${i}" type="text" placeholder="Payment note" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ced4da; background:#fff;">
+            </div>
+            <div>
+              <button type="button" class="btn btn-success" onclick="recordCustomerAdjustment(${i})" style="width:100%; padding:8px 10px;">Record</button>
+            </div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+              <thead>
+                <tr style="background:#f8f9fa;">
+                  <th style="text-align:left; padding:10px 8px; border-bottom:1px solid #dee2e6;">Date</th>
+                  <th style="text-align:right; padding:10px 8px; border-bottom:1px solid #dee2e6;">Amount</th>
+                  <th style="text-align:left; padding:10px 8px; border-bottom:1px solid #dee2e6;">Method</th>
+                  <th style="text-align:left; padding:10px 8px; border-bottom:1px solid #dee2e6;">Note</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${adjustments.length > 0 ? adjustments.map(adj => `
+                  <tr>
+                    <td style="padding:10px 8px; border-bottom:1px solid #f1f3f5;">${new Date(adj.date).toLocaleDateString()}</td>
+                    <td style="padding:10px 8px; border-bottom:1px solid #f1f3f5; text-align:right;">${currencySymbol}${formatCurrency(adj.amount || 0)}</td>
+                    <td style="padding:10px 8px; border-bottom:1px solid #f1f3f5;">${adj.method || 'Cash'}</td>
+                    <td style="padding:10px 8px; border-bottom:1px solid #f1f3f5;">${adj.note || ''}</td>
+                  </tr>
+                `).join('') : `<tr><td colspan="4" style="padding:10px 8px; color:#6c757d;">No adjustments recorded yet.</td></tr>`}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </td>`;
+    tbody.appendChild(detailRow);
   });
   
   populateCustomerDropdowns();
+}
+
+function toggleCustomerAdjustmentPanel(index) {
+  const row = document.getElementById(`customerAdjustmentRow-${index}`);
+  if (!row) return;
+  const isVisible = row.style.display === 'table-row';
+  document.querySelectorAll('[id^="customerAdjustmentRow-"]').forEach(el => {
+    el.style.display = 'none';
+  });
+  if (!isVisible) row.style.display = 'table-row';
+}
+
+async function recordCustomerAdjustment(index) {
+  const customer = customers[index];
+  if (!customer) return;
+
+  const amountInput = document.getElementById(`customerAdjustmentAmount-${index}`);
+  const dateInput = document.getElementById(`customerAdjustmentDate-${index}`);
+  const methodInput = document.getElementById(`customerAdjustmentMethod-${index}`);
+  const noteInput = document.getElementById(`customerAdjustmentNote-${index}`);
+
+  const amount = parseFloat(amountInput?.value) || 0;
+  if (!amount || amount <= 0) {
+    await showAppAlert('Please enter a valid adjustment amount.', 'Invalid Amount');
+    return;
+  }
+
+  const adjustment = {
+    id: `adj-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    date: dateInput?.value ? new Date(dateInput.value).toISOString() : new Date().toISOString(),
+    amount,
+    method: methodInput?.value || 'Cash',
+    note: noteInput?.value.trim() || 'Customer payment adjustment'
+  };
+
+  customer.adjustments = Array.isArray(customer.adjustments) ? customer.adjustments : [];
+  customer.adjustments.push(adjustment);
+  customer.balance = (parseFloat(customer.balance) || 0) + amount;
+  customer.totalPaid = (parseFloat(customer.totalPaid) || 0) + amount;
+  customer.lastTransactionDate = adjustment.date;
+
+  enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
+  saveData();
+  renderCustomerList();
+  await showAppAlert(`Adjustment recorded for ${customer.name}.`, 'Adjustment Saved');
 }
 
 function populateCustomerDropdowns() {
@@ -7287,6 +7405,7 @@ function addCustomer() {
     subtotalSales: existingCustomer?.subtotalSales || 0,
     totalSales: existingCustomer?.totalSales || 0,
     totalPaid: existingCustomer?.totalPaid || 0,
+    adjustments: existingCustomer?.adjustments || [],
     lastTransactionDate: existingCustomer?.lastTransactionDate || new Date().toISOString()
   }, existingCustomer);
 
