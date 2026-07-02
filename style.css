@@ -1593,6 +1593,10 @@
 .u-text-center { text-align: center; }
 .u-bold { font-weight: bold; }
 .u-nowrap { white-space: nowrap; }
+.u-table-nowrap-amounts td,
+.u-table-nowrap-amounts th {
+  white-space: nowrap !important;
+}
 .u-float-right { float: right; }
 .u-m-0 { margin: 0; }
 .u-w-full { width: 100%; }

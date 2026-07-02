@@ -464,8 +464,8 @@
           <button class="btn print-barcodes-btn" onclick="generateAndPrintBarcodes()">🖨️ Print</button>
           <button class="btn btn-danger" id="deleteMarkedProductsBtn" style="display:none; margin-left:8px;" onclick="deleteMarkedProducts()">🗑️ Delete marked</button>
         </h3>
-        <div>
-          <table>
+        <div class="u-overflow-x-auto">
+          <table class="u-table-nowrap-amounts">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllProducts" onchange="toggleSelectAllRows('dishesTableBody', this.checked, 'deleteMarkedProductsBtn'); updateSelectAllHeader('dishesTableBody','selectAllProducts')"></th>
