@@ -462,12 +462,13 @@
         <h3>📋 Products List
           <button class="btn add-product-header" onclick="toggleAddDishForm(true)">➕ Add New</button>
           <button class="btn print-barcodes-btn" onclick="generateAndPrintBarcodes()">🖨️ Print</button>
+          <button class="btn btn-danger" id="deleteMarkedProductsBtn" style="display:none; margin-left:8px;" onclick="deleteMarkedProducts()">🗑️ Delete marked</button>
         </h3>
         <div>
           <table>
             <thead>
               <tr>
-                <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllProducts" onchange="toggleSelectAllRows('dishesTableBody', this.checked); updateSelectAllHeader('dishesTableBody','selectAllProducts')"></th>
+                <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllProducts" onchange="toggleSelectAllRows('dishesTableBody', this.checked, 'deleteMarkedProductsBtn'); updateSelectAllHeader('dishesTableBody','selectAllProducts')"></th>
                 <th>#</th>
                 <th>Image</th>
                 <th>Product</th>

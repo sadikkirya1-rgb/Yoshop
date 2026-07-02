@@ -4810,7 +4810,8 @@ function renderDishesTable() {
     }
 
     const tr = document.createElement('tr');
-    tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('dishesTableBody','selectAllProducts')"></td>
+    tr.dataset.menuIndex = i;
+    tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('dishesTableBody','selectAllProducts'); updateDeleteMarkedButtonVisibility('dishesTableBody','deleteMarkedProductsBtn')"></td>
         <td>${rowIndex + 1}</td>
         <td><img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.removeAttribute('crossorigin'); this.src='https://placehold.co/100';"></td>
         <td>${dish.name}</td> 
@@ -4833,6 +4834,45 @@ function renderDishesTable() {
     // Header is now directly in HTML, this is no longer needed.
   }
 })();
+
+async function deleteMarkedProducts() {
+  const body = document.getElementById('dishesTableBody');
+  if (!body) return;
+
+  const selectedRows = Array.from(body.querySelectorAll('.table-row-select:checked'))
+    .map(checkbox => checkbox.closest('tr'))
+    .filter(Boolean);
+
+  if (selectedRows.length === 0) return;
+
+  const confirmed = await showAppConfirm(
+    `Delete ${selectedRows.length} selected product${selectedRows.length === 1 ? '' : 's'}?`,
+    'Delete Marked Products',
+    'Delete',
+    'Cancel'
+  );
+  if (!confirmed || !confirmed.confirmed) return;
+
+  const indicesToDelete = selectedRows
+    .map(row => Number(row.dataset.menuIndex))
+    .filter(index => Number.isFinite(index))
+    .sort((a, b) => b - a);
+
+  indicesToDelete.forEach(index => {
+    const item = menu[index];
+    if (!item) return;
+    enqueueEnterpriseRecordChange('products', item, 'delete').catch(console.warn);
+    menu.splice(index, 1);
+  });
+
+  saveData();
+
+  try { renderStockListTable(); } catch (e) { console.error('Error updating stock:', e); }
+  try { renderDishesTable(); } catch (e) { console.error('Error updating dishes:', e); }
+  try { renderInventoryReport(); } catch (e) { console.error('Error updating inventory:', e); }
+  try { updateDashboard(); } catch (e) { console.error('Error updating dashboard:', e); }
+  updateDeleteMarkedButtonVisibility('dishesTableBody', 'deleteMarkedProductsBtn');
+}
 
 async function deleteItem(i) {
   const index = Number(i); // Ensure index is a number
@@ -6819,12 +6859,24 @@ function previewLogo(input) {
   }
 }
 
-function toggleSelectAllRows(bodyId, checked) {
+function toggleSelectAllRows(bodyId, checked, buttonId = null) {
   const body = document.getElementById(bodyId);
   if (!body) return;
   body.querySelectorAll('.table-row-select').forEach(checkbox => {
     checkbox.checked = checked;
   });
+  if (buttonId) {
+    updateDeleteMarkedButtonVisibility(bodyId, buttonId);
+  }
+}
+
+function updateDeleteMarkedButtonVisibility(bodyId, buttonId) {
+  const body = document.getElementById(bodyId);
+  const button = document.getElementById(buttonId);
+  if (!body || !button) return;
+  const checkedCount = body.querySelectorAll('.table-row-select:checked').length;
+  button.style.display = checkedCount > 0 ? 'inline-block' : 'none';
+  button.textContent = checkedCount > 0 ? `🗑️ Delete marked (${checkedCount})` : '🗑️ Delete marked';
 }
 
 function updateSelectAllHeader(bodyId, headerId) {
@@ -10804,10 +10856,11 @@ Object.assign(window, {
   toggleNav, showTab, renderMenu, addDish, generateRandomBarcode, editDish,
   addNewRecipeItemFromForm, updateRecipeItemUnit, updateRecipeTotals,
   previewDishImage, previewLogo, toggleAddDishForm, openBillSplitModal, closeSplitBillModal, renderRestockHistoryTable,
+  toggleSelectAllRows, updateSelectAllHeader, updateDeleteMarkedButtonVisibility, deleteMarkedProducts,
   addSplitBill, removeSplitBill, moveItemToFirstBill, moveItemToUnassigned,
   processSplitPayments, addToOrder, decreaseQty, processBill, clearCurrentOrder, updatePaymentTotals,
   toggleCashPaymentFields, calculateChange, finalizePayment, printDishLabel, getCurrentServerName,
-  deleteItem, previewOrder, downloadCurrentReceiptAsPDF, shareReceipt, convertToProduct, openReportPreview,
+  deleteMarkedProducts, deleteItem, previewOrder, downloadCurrentReceiptAsPDF, shareReceipt, convertToProduct, openReportPreview,
   printReceipt, connectUSBScanner, connectBluetoothScanner,
   connectUSBPrinter, connectBluetoothPrinter, disconnectPrinter, testPrint,
   directPrint, renderTransactions, downloadBillAsPDF, deleteTransaction, handleChangePassword,
