@@ -2352,6 +2352,27 @@ function formatSubscriptionCountdown(remainingMs) {
   return `${totalMs}ms remaining`;
 }
 
+function renderFooterClock() {
+  const clockEl = document.getElementById('footer-live-clock');
+  if (!clockEl) return;
+
+  const now = new Date();
+  const formattedDate = now.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
+  });
+  const formattedTime = now.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: true
+  });
+
+  clockEl.textContent = `${formattedDate} • ${formattedTime}`;
+  clockEl.style.color = '#6c757d';
+}
+
 function renderSubscriptionFooterInfo() {
   const footerEl = document.getElementById('subscription-footer-status');
   if (!footerEl) return;
@@ -8840,9 +8861,11 @@ async function updateVersionDisplay() {
   }
 
   renderSubscriptionFooterInfo();
+  renderFooterClock();
   if (!window.subscriptionFooterTimer) {
     window.subscriptionFooterTimer = setInterval(() => {
       renderSubscriptionFooterInfo();
+      renderFooterClock();
     }, 1000);
   }
 }
@@ -9083,6 +9106,7 @@ async function mainInit() {
           // Save metadata locally for permission checks
           userMetadata = { ...data, status, uid: user.uid };
           renderSubscriptionFooterInfo();
+          renderFooterClock();
 
           await setDoc(doc(dbFirestore, "users", user.uid), {
             email: user.email,
