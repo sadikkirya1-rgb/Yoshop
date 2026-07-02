@@ -70,3 +70,25 @@ test('createRepositoryService queues sync actions and flushes them through a clo
   assert.equal(handled.length, 1);
   assert.equal(handled[0].entityType, 'products');
 });
+
+test('createRepositoryService keeps transient sync errors pending so they can retry without getting stuck', async () => {
+  const fakeRepository = createFakeRepository();
+  const service = createRepositoryService({
+    repository: fakeRepository,
+    userId: 'user-1',
+    deviceId: 'device-1',
+    cloudSyncHandler: async () => {
+      throw new Error('Failed to fetch');
+    }
+  });
+
+  await service.initialize();
+  await service.enqueueSyncAction({ id: 'sync-999', entityType: 'products', payload: { id: 'p-2' } });
+
+  const results = await service.flushSyncQueue();
+  const queued = await fakeRepository.getSyncQueue();
+
+  assert.equal(results[0].status, 'pending');
+  assert.equal(queued.length, 1);
+  assert.equal(queued[0].id, 'sync-999');
+});

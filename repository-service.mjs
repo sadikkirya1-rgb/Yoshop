@@ -141,7 +141,7 @@ export function createRepositoryService(options = {}) {
           results.push({ id: action.id, status: 'processed' });
         } catch (error) {
           await repository.markSyncActionFailed(action.id, error.message || 'Sync failed');
-          results.push({ id: action.id, status: 'failed', error: error.message || 'Sync failed' });
+          results.push({ id: action.id, status: 'pending', error: error.message || 'Sync failed' });
         }
       }
 

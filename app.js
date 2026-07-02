@@ -699,7 +699,9 @@ async function initDB(userId = 'guest') {
     userId: effectiveUserId,
     deviceId,
     cloudSyncHandler: async (action) => {
-      if (!currentUser || !dbFirestore) return;
+      if (!currentUser || !dbFirestore) {
+        throw new Error('Cloud sync is waiting for an authenticated session and Firestore connection.');
+      }
       await syncCloudAction(action);
     }
   });
@@ -1384,6 +1386,10 @@ async function backfillEnterpriseRecordCollectionsOnce(uid) {
 
 
 async function syncCloudAction(action) {
+  if (!currentUser || !currentUser.uid) {
+    throw new Error('Cloud sync is waiting for an authenticated session.');
+  }
+
   const queueCollectionPath = getSyncQueueCollectionPath(currentUser.uid);
   const queueDocRef = doc(collection(dbFirestore, ...queueCollectionPath), action.id);
   await setDoc(queueDocRef, { ...action, syncStatus: 'synced', lastSyncAt: new Date().toISOString() }, { merge: true });
@@ -2905,16 +2911,16 @@ function updateAuthUI(user) {
 
   const authContainer = document.createElement('div');
   authContainer.id = 'auth-header-container';
-  authContainer.style.cssText = 'display: flex; align-items: center; gap: 8px; font-size: 0.85em; margin-left: 8px;';
+  authContainer.style.cssText = 'display: flex; align-items: center; gap: 4px; font-size: 0.8em; margin-left: 6px; flex-wrap: nowrap; overflow: hidden;';
 
   const subInfo = getSubscriptionInfo();
-  const statusBadge = `<div style="background: ${subInfo.color}; color: white; padding: 2px 8px; border-radius: 20px; font-size: 0.7em; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">${subInfo.label}</div>`;
+  const statusBadge = `<div class="header-status-badge" style="background: ${subInfo.color}; color: white; padding: 1px 6px; border-radius: 999px; font-size: 0.62em; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2); white-space: nowrap;">${subInfo.label}</div>`;
 
   if (user) {
     authContainer.innerHTML = `
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <div style="background: ${subInfo.color}; color: white; padding: 2px 8px; border-radius: 20px; font-size: 0.7em; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2);">${subInfo.label}</div>
-          <img src="${user.photoURL || 'https://placehold.co/30'}" style="width: 32px; height: 32px; border-radius: 50%; border: 2px solid white;">
+        <div style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; min-width: 0;">
+          <div class="header-status-badge" style="background: ${subInfo.color}; color: white; padding: 1px 6px; border-radius: 999px; font-size: 0.62em; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2); white-space: nowrap;">${subInfo.label}</div>
+          <img src="${user.photoURL || 'https://placehold.co/30'}" style="width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; flex-shrink: 0;">
         </div>
       `;
 
