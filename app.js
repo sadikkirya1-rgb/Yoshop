@@ -13,6 +13,7 @@ import { getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-uti
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
+import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 
@@ -8866,6 +8867,21 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
   return localData;
 }
 // ===== Main App Initialization =====
+function resetDashboardCartState() {
+  activeOrders = resetActiveOrdersCart(activeOrders, CART_ID);
+  if (activeOrders[CART_ID]) {
+    delete activeOrders[CART_ID];
+  }
+
+  if (typeof updateOrders === 'function') {
+    updateOrders(CART_ID, false);
+  }
+
+  if (typeof refreshCurrentView === 'function') {
+    refreshCurrentView();
+  }
+}
+
 async function mainInit() {
   try {
     // Check if we are opening in Mobile Scanner Client Mode
@@ -8882,6 +8898,8 @@ async function mainInit() {
       const isPersisted = await navigator.storage.persist();
       console.log(`Persisted storage granted: ${isPersisted}`);
     }
+
+    resetDashboardCartState();
 
     // Load data from local IndexedDB
     const localData = await Promise.all([
@@ -8905,6 +8923,7 @@ async function mainInit() {
 
     // Assign local settings immediately so login overlay can use them for branding
     settings = normalizeSettings(localData[3], defaultSettings);
+    resetDashboardCartState();
 
     // Populate state from local storage immediately
     menu = hydrateEnterpriseRecords('products', localData[0] || defaultMenu);
@@ -9034,7 +9053,9 @@ async function mainInit() {
         sessionStorage.setItem('currentUserUid', user.uid);
         localStorage.setItem('lastUserUid', user.uid);
 
+        activeOrders = {};
         await loadLocalBusinessDataForUid(user.uid, { refresh: true });
+        resetDashboardCartState();
 
         // Run tenant initialization for normal users to ensure private data exists
         try {
