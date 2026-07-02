@@ -2327,11 +2327,61 @@ function getSubscriptionInfo() {
   const subExpires = userMetadata?.subscriptionExpires ? new Date(userMetadata.subscriptionExpires) : null;
   const isExpired = subExpires && subExpires < new Date();
   const shopStatus = appAdminSettings?.shopStatus || 'active';
+  const planType = String(userMetadata?.planType || userMetadata?.subscriptionPlan || userMetadata?.plan || userMetadata?.billingCycle || userMetadata?.subscriptionType || '').trim().toLowerCase();
+  const isPromoPlan = planType === 'promo' || planType === 'demo' || planType === 'free' || (!subExpires && !userMetadata?.subscriptionStartedAt && !userMetadata?.subscriptionStartDate && !userMetadata?.startedAt);
 
   let label = (userStatus === 'pending') ? "PENDING" : ((shopStatus !== 'active') ? shopStatus.toUpperCase() : (isExpired ? "EXPIRED" : (subExpires ? "ACTIVE" : "PROMO PLAN")));
   let color = (userStatus === 'pending' || shopStatus !== 'active' || isExpired) ? "#dc3545" : "#28a745";
 
-  return { label, color, subExpires, isExpired, userStatus, shopStatus };
+  return { label, color, subExpires, isExpired, userStatus, shopStatus, planType, isPromoPlan };
+}
+
+function formatSubscriptionCountdown(remainingMs) {
+  if (!Number.isFinite(remainingMs) || remainingMs <= 0) return 'Expired';
+
+  const totalMs = Math.max(0, remainingMs);
+  const days = Math.floor(totalMs / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((totalMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((totalMs % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((totalMs % (1000 * 60)) / 1000);
+
+  if (days > 0) return `${days}d ${hours}h ${minutes}m ${seconds}s remaining`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s remaining`;
+  if (minutes > 0) return `${minutes}m ${seconds}s remaining`;
+  if (seconds > 0) return `${seconds}s remaining`;
+  return `${totalMs}ms remaining`;
+}
+
+function renderSubscriptionFooterInfo() {
+  const footerEl = document.getElementById('subscription-footer-status');
+  if (!footerEl) return;
+
+  const subInfo = getSubscriptionInfo();
+  const startedAtValue = userMetadata?.subscriptionStartedAt || userMetadata?.subscriptionStartDate || userMetadata?.startedAt || userMetadata?.createdAt || userMetadata?.lastLogin || userMetadata?.activationDate;
+  const startedAt = startedAtValue ? new Date(startedAtValue) : null;
+
+  if (subInfo.isPromoPlan || subInfo.label === 'PROMO PLAN') {
+    footerEl.textContent = 'Demo Plan';
+    footerEl.style.color = '#f59e0b';
+    return;
+  }
+
+  if (!subInfo.subExpires || !startedAt || !Number.isFinite(startedAt.getTime())) {
+    footerEl.textContent = 'Subscription plan active';
+    footerEl.style.color = '#6c757d';
+    return;
+  }
+
+  const remainingMs = subInfo.subExpires.getTime() - Date.now();
+  if (remainingMs <= 0) {
+    footerEl.textContent = 'Subscription expired';
+    footerEl.style.color = '#dc3545';
+    return;
+  }
+
+  const planLabel = subInfo.planType === 'yearly' ? 'Yearly Plan' : (subInfo.planType === 'monthly' ? 'Monthly Plan' : 'Subscription Plan');
+  footerEl.textContent = `${planLabel} • ${formatSubscriptionCountdown(remainingMs)}`;
+  footerEl.style.color = subInfo.isExpired ? '#dc3545' : '#28a745';
 }
 
 /**
@@ -8788,6 +8838,13 @@ async function updateVersionDisplay() {
     console.warn('[Version] Failed to fetch service worker version:', e.message);
     displayEl.textContent = '1.5.0'; // Fallback
   }
+
+  renderSubscriptionFooterInfo();
+  if (!window.subscriptionFooterTimer) {
+    window.subscriptionFooterTimer = setInterval(() => {
+      renderSubscriptionFooterInfo();
+    }, 1000);
+  }
 }
 async function loadLocalBusinessDataForUid(uid, options = {}) {
   const effectiveUid = uid || localStorage.getItem('lastUserUid') || sessionStorage.getItem('currentUserUid') || 'guest';
@@ -9025,6 +9082,7 @@ async function mainInit() {
 
           // Save metadata locally for permission checks
           userMetadata = { ...data, status, uid: user.uid };
+          renderSubscriptionFooterInfo();
 
           await setDoc(doc(dbFirestore, "users", user.uid), {
             email: user.email,
