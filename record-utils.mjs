@@ -1,15 +1,20 @@
+function normalizeText(value = '') {
+  return typeof value === 'string' ? value.trim().toLowerCase() : '';
+}
+
 function getRecordIdentity(record = {}, entityType = '') {
   const id = typeof record?.recordId === 'string' && record.recordId.trim()
     ? record.recordId.trim()
     : (typeof record?.id === 'string' && record.id.trim() ? record.id.trim() : '');
-  const name = typeof record?.name === 'string' ? record.name.trim().toLowerCase() : '';
+  const name = normalizeText(record?.name);
   const barcode = typeof record?.barcode === 'string' ? record.barcode.trim() : '';
-  const category = typeof record?.category === 'string' ? record.category.trim().toLowerCase() : '';
+  const category = normalizeText(record?.category);
 
   if (entityType === 'products' || entityType === 'product') {
     if (id) return `id:${id}`;
+    if (name) return `name:${name}`;
     if (barcode) return `barcode:${barcode}`;
-    if (name) return `name:${name}|cat:${category}`;
+    if (category) return `cat:${category}`;
   }
 
   if (id) return `id:${id}`;
@@ -22,6 +27,56 @@ function isSellableProduct(record = {}) {
   const category = typeof record?.category === 'string' ? record.category.trim() : '';
   const hasRecipe = Array.isArray(record?.recipe) && record.recipe.length > 0;
   return hasRecipe || (price > 0 && Boolean(category));
+}
+
+export function mergeProductRecord(existingRecord = {}, incomingRecord = {}) {
+  const merged = { ...existingRecord, ...incomingRecord };
+
+  const existingPrice = Number(existingRecord?.price ?? 0);
+  const incomingPrice = Number(incomingRecord?.price ?? 0);
+  if (incomingPrice > existingPrice) {
+    merged.price = incomingRecord.price;
+  } else if (existingPrice > 0 && incomingPrice <= 0) {
+    merged.price = existingRecord.price;
+  }
+
+  const existingCostPrice = Number(existingRecord?.costPrice ?? 0);
+  const incomingCostPrice = Number(incomingRecord?.costPrice ?? 0);
+  if (incomingCostPrice > 0 && (existingCostPrice <= 0 || incomingCostPrice < existingCostPrice)) {
+    merged.costPrice = incomingRecord.costPrice;
+  } else if (existingCostPrice > 0 && incomingCostPrice <= 0) {
+    merged.costPrice = existingRecord.costPrice;
+  }
+
+  const existingStock = Number(existingRecord?.stock ?? 0);
+  const incomingStock = Number(incomingRecord?.stock ?? 0);
+  if (incomingStock > 0 && (existingStock <= 0 || incomingStock > existingStock)) {
+    merged.stock = incomingRecord.stock;
+  } else if (existingStock > 0 && incomingStock <= 0) {
+    merged.stock = existingRecord.stock;
+  }
+
+  if (!merged.category && (existingRecord?.category || incomingRecord?.category)) {
+    merged.category = existingRecord?.category || incomingRecord?.category;
+  }
+
+  if (!merged.name && (existingRecord?.name || incomingRecord?.name)) {
+    merged.name = existingRecord?.name || incomingRecord?.name;
+  }
+
+  if (!merged.unit && (existingRecord?.unit || incomingRecord?.unit)) {
+    merged.unit = existingRecord?.unit || incomingRecord?.unit;
+  }
+
+  if (!merged.barcode && (existingRecord?.barcode || incomingRecord?.barcode)) {
+    merged.barcode = existingRecord?.barcode || incomingRecord?.barcode;
+  }
+
+  if (!merged.image && (existingRecord?.image || incomingRecord?.image)) {
+    merged.image = existingRecord?.image || incomingRecord?.image;
+  }
+
+  return merged;
 }
 
 export function deduplicateRecords(records = [], entityType = '') {
@@ -55,8 +110,9 @@ export function deduplicateRecords(records = [], entityType = '') {
     const existingTime = Number(new Date(existingRecord.updatedAt || existingRecord.date || 0).getTime());
     const shouldReplace = currentVersion > existingVersion || (currentVersion === existingVersion && currentTime >= existingTime);
 
-    if (shouldReplace) {
-      deduped[existingIndex] = { ...existingRecord, ...record };
+    const mergedRecord = mergeProductRecord(existingRecord, record);
+    if (shouldReplace || entityType === 'products' || entityType === 'product') {
+      deduped[existingIndex] = mergedRecord;
     }
   });
 

@@ -14,7 +14,7 @@ import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
-import { deduplicateRecords, getCanonicalProductCatalog } from './record-utils.mjs';
+import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -244,6 +244,18 @@ function hydrateEnterpriseRecord(entityType, record = {}, index = 0) {
 
 function normalizeProductCatalog(products = []) {
   return getCanonicalProductCatalog(Array.isArray(products) ? products : [], { includeOnlySellable: false });
+}
+
+function getProductCatalogMatchIndex(name = '', barcode = '') {
+  const normalizedName = String(name || '').trim().toLowerCase();
+  const normalizedBarcode = String(barcode || '').trim();
+
+  return menu.findIndex(item => {
+    if (!item || typeof item !== 'object') return false;
+    if (normalizedBarcode && String(item.barcode || '').trim() === normalizedBarcode) return true;
+    if (normalizedName && String(item.name || '').trim().toLowerCase() === normalizedName) return true;
+    return false;
+  });
 }
 
 function hydrateEnterpriseRecords(entityType, records = []) {
@@ -3851,7 +3863,8 @@ async function addDish(buttonElement) {
 
     } else {
       // It's a new dish
-      let dishData = enrichEnterpriseRecord('products', {
+      const existingMatchIndex = getProductCatalogMatchIndex(name, barcode);
+      const dishData = enrichEnterpriseRecord('products', {
         name,
         barcode,
         category,
@@ -3861,12 +3874,19 @@ async function addDish(buttonElement) {
         image: isValidMenuImage(image) ? image : undefined
       });
 
-      // Clear form only for new dishes
-      document.getElementById('dishName').value = '';
-      document.getElementById('dishBarcode').value = '';
-      imageInput.value = ''; // Reset file input
-      menu.push(dishData);
-      enqueueEnterpriseRecordChange('products', dishData, 'upsert').catch(console.warn);
+      if (existingMatchIndex >= 0) {
+        const existingItem = menu[existingMatchIndex];
+        const mergedDish = mergeProductRecord(existingItem || {}, dishData);
+        menu[existingMatchIndex] = mergedDish;
+        enqueueEnterpriseRecordChange('products', mergedDish, 'upsert').catch(console.warn);
+      } else {
+        // Clear form only for new dishes
+        document.getElementById('dishName').value = '';
+        document.getElementById('dishBarcode').value = '';
+        imageInput.value = ''; // Reset file input
+        menu.push(dishData);
+        enqueueEnterpriseRecordChange('products', dishData, 'upsert').catch(console.warn);
+      }
     }
 
     // Force update all orders to sync new prices/details
@@ -8068,6 +8088,7 @@ async function saveNewStockItem() {
   }
 
   const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
+  const existingMatchIndex = !itemIndex ? getProductCatalogMatchIndex(name) : -1;
 
   if (itemIndex) {
     // Update existing item
@@ -8113,6 +8134,25 @@ async function saveNewStockItem() {
       item.price = costPrice * (1 + ((settings.defaultMarkup || 200) / 100));
     }
     enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
+    await showAppAlert(`Item "${name}" updated successfully.`, 'Stock Item Updated');
+  } else if (existingMatchIndex >= 0) {
+    const existingItem = menu[existingMatchIndex];
+    const updatedItem = mergeProductRecord(existingItem || {}, {
+      ...existingItem,
+      name,
+      category: existingItem?.category || null,
+      costPrice,
+      stock,
+      unit,
+      price: (() => {
+        if (sellingPriceInput && !isNaN(parseFloat(sellingPriceInput))) return parseFloat(sellingPriceInput);
+        const markup = (settings.defaultMarkup || 200) / 100;
+        return costPrice * (1 + markup);
+      })(),
+      image: existingItem?.image || undefined
+    });
+    menu[existingMatchIndex] = enrichEnterpriseRecord('products', updatedItem, existingItem);
+    enqueueEnterpriseRecordChange('products', menu[existingMatchIndex], 'upsert').catch(console.warn);
     await showAppAlert(`Item "${name}" updated successfully.`, 'Stock Item Updated');
   } else {
     // Add new item

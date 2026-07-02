@@ -16,3 +16,17 @@ test('getCanonicalProductCatalog keeps only sellable products and removes duplic
   assert.deepEqual(result.map(item => item.name), ['Tea', 'Cake']);
   assert.equal(result[0].price, 6);
 });
+
+test('getCanonicalProductCatalog merges same-name stock and shop items into one record', () => {
+  const products = [
+    { name: 'Milk', category: null, costPrice: 2, stock: 10, unit: 'L', price: 3 },
+    { name: 'Milk', category: 'Beverages', price: 4, barcode: 'milk-1', version: 1, updatedAt: '2024-01-01T00:00:00.000Z' }
+  ];
+
+  const result = getCanonicalProductCatalog(products);
+
+  assert.equal(result.length, 1);
+  assert.equal(result[0].name, 'Milk');
+  assert.equal(result[0].stock, 10);
+  assert.equal(result[0].price, 4);
+});
