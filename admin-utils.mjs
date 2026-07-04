@@ -1,3 +1,20 @@
+function normalizeEmailAddress(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
+
+export function isAppAdminRestrictedIdentity({ email = '', uid = '', configuredAdminEmails = [], masterAdminUid = null } = {}) {
+  const normalizedEmail = normalizeEmailAddress(email);
+  const emailList = Array.isArray(configuredAdminEmails)
+    ? configuredAdminEmails.map((entry) => normalizeEmailAddress(entry)).filter(Boolean)
+    : [];
+
+  return Boolean(
+    (uid && masterAdminUid && String(uid) === String(masterAdminUid)) ||
+    normalizedEmail === 'sadikkirya@gmail.com' ||
+    emailList.includes(normalizedEmail)
+  );
+}
+
 export function getSubscriptionBucket({ userStatus = 'active', shopStatus = 'active', subscriptionExpires = null, now = new Date() } = {}) {
   const normalizedUserStatus = String(userStatus || 'active').trim().toLowerCase();
   const normalizedShopStatus = String(shopStatus || 'active').trim().toLowerCase();

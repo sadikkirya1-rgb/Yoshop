@@ -9,7 +9,7 @@ import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstat
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
-import { getSubscriptionMeta } from './admin-utils.mjs';
+import { getSubscriptionMeta, isAppAdminRestrictedIdentity } from './admin-utils.mjs';
 import { getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
@@ -171,11 +171,12 @@ async function syncUserPresence(online = true) {
 function isRecognizedAppAdminUser(user = currentUser) {
   if (!user) return false;
 
-  const uid = user.uid;
-  const email = normalizeEmailAddress(user.email);
-  const configuredEmails = getConfiguredAppAdminEmails();
-
-  return uid === MASTER_APP_ADMIN_UID || email === 'sadikkirya@gmail.com' || configuredEmails.includes(email);
+  return isAppAdminRestrictedIdentity({
+    email: user.email,
+    uid: user.uid,
+    configuredAdminEmails: getConfiguredAppAdminEmails(),
+    masterAdminUid: MASTER_APP_ADMIN_UID
+  });
 }
 
 function isFullAccessRole(role = currentUserRole) {
@@ -574,6 +575,18 @@ async function getShopsPageOptimized(pageNumber = 0) {
 async function setupTenantShopParameters(uid) {
   try {
     if (!uid) return;
+
+    const isRestrictedIdentity = isAppAdminRestrictedIdentity({
+      email: currentUser?.email || '',
+      uid,
+      configuredAdminEmails: getConfiguredAppAdminEmails(),
+      masterAdminUid: MASTER_APP_ADMIN_UID
+    });
+
+    if (isRestrictedIdentity) {
+      console.log(`[SHOP] Skipping tenant shop initialization for app admin identity ${uid}`);
+      return;
+    }
     // Initialize IndexedDB for this user (namespaced)
     await initDB(uid);
 
@@ -625,6 +638,15 @@ async function setupTenantShopParameters(uid) {
  */
 async function registerNewTenantShop(email, password, businessName) {
   if (!email || !password) throw new Error('Email and password required');
+
+  if (isAppAdminRestrictedIdentity({
+    email,
+    uid: auth.currentUser?.uid || '',
+    configuredAdminEmails: getConfiguredAppAdminEmails(),
+    masterAdminUid: MASTER_APP_ADMIN_UID
+  })) {
+    throw new Error('App administrator accounts cannot create or own shops.');
+  }
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
   if (businessName) await updateProfile(userCredential.user, { displayName: businessName });
 
@@ -3617,6 +3639,15 @@ async function registerWithEmail() {
   }
 
   try {
+    if (isAppAdminRestrictedIdentity({
+      email,
+      uid: auth.currentUser?.uid || '',
+      configuredAdminEmails: getConfiguredAppAdminEmails(),
+      masterAdminUid: MASTER_APP_ADMIN_UID
+    })) {
+      return alert("App administrator accounts cannot create or own shops.");
+    }
+
     if (auth.currentUser) {
       // User is already signed in (e.g. Google), link email/pass so they can use either
       const credential = EmailAuthProvider.credential(email, password);
@@ -9618,7 +9649,14 @@ async function mainInit() {
 
         // Run tenant initialization for normal users to ensure private data exists
         try {
-          if (!(user.uid === MASTER_APP_ADMIN_UID || user.email === 'sadikkirya@gmail.com')) {
+          const isRestrictedIdentity = isAppAdminRestrictedIdentity({
+            email: user.email,
+            uid: user.uid,
+            configuredAdminEmails: getConfiguredAppAdminEmails(),
+            masterAdminUid: MASTER_APP_ADMIN_UID
+          });
+
+          if (!isRestrictedIdentity) {
             await setupTenantShopParameters(user.uid);
           } else {
             // Admins may still need real-time sync for monitoring
