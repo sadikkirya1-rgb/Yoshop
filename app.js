@@ -17,6 +17,7 @@ import { createCloudRepositoryService } from './cloud-service.mjs';
 import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
+import { getAuthErrorMessage } from './auth-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -79,6 +80,58 @@ function isShopAdminRole(role = currentUserRole) {
 
 function isAppAdminRole(role = currentUserRole) {
   return getNormalizedRole(role) === 'appAdmin';
+}
+
+function normalizeEmailAddress(value = '') {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizeAdminEntry(entry) {
+  if (typeof entry === 'string') {
+    return { email: normalizeEmailAddress(entry), status: 'active', type: 'password' };
+  }
+
+  if (!entry || typeof entry !== 'object') return null;
+
+  const email = normalizeEmailAddress(entry.email || entry.address || '');
+  if (!email) return null;
+
+  return {
+    email,
+    status: String(entry.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : 'active',
+    type: String(entry.type || entry.source || 'password').toLowerCase() === 'google' ? 'google' : 'password'
+  };
+}
+
+function getConfiguredAdminEntries() {
+  const configuredEntries = Array.isArray(appAdminSettings?.adminEmails) ? appAdminSettings.adminEmails : [];
+  const normalizedEntries = configuredEntries.map((entry) => normalizeAdminEntry(entry)).filter(Boolean);
+  const currentEmail = normalizeEmailAddress(currentUser?.email || '');
+
+  if (currentEmail) {
+    const hasCurrentEmailEntry = normalizedEntries.some((entry) => entry.email === currentEmail);
+    if (!hasCurrentEmailEntry) {
+      normalizedEntries.unshift({ email: currentEmail, status: 'active', type: 'google' });
+    }
+  }
+
+  return normalizedEntries;
+}
+
+function getConfiguredAppAdminEmails() {
+  return getConfiguredAdminEntries()
+    .filter((entry) => entry.status !== 'inactive')
+    .map((entry) => entry.email);
+}
+
+function isRecognizedAppAdminUser(user = currentUser) {
+  if (!user) return false;
+
+  const uid = user.uid;
+  const email = normalizeEmailAddress(user.email);
+  const configuredEmails = getConfiguredAppAdminEmails();
+
+  return uid === MASTER_APP_ADMIN_UID || email === 'sadikkirya@gmail.com' || configuredEmails.includes(email);
 }
 
 function isFullAccessRole(role = currentUserRole) {
@@ -342,9 +395,11 @@ let isMonitoringMode = false; // Tracks if App Admin has activated monitoring co
 const defaultAppAdminSettings = {
   username: "",
   pin: "",
-  shopStatus: "active"
+  shopStatus: "active",
+  adminEmails: []
 };
 let appAdminSettings = { ...defaultAppAdminSettings };
+let editingAdminEmail = null;
 
 let syncFailureCount = 0;
 let syncDebounceTimer = null;
@@ -1724,18 +1779,7 @@ function initAppAdminDashboardLayout() {
       <!-- Settings View -->
       <div id="admin-settings-view" style="display:none;">
         <h3 class="u-mb-20">⚙️ App Admin Settings</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;" class="u-mb-20">
-          <!-- Admin Credentials Section -->
-          <div class="form-panel">
-            <h4 class="u-m-0">Admin Access Configuration</h4>
-            <p class="u-fs-08 u-text-muted u-mb-15">Update your master login credentials.</p>
-            <div class="input-row">
-              <input type="text" id="appAdminNameInput" placeholder="Admin Username">
-              <input type="password" id="appAdminPinInput" placeholder="Admin Password/PIN">
-            </div>
-            <button class="btn btn-success u-w-full u-m-0" onclick="updateAppAdminCredentials()">Update Credentials</button>
-          </div>
-
+        <div style="display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px;" class="u-mb-20">
           <!-- Global System Status -->
           <div class="form-panel">
             <h4 class="u-m-0">Global Shop Status</h4>
@@ -1747,6 +1791,43 @@ function initAppAdminDashboardLayout() {
               <button class="btn btn-success u-flex-1 u-m-0" onclick="updateShopStatus('active')">Activate</button>
               <button class="btn btn-warning u-flex-1 u-m-0" onclick="updateShopStatus('suspended')">Suspend</button>
               <button class="btn btn-danger u-flex-1 u-m-0" onclick="updateShopStatus('deactivated')">Deactivate</button>
+            </div>
+          </div>
+
+          <!-- Admin Access Configuration -->
+          <div class="form-panel">
+            <h4 class="u-m-0">App Admin Access</h4>
+            <p class="u-fs-08 u-text-muted u-mb-15">Manage the Google account and linked email/password access for the app admin.</p>
+            <div id="appAdminFormContainer" style="display:none; margin-bottom: 12px; padding: 12px; border: 1px solid var(--border-color); border-radius: 8px; background: rgba(0,0,0,0.03);">
+              <div class="input-row">
+                <input type="email" id="appAdminEmailInput" placeholder="Linked Email Address">
+                <input type="password" id="appAdminPasswordInput" placeholder="Password">
+              </div>
+              <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <button class="btn btn-success u-m-0" onclick="saveAdminAccessEntry()">Save</button>
+                <button class="btn btn-secondary u-m-0" onclick="toggleAdminAccessForm(false)">Cancel</button>
+              </div>
+            </div>
+            <button class="btn btn-info u-w-full u-m-0" onclick="toggleAdminAccessForm(true)">Add / Link Admin Access</button>
+            <div class="u-mt-15">
+              <div class="u-fs-08 u-text-muted u-mb-8">Current App Admin Access</div>
+              <div class="u-overflow-x-auto">
+                <table class="u-w-full" style="border-collapse: collapse; font-size: 0.9em;">
+                  <thead>
+                    <tr style="border-bottom: 1px solid var(--border-color);">
+                      <th style="text-align:left; padding:6px 8px;">Name</th>
+                      <th style="text-align:left; padding:6px 8px;">Email</th>
+                      <th style="text-align:left; padding:6px 8px;">Password</th>
+                      <th style="text-align:left; padding:6px 8px;">Type</th>
+                      <th style="text-align:left; padding:6px 8px;">Status</th>
+                      <th style="text-align:left; padding:6px 8px;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="appAdminAuthorizedEmailsList">
+                    <tr><td colspan="6" style="padding:8px; color: var(--text-muted);">Loading admin logins...</td></tr>
+                  </tbody>
+                </table>
+              </div>
             </div>
           </div>
         </div>
@@ -1772,11 +1853,9 @@ function switchAppAdminView(view) {
   if (view === 'shops') refreshAppAdminShops();
   if (view === 'shops-table') refreshAppAdminShopsTable();
   if (view === 'settings') {
-    // Ensure inputs are synced when switching to settings view
-    if (document.getElementById('appAdminNameInput')) document.getElementById('appAdminNameInput').value = appAdminSettings.username;
-    if (document.getElementById('appAdminPinInput')) document.getElementById('appAdminPinInput').value = appAdminSettings.pin;
     const statusDisplay = document.getElementById('currentShopStatusDisplay');
     if (statusDisplay) statusDisplay.textContent = appAdminSettings.shopStatus.charAt(0).toUpperCase() + appAdminSettings.shopStatus.slice(1);
+    renderAppAdminEmailAccessList();
   }
 }
 
@@ -1873,12 +1952,6 @@ async function deleteShop(shopUid, shopName) {
     'Cancel'
   );
   if (!confirmation) return;
-
-  const pin = await showAppPrompt('Enter your Admin PIN to confirm deletion:', 'Admin PIN Required', 'Admin PIN');
-  if (pin !== appAdminSettings.pin) {
-    await showAppAlert('Incorrect PIN.', 'Access Denied');
-    return;
-  }
 
   try {
     // If the admin is deleting their OWN account's shop data, 
@@ -3444,10 +3517,15 @@ async function loginWithEmail() {
   try {
     await signInWithEmailAndPassword(auth, email, password);
   } catch (error) {
-    if (error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found') {
-      await showAppAlert("Login failed: Incorrect email or password.", "Login Failed");
-    } else {
-      await showAppAlert("Login failed: " + error.message, "Login Failed");
+    console.error('Email login failed:', error);
+    const authError = getAuthErrorMessage(error);
+    const isCredentialFailure = error?.code === 'auth/invalid-credential' || error?.code === 'auth/user-not-found' || error?.code === 'auth/wrong-password';
+    const detail = isCredentialFailure
+      ? `${authError.message}\n\nIf you already use Google for this account, click “Login with Google” instead. Otherwise, switch to Register to create a password-based account.`
+      : authError.message;
+    await showAppAlert(detail, authError.title);
+    if (isCredentialFailure && typeof showLoginOverlay === 'function') {
+      showLoginOverlay('register');
     }
     if (typeof showLoggedOutScreen === 'function') showLoggedOutScreen();
   }
@@ -9386,17 +9464,26 @@ async function mainInit() {
       currentUser = user;
 
       // Detect if the logged in person is the Super Admin BEFORE updating UI
-      if (user && (user.uid === MASTER_APP_ADMIN_UID || user.email === 'sadikkirya@gmail.com')) {
-        console.log("👑 Super Admin detected (" + user.email + "). Granting master access.");
+      if (user && isRecognizedAppAdminUser(user)) {
+        console.log("👑 App Admin detected (" + user.email + "). Granting master access.");
         currentUserRole = 'appAdmin';
         isPinVerified = true;
         sessionStorage.setItem('currentUserRole', 'appAdmin');
         sessionStorage.setItem('isPinVerified', 'true');
+        localStorage.setItem('currentUserRole', 'appAdmin');
+        localStorage.setItem('isPinVerified', 'true');
         // Small delay to ensure Firestore rules pick up the auth token identity
         setTimeout(() => {
           const adminTabBtn = document.getElementById('nav-app-admin-btn');
           if (adminTabBtn) showTab('appAdminTab', adminTabBtn);
         }, 500);
+      } else if (user) {
+        currentUserRole = null;
+        isPinVerified = false;
+        sessionStorage.removeItem('currentUserRole');
+        sessionStorage.removeItem('isPinVerified');
+        localStorage.removeItem('currentUserRole');
+        localStorage.removeItem('isPinVerified');
       }
 
       if (user) console.log("Your Firebase UID is:", user.uid);
@@ -9875,12 +9962,11 @@ async function loginWithPIN() {
   const enteredPin = pinInput?.value || '';
 
   if (loginSubStage === 'admin') {
-    const isMasterAdmin = appAdminSettings.pin && enteredPin === appAdminSettings.pin;
     const shopAdminPin = settings.ShopAdminPIN || settings.managerPIN || settings.ShopAdmin;
     const isOwner = shopAdminPin && enteredPin === shopAdminPin;
 
-    if (isMasterAdmin || isOwner) {
-      completePinLogin(isMasterAdmin ? 'appAdmin' : 'shopAdmin', [], isMasterAdmin ? 'AppAdmin' : 'ShopAdmin');
+    if (isOwner) {
+      completePinLogin('shopAdmin', [], 'ShopAdmin');
     } else {
       await showAppAlert("Incorrect Admin PIN.", "Login Failed");
       if (pinInput) pinInput.value = '';
@@ -10032,23 +10118,179 @@ function checkShopStatus() {
   }
 }
 
-function updateAppAdminCredentials() {
-  const name = document.getElementById('appAdminNameInput').value.trim();
-  const pin = document.getElementById('appAdminPinInput').value.trim();
+function toggleAdminAccessForm(show = true) {
+  const form = document.getElementById('appAdminFormContainer');
+  if (!form) return;
+  form.style.display = show ? 'block' : 'none';
+  if (!show) {
+    editingAdminEmail = null;
+    document.getElementById('appAdminEmailInput').value = '';
+    document.getElementById('appAdminPasswordInput').value = '';
+  } else {
+    const emailInput = document.getElementById('appAdminEmailInput');
+    if (emailInput && !emailInput.value) {
+      emailInput.value = normalizeEmailAddress(currentUser?.email || '');
+    }
+  }
+}
 
-  if (!name) return showAppAlert("Username required.", 'Admin Required');
-  if (pin.length < 4) return showAppAlert("PIN/Password must be at least 4 characters.", 'Invalid PIN');
+function renderAppAdminEmailAccessList() {
+  const container = document.getElementById('appAdminAuthorizedEmailsList');
+  if (!container) return;
+
+  const entries = getConfiguredAdminEntries();
+  const currentEmail = normalizeEmailAddress(currentUser?.email || '');
+  const rows = [];
+
+  entries.forEach((entry) => {
+    const isCurrentGoogle = entry.email === currentEmail && entry.type === 'google';
+    const displayName = entry.name || currentUser?.displayName || entry.email.split('@')[0] || 'App Admin';
+    const passwordDisplay = entry.type === 'google' ? 'Google Sign-In' : '••••••';
+    const statusLabel = entry.status === 'inactive' ? 'Inactive' : 'Active';
+    const actionButtons = [];
+
+    actionButtons.push(`<button class="btn btn-info u-m-0" onclick="editAdminAccessEntry('${entry.email}')">Edit</button>`);
+    if (!isCurrentGoogle) {
+      actionButtons.push(`<button class="btn btn-warning u-m-0" onclick="toggleAdminAccessStatus('${entry.email}')">${entry.status === 'inactive' ? 'Activate' : 'Deactivate'}</button>`);
+      actionButtons.push(`<button class="btn btn-danger u-m-0" onclick="deleteAdminAccessEntry('${entry.email}')">Delete</button>`);
+    }
+
+    rows.push(`<tr style="border-bottom: 1px solid var(--border-color);"><td style="padding:6px 8px;">${displayName}</td><td style="padding:6px 8px;">${entry.email}</td><td style="padding:6px 8px;">${passwordDisplay}</td><td style="padding:6px 8px;">${entry.type === 'google' ? 'Google' : 'Email/Password'}</td><td style="padding:6px 8px;">${statusLabel}</td><td style="padding:6px 8px;">${actionButtons.join(' ')}</td></tr>`);
+  });
+
+  if (!rows.length) {
+    container.innerHTML = '<tr><td colspan="6" style="padding:8px; color: var(--text-muted);">No admin access configured yet.</td></tr>';
+    return;
+  }
+
+  container.innerHTML = rows.join('');
+}
+
+function updateAppAdminCredentials() {
+  const email = normalizeEmailAddress(currentUser?.email || '');
+  if (!email) return showAppAlert("Please sign in with your Google account first.", 'Google Sign-In Required');
 
   appAdminSettings = touchSettingsRecord({
     ...appAdminSettings,
-    username: name,
-    pin
+    username: email
   }, 'appAdminSettings');
 
   saveData();
-  if (typeof showAppAlert === 'function') showAppAlert("App Admin credentials updated.", 'Credentials Updated');
-  else alert("App Admin credentials updated.");
+  if (typeof showAppAlert === 'function') showAppAlert("App Admin identity updated.", 'Identity Updated');
+  else alert("App Admin identity updated.");
 }
+
+async function saveAdminAccessEntry() {
+  const email = document.getElementById('appAdminEmailInput')?.value?.trim();
+  const password = document.getElementById('appAdminPasswordInput')?.value?.trim();
+
+  if (!email || !password) return showAppAlert("Please enter the linked email address and password.", 'Admin Access Required');
+
+  if (!auth.currentUser) {
+    return showAppAlert("Please sign in to the app admin account first, then add the email/password login.", 'Login Required');
+  }
+
+  try {
+    const normalizedEmail = normalizeEmailAddress(email);
+    if (normalizeEmailAddress(auth.currentUser.email || '') !== normalizedEmail) {
+      return showAppAlert("This feature links the password to the currently signed-in admin account. Please use the same email address as the account you are currently signed in with.", 'Account Mismatch');
+    }
+
+    const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+    if (!passwordRegex.test(password)) {
+      return showAppAlert("Password must be at least 8 characters long, and include uppercase, lowercase, a number, and a special character.", 'Invalid Password');
+    }
+
+    const credential = EmailAuthProvider.credential(normalizedEmail, password);
+    await linkWithCredential(auth.currentUser, credential);
+
+    appAdminSettings = touchSettingsRecord({
+      ...appAdminSettings,
+      username: normalizedEmail
+    }, 'appAdminSettings');
+
+    const existingEntries = getConfiguredAdminEntries();
+    const targetEmail = editingAdminEmail || normalizedEmail;
+    const entryExists = existingEntries.some((entry) => entry.email === targetEmail);
+    const nextEntries = entryExists
+      ? existingEntries.map((entry) => entry.email === targetEmail ? { ...entry, email: normalizedEmail, type: 'password', status: 'active' } : entry)
+      : [...existingEntries, { email: normalizedEmail, status: 'active', type: 'password' }];
+
+    appAdminSettings = touchSettingsRecord({
+      ...appAdminSettings,
+      adminEmails: nextEntries
+    }, 'appAdminSettings');
+
+    saveData();
+    renderAppAdminEmailAccessList();
+    toggleAdminAccessForm(false);
+
+    currentUserRole = 'appAdmin';
+    isPinVerified = true;
+    sessionStorage.setItem('currentUserRole', 'appAdmin');
+    localStorage.setItem('currentUserRole', 'appAdmin');
+    sessionStorage.setItem('isPinVerified', 'true');
+    localStorage.setItem('isPinVerified', 'true');
+
+    updateAuthUI(auth.currentUser);
+    applyRolePermissions();
+    checkShopStatus();
+
+    await showAppAlert("Admin access saved successfully.", 'Admin Access Updated');
+  } catch (error) {
+    console.error('Failed to save admin access:', error);
+    let message = error?.message || 'Unable to save admin access.';
+    if (error?.code === 'auth/email-already-in-use') {
+      message = 'That email address is already registered to another account. Use a different email or sign in to that account first.';
+    } else if (error?.code === 'auth/weak-password') {
+      message = 'The password is too weak. Use at least 8 characters with uppercase, lowercase, a number, and a symbol.';
+    } else if (error?.code === 'auth/credential-already-in-use') {
+      message = 'This credential is already linked to another account.';
+    }
+    await showAppAlert(message, 'Admin Access Failed');
+  }
+}
+
+function editAdminAccessEntry(email) {
+  const normalizedEmail = normalizeEmailAddress(email);
+  editingAdminEmail = normalizedEmail;
+  document.getElementById('appAdminEmailInput').value = normalizedEmail;
+  document.getElementById('appAdminPasswordInput').value = '';
+  toggleAdminAccessForm(true);
+}
+
+function deleteAdminAccessEntry(email) {
+  const normalizedEmail = normalizeEmailAddress(email);
+  const filteredEntries = getConfiguredAdminEntries().filter((entry) => entry.email !== normalizedEmail);
+  appAdminSettings = touchSettingsRecord({
+    ...appAdminSettings,
+    adminEmails: filteredEntries
+  }, 'appAdminSettings');
+  saveData();
+  renderAppAdminEmailAccessList();
+}
+
+async function toggleAdminAccessStatus(email) {
+  const normalizedEmail = normalizeEmailAddress(email);
+  const entries = getConfiguredAdminEntries();
+  const target = entries.find((entry) => entry.email === normalizedEmail);
+
+  if (!target) {
+    await showAppAlert('Admin account not found.', 'Status');
+    return;
+  }
+
+  const nextStatus = target.status === 'inactive' ? 'active' : 'inactive';
+  const nextEntries = entries.map((entry) => entry.email === normalizedEmail ? { ...entry, status: nextStatus } : entry);
+  appAdminSettings = touchSettingsRecord({
+    ...appAdminSettings,
+    adminEmails: nextEntries
+  }, 'appAdminSettings');
+  saveData();
+  renderAppAdminEmailAccessList();
+  await showAppAlert(`${normalizedEmail} is now ${nextStatus}.`, 'Status Updated');
+}
+
 
 async function updateShopStatus(status) {
   if (typeof showAppConfirm === 'function') {
@@ -10097,12 +10339,8 @@ if ('serviceWorker' in navigator) {
           const newWorker = registration.installing;
           newWorker.addEventListener('statechange', () => {
             if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              // Immediately trigger update if not in an active checkout session
-              if (!isCheckoutActive()) {
-                showUpdateNotification();
-              } else {
-                showUpdateNotification();
-              }
+              registration.waiting?.postMessage({ type: 'SKIP_WAITING' });
+              showUpdateNotification();
             }
           });
         });
@@ -11332,8 +11570,8 @@ Object.assign(window, {
   triggerAppUpdate, exportTransactionsToCSV, backupAllData, restoreData, syncRestoredBackupToCloud, prepareLogin,
   manualBarcodeInput, startCameraScan, closeCameraScanner, startMobileConnection, login, loginWithEmail, registerWithEmail, handleForgotPassword, logout, syncNow, renderSyncHealthPanel, closeMobileConnectModal, generateAndPrintBarcodes, requestNotificationPermission,
   showLoginOverlay, testLocalNotification, toggleNotifications, dismissNotification, selectLoginRole, resetLoginStage,
-  clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage
-  ,
+  clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage,
+  toggleAdminAccessForm, saveAdminAccessEntry, editAdminAccessEntry, deleteAdminAccessEntry, toggleAdminAccessStatus,
   refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus,
   switchAppAdminView, updateTargetUserStatus, updateTargetSubscription, updateTargetSubscriptionDate, setFreePlan, updateTargetShopSubscriptionState, generateAutoBarcode, toggleReportCategoryDropdown
   , toggleReportOptionsDropdown, changeReportZoom,
