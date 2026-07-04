@@ -9,6 +9,7 @@ import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstat
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
+import { getSubscriptionMeta } from './admin-utils.mjs';
 import { getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
@@ -1659,6 +1660,64 @@ function initAppAdminDashboardLayout() {
           </div>
       </div>
 
+      <!-- Subscriptions View -->
+      <div id="admin-subscriptions-view" style="display:none;">
+        <h3 class="u-mb-20">🧾 Subscriptions</h3>
+        <div class="dashboard-grid u-mb-20">
+          <div class="dashboard-card">
+            <h4>Active Shops</h4>
+            <p id="subscriptionsActiveCount">0</p>
+          </div>
+          <div class="dashboard-card">
+            <h4>Expired</h4>
+            <p id="subscriptionsExpiredCount">0</p>
+          </div>
+          <div class="dashboard-card" style="border-bottom: 4px solid #ffc107;">
+            <h4>Expiring Soon</h4>
+            <p id="subscriptionsExpiringCount">0</p>
+          </div>
+          <div class="dashboard-card" style="border-bottom: 4px solid #17a2b8;">
+            <h4>Pending / Suspended</h4>
+            <p id="subscriptionsPendingCount">0</p>
+          </div>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-info u-m-0" onclick="setSubscriptionsFilter('all')">All</button>
+            <button class="btn btn-success u-m-0" onclick="setSubscriptionsFilter('active')">Active</button>
+            <button class="btn btn-danger u-m-0" onclick="setSubscriptionsFilter('expired')">Expired</button>
+            <button class="btn btn-warning u-m-0" onclick="setSubscriptionsFilter('expiring-soon')">Expiring Soon</button>
+            <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('pending')">Pending</button>
+            <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('suspended')">Suspended</button>
+          </div>
+          <div style="display:flex; gap:6px; flex-wrap:wrap;">
+            <button class="btn btn-info u-m-0" onclick="toggleSelectAllSubscriptionRows()">Select All Visible</button>
+            <button class="btn btn-success u-m-0" onclick="runBulkSubscriptionAction('activate')">Activate</button>
+            <button class="btn btn-warning u-m-0" onclick="runBulkSubscriptionAction('suspend')">Suspend</button>
+            <button class="btn btn-danger u-m-0" onclick="runBulkSubscriptionAction('deactivate')">Deactivate</button>
+            <button class="btn btn-purple u-m-0" onclick="runBulkSubscriptionAction('notice')">Send Notice</button>
+          </div>
+        </div>
+        <div class="u-overflow-x-auto">
+          <table class="u-w-full">
+            <thead>
+              <tr>
+                <th class="u-text-center"><input type="checkbox" id="subscriptionsSelectAllCheckbox" onclick="toggleSelectAllSubscriptionRows(this.checked)"></th>
+                <th>Shop</th>
+                <th>Owner</th>
+                <th>Contact</th>
+                <th>Status</th>
+                <th>Expires</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="appAdminSubscriptionsTableBody">
+              <tr><td colspan="7" class="u-text-center">Loading subscriptions...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Settings View -->
       <div id="admin-settings-view" style="display:none;">
         <h3 class="u-mb-20">⚙️ App Admin Settings</h3>
@@ -1700,12 +1759,14 @@ function switchAppAdminView(view) {
   document.getElementById('admin-dashboard-view').style.display = view === 'dashboard' ? 'block' : 'none';
   document.getElementById('admin-shops-view').style.display = view === 'shops' ? 'block' : 'none';
   document.getElementById('admin-shops-list-view').style.display = view === 'shops-table' ? 'block' : 'none';
+  document.getElementById('admin-subscriptions-view').style.display = view === 'subscriptions' ? 'block' : 'none';
   document.getElementById('admin-settings-view').style.display = view === 'settings' ? 'block' : 'none';
 
   // Conditional data fetching based on active sub-view
   if (view === 'dashboard') fetchGlobalAnalytics();
   if (view === 'shops') refreshAppAdminShops();
   if (view === 'shops-table') refreshAppAdminShopsTable();
+  if (view === 'subscriptions') refreshAppAdminSubscriptions();
   if (view === 'settings') {
     // Ensure inputs are synced when switching to settings view
     if (document.getElementById('appAdminNameInput')) document.getElementById('appAdminNameInput').value = appAdminSettings.username;
@@ -1852,6 +1913,242 @@ async function deleteShop(shopUid, shopName) {
     refreshAppAdminShops();
   } catch (error) {
     handleFirebaseError(error, "Delete Shop", `users/${shopUid}`);
+  }
+}
+
+let subscriptionsAdminState = { filter: 'all', selectedUids: new Set(), rows: [] };
+
+function updateSubscriptionsSummaryCards(stats = {}) {
+  const activeEl = document.getElementById('subscriptionsActiveCount');
+  const expiredEl = document.getElementById('subscriptionsExpiredCount');
+  const expiringEl = document.getElementById('subscriptionsExpiringCount');
+  const pendingEl = document.getElementById('subscriptionsPendingCount');
+
+  if (activeEl) activeEl.textContent = stats.active || 0;
+  if (expiredEl) expiredEl.textContent = stats.expired || 0;
+  if (expiringEl) expiringEl.textContent = stats['expiring-soon'] || 0;
+  if (pendingEl) pendingEl.textContent = (stats.pending || 0) + (stats.suspended || 0);
+}
+
+function setSubscriptionsFilter(filter) {
+  subscriptionsAdminState.filter = filter;
+  refreshAppAdminSubscriptions(filter);
+}
+
+function toggleSubscriptionSelection(uid, checked) {
+  if (checked) subscriptionsAdminState.selectedUids.add(uid);
+  else subscriptionsAdminState.selectedUids.delete(uid);
+  const selectAllCheckbox = document.getElementById('subscriptionsSelectAllCheckbox');
+  if (selectAllCheckbox) {
+    const visibleRows = subscriptionsAdminState.rows.filter(row => row.visible);
+    selectAllCheckbox.checked = visibleRows.length > 0 && visibleRows.every(row => subscriptionsAdminState.selectedUids.has(row.uid));
+  }
+}
+
+function toggleSelectAllSubscriptionRows(forceChecked) {
+  const tbody = document.getElementById('appAdminSubscriptionsTableBody');
+  if (!tbody) return;
+  const visibleRows = subscriptionsAdminState.rows.filter(row => row.visible);
+  const checked = typeof forceChecked === 'boolean' ? forceChecked : visibleRows.some(row => !subscriptionsAdminState.selectedUids.has(row.uid));
+
+  visibleRows.forEach(row => {
+    if (checked) subscriptionsAdminState.selectedUids.add(row.uid);
+    else subscriptionsAdminState.selectedUids.delete(row.uid);
+  });
+
+  tbody.querySelectorAll('input.subscription-row-checkbox').forEach(checkbox => {
+    checkbox.checked = checked;
+  });
+
+  const selectAllCheckbox = document.getElementById('subscriptionsSelectAllCheckbox');
+  if (selectAllCheckbox) selectAllCheckbox.checked = checked && visibleRows.length > 0;
+}
+
+async function runBulkSubscriptionAction(action) {
+  const selectedUids = Array.from(subscriptionsAdminState.selectedUids);
+  if (!selectedUids.length) {
+    await showAppAlert('Please select at least one shop first.', 'No Selection');
+    return;
+  }
+
+  if (action === 'notice') {
+    const message = await showAppPrompt('Enter a notice message to send to the selected shops:', 'Send Notice', 'Message');
+    if (!message) return;
+    await Promise.all(selectedUids.map(uid => updateTargetShopSubscriptionState(uid, 'notice', message, false)));
+    refreshAppAdminSubscriptions();
+    return;
+  }
+
+  const actionLabel = action === 'activate' ? 'activate' : (action === 'suspend' ? 'suspend' : 'deactivate');
+  const confirmed = await showAppConfirm(`Apply ${actionLabel} to ${selectedUids.length} selected shop(s)?`, 'Bulk Subscription Action', 'Continue', 'Cancel');
+  if (!confirmed || !confirmed.confirmed) return;
+
+  await Promise.all(selectedUids.map(uid => updateTargetShopSubscriptionState(uid, action, '', false)));
+  subscriptionsAdminState.selectedUids.clear();
+  refreshAppAdminSubscriptions();
+}
+
+async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.filter) {
+  if (currentUserRole !== 'appAdmin') return;
+
+  const tbody = document.getElementById('appAdminSubscriptionsTableBody');
+  if (!tbody) return;
+
+  tbody.innerHTML = '<tr><td colspan="7" class="u-text-center"><span class="spinner"></span> Loading subscriptions...</td></tr>';
+
+  try {
+    const usersSnap = await getDocs(collection(dbFirestore, 'users'));
+    const rows = [];
+    const today = new Date();
+
+    for (const userDoc of usersSnap.docs) {
+      const uid = userDoc.id;
+      const dataDoc = await getDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'));
+      if (!dataDoc.exists()) continue;
+
+      const userData = userDoc.data();
+      const shopData = dataDoc.data();
+      const shopName = (shopData.settings && shopData.settings.name) || 'Unnamed Shop';
+      const ownerEmail = (userData.email || '').trim() || uid;
+      const contact = (shopData.settings && shopData.settings.contact) || 'N/A';
+      const userStatus = userData.status || 'active';
+      const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
+      const subscriptionExpires = userData.subscriptionExpires || null;
+      const meta = getSubscriptionMeta({ userStatus, shopStatus, subscriptionExpires, now: today });
+
+      rows.push({
+        uid,
+        shopName,
+        ownerEmail,
+        contact,
+        userStatus,
+        shopStatus,
+        subscriptionExpires,
+        bucket: meta.bucket,
+        label: meta.label,
+        className: meta.className,
+        visible: true
+      });
+    }
+
+    const stats = { active: 0, expired: 0, 'expiring-soon': 0, pending: 0, suspended: 0 };
+    const filteredRows = rows.filter(row => {
+      if (filter === 'all') return true;
+      if (filter === 'active') return row.bucket === 'active';
+      if (filter === 'expired') return row.bucket === 'expired';
+      if (filter === 'expiring-soon') return row.bucket === 'expiring-soon';
+      if (filter === 'pending') return row.bucket === 'pending';
+      if (filter === 'suspended') return row.bucket === 'suspended';
+      return true;
+    });
+
+    filteredRows.forEach(row => {
+      if (row.bucket === 'active') stats.active += 1;
+      if (row.bucket === 'expired') stats.expired += 1;
+      if (row.bucket === 'expiring-soon') stats['expiring-soon'] += 1;
+      if (row.bucket === 'pending') stats.pending += 1;
+      if (row.bucket === 'suspended') stats.suspended += 1;
+    });
+
+    updateSubscriptionsSummaryCards(stats);
+    subscriptionsAdminState.rows = filteredRows;
+    subscriptionsAdminState.rows.forEach(row => { row.visible = true; });
+
+    if (!filteredRows.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="u-text-center">No shops match this filter.</td></tr>';
+      return;
+    }
+
+    const fragment = document.createDocumentFragment();
+    filteredRows.forEach(row => {
+      const tr = document.createElement('tr');
+      const expiryText = row.subscriptionExpires ? new Date(row.subscriptionExpires).toLocaleDateString() : 'No expiry';
+      const isSelected = subscriptionsAdminState.selectedUids.has(row.uid);
+      tr.innerHTML = `
+        <td class="u-text-center"><input type="checkbox" class="subscription-row-checkbox" data-uid="${row.uid}" ${isSelected ? 'checked' : ''}></td>
+        <td class="u-bold">${row.shopName}</td>
+        <td class="u-fs-08">${row.ownerEmail}</td>
+        <td class="u-fs-08">${row.contact}</td>
+        <td class="u-fs-08"><span class="shop-card-status ${row.className}">${row.label}</span></td>
+        <td class="u-fs-08">${expiryText}</td>
+        <td class="u-text-right">
+          <div style="display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap;">
+            <button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'activate')">Activate</button>
+            <button class="btn btn-warning u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'suspend')">Suspend</button>
+            <button class="btn btn-danger u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'deactivate')">Deactivate</button>
+            <button class="btn btn-purple u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'notice')">Notice</button>
+          </div>
+        </td>
+      `;
+      fragment.appendChild(tr);
+    });
+
+    tbody.innerHTML = '';
+    tbody.appendChild(fragment);
+
+    tbody.querySelectorAll('input.subscription-row-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', (event) => {
+        const uid = event.target.getAttribute('data-uid');
+        toggleSubscriptionSelection(uid, event.target.checked);
+      });
+    });
+
+    const selectAllCheckbox = document.getElementById('subscriptionsSelectAllCheckbox');
+    if (selectAllCheckbox) {
+      const visibleRows = subscriptionsAdminState.rows.filter(row => row.visible);
+      selectAllCheckbox.checked = visibleRows.length > 0 && visibleRows.every(row => subscriptionsAdminState.selectedUids.has(row.uid));
+    }
+  } catch (error) {
+    handleFirebaseError(error, 'Load Subscription View', 'users');
+    tbody.innerHTML = '<tr><td colspan="7" class="u-text-center" style="color:red;">Error loading subscriptions.</td></tr>';
+  }
+}
+
+async function updateTargetShopSubscriptionState(uid, action, message = '', refresh = true) {
+  if (action === 'notice') {
+    const noticeMessage = message || await showAppPrompt('Enter a notice message for this shop:', 'Send Notice', 'Message');
+    if (!noticeMessage) return;
+    try {
+      await setDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'), {
+        appAdminSettings: {
+          noticeMessage,
+          noticeSentAt: new Date().toISOString()
+        }
+      }, { merge: true });
+      if (typeof showAppAlert === 'function') showAppAlert(`Notice sent to ${uid}.`);
+      if (refresh) refreshAppAdminSubscriptions();
+    } catch (error) {
+      handleFirebaseError(error, 'Send Subscription Notice', `users/${uid}/data/shop_profile`);
+    }
+    return;
+  }
+
+  const statusMap = {
+    activate: 'active',
+    suspend: 'suspended',
+    deactivate: 'deactivated'
+  };
+  const nextStatus = statusMap[action];
+  if (!nextStatus) return;
+
+  if (typeof showAppConfirm === 'function') {
+    const resp = await showAppConfirm(`Set this shop to ${nextStatus.toUpperCase()}?`, 'Update Subscription Status', 'Continue', 'Cancel');
+    if (!resp || !resp.confirmed) return;
+  }
+
+  try {
+    await Promise.all([
+      setDoc(doc(dbFirestore, 'users', uid), { status: nextStatus }, { merge: true }),
+      setDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'), { appAdminSettings: { shopStatus: nextStatus } }, { merge: true })
+    ]);
+
+    if (typeof showAppAlert === 'function') showAppAlert(`Shop status updated to ${nextStatus}.`);
+    if (refresh) {
+      refreshAppAdminSubscriptions();
+      refreshAppAdminShops();
+    }
+  } catch (error) {
+    handleFirebaseError(error, 'Update Subscription Status', `users/${uid}`);
   }
 }
 
@@ -3005,6 +3302,11 @@ function updateAuthUI(user) {
       shopsBtn.onclick = () => { showTab('appAdminTab', shopsBtn); switchAppAdminView('shops'); };
       shopsBtn.innerHTML = `<span>🏪</span><span>Shops</span>`;
 
+      const subscriptionsBtn = document.createElement('button');
+      subscriptionsBtn.id = 'nav-admin-subscriptions';
+      subscriptionsBtn.onclick = () => { showTab('appAdminTab', subscriptionsBtn); switchAppAdminView('subscriptions'); };
+      subscriptionsBtn.innerHTML = `<span>🧾</span><span>Subscriptions</span>`;
+
       const shopsListBtn = document.createElement('button');
       shopsListBtn.id = 'nav-admin-shops-list';
       shopsListBtn.onclick = () => { showTab('appAdminTab', shopsListBtn); switchAppAdminView('shops-table'); };
@@ -3018,10 +3320,12 @@ function updateAuthUI(user) {
       const logoutBtn = document.getElementById('nav-logout-btn');
       if (logoutBtn) {
         nav.insertBefore(shopsBtn, logoutBtn);
+        nav.insertBefore(subscriptionsBtn, logoutBtn);
         nav.insertBefore(shopsListBtn, logoutBtn);
         nav.insertBefore(settingsBtn, logoutBtn);
       } else {
         nav.appendChild(shopsBtn);
+        nav.appendChild(subscriptionsBtn);
         nav.appendChild(shopsListBtn);
         nav.appendChild(settingsBtn);
       }
@@ -3648,6 +3952,7 @@ function showTab(tabId, btn) {
       // Default to dashboard if no specific admin button is active
       const activeBtn = document.querySelector('nav button.active');
       if (activeBtn && activeBtn.id === 'nav-admin-shops') switchAppAdminView('shops');
+      else if (activeBtn && activeBtn.id === 'nav-admin-subscriptions') switchAppAdminView('subscriptions');
       else if (activeBtn && activeBtn.id === 'nav-admin-shops-list') switchAppAdminView('shops-table');
       else if (activeBtn && activeBtn.id === 'nav-admin-settings') switchAppAdminView('settings');
       else switchAppAdminView('dashboard');
@@ -9488,7 +9793,7 @@ function applyRolePermissions() {
 
   nav.querySelectorAll('button').forEach(btn => {
     // Strictly hide App Admin specific buttons for non-AppAdmins
-    const isAdminSpecific = btn.id === 'nav-app-admin-btn' || btn.id === 'nav-admin-shops' || btn.id === 'nav-admin-shops-list' || btn.id === 'nav-admin-settings';
+    const isAdminSpecific = btn.id === 'nav-app-admin-btn' || btn.id === 'nav-admin-shops' || btn.id === 'nav-admin-subscriptions' || btn.id === 'nav-admin-shops-list' || btn.id === 'nav-admin-settings';
     if (!isAppAdmin && isAdminSpecific) {
       btn.style.display = 'none';
       return;
@@ -11015,8 +11320,8 @@ Object.assign(window, {
   showLoginOverlay, testLocalNotification, toggleNotifications, dismissNotification, selectLoginRole, resetLoginStage,
   clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage
   ,
-  refreshAppAdminShops, refreshAppAdminShopsTable, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus,
-  switchAppAdminView, updateTargetUserStatus, updateTargetSubscription, updateTargetSubscriptionDate, setFreePlan, generateAutoBarcode, toggleReportCategoryDropdown
+  refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus,
+  switchAppAdminView, updateTargetUserStatus, updateTargetSubscription, updateTargetSubscriptionDate, setFreePlan, updateTargetShopSubscriptionState, generateAutoBarcode, toggleReportCategoryDropdown
   , toggleReportOptionsDropdown, changeReportZoom,
 
   // PRODUCTION: Monitoring & Debugging (Available in console)
