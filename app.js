@@ -1615,6 +1615,63 @@ function initAppAdminDashboardLayout() {
             <canvas id="adminShopsComparisonChart"></canvas>
           </div>
         </div>
+
+        <div class="u-mb-20">
+          <h4 class="u-mb-10">🧾 Subscription Overview</h4>
+          <div class="dashboard-grid u-mb-20">
+            <div class="dashboard-card">
+              <h4>Active Shops</h4>
+              <p id="subscriptionsActiveCount">0</p>
+            </div>
+            <div class="dashboard-card">
+              <h4>Expired</h4>
+              <p id="subscriptionsExpiredCount">0</p>
+            </div>
+            <div class="dashboard-card" style="border-bottom: 4px solid #ffc107;">
+              <h4>Expiring Soon</h4>
+              <p id="subscriptionsExpiringCount">0</p>
+            </div>
+            <div class="dashboard-card" style="border-bottom: 4px solid #17a2b8;">
+              <h4>Pending / Suspended</h4>
+              <p id="subscriptionsPendingCount">0</p>
+            </div>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="btn btn-info u-m-0" onclick="setSubscriptionsFilter('all')">All</button>
+              <button class="btn btn-success u-m-0" onclick="setSubscriptionsFilter('active')">Active</button>
+              <button class="btn btn-danger u-m-0" onclick="setSubscriptionsFilter('expired')">Expired</button>
+              <button class="btn btn-warning u-m-0" onclick="setSubscriptionsFilter('expiring-soon')">Expiring Soon</button>
+              <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('pending')">Pending</button>
+              <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('suspended')">Suspended</button>
+            </div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <button class="btn btn-info u-m-0" onclick="toggleSelectAllSubscriptionRows()">Select All Visible</button>
+              <button class="btn btn-success u-m-0" onclick="runBulkSubscriptionAction('activate')">Activate</button>
+              <button class="btn btn-warning u-m-0" onclick="runBulkSubscriptionAction('suspend')">Suspend</button>
+              <button class="btn btn-danger u-m-0" onclick="runBulkSubscriptionAction('deactivate')">Deactivate</button>
+              <button class="btn btn-purple u-m-0" onclick="runBulkSubscriptionAction('notice')">Send Notice</button>
+            </div>
+          </div>
+          <div class="u-overflow-x-auto">
+            <table class="u-w-full">
+              <thead>
+                <tr>
+                  <th class="u-text-center"><input type="checkbox" id="subscriptionsSelectAllCheckbox" onclick="toggleSelectAllSubscriptionRows(this.checked)"></th>
+                  <th>Shop</th>
+                  <th>Owner</th>
+                  <th>Contact</th>
+                  <th>Status</th>
+                  <th>Expires</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="appAdminSubscriptionsTableBody">
+                <tr><td colspan="7" class="u-text-center">Loading subscriptions...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- Shops View -->
@@ -1660,64 +1717,6 @@ function initAppAdminDashboardLayout() {
           </div>
       </div>
 
-      <!-- Subscriptions View -->
-      <div id="admin-subscriptions-view" style="display:none;">
-        <h3 class="u-mb-20">🧾 Subscriptions</h3>
-        <div class="dashboard-grid u-mb-20">
-          <div class="dashboard-card">
-            <h4>Active Shops</h4>
-            <p id="subscriptionsActiveCount">0</p>
-          </div>
-          <div class="dashboard-card">
-            <h4>Expired</h4>
-            <p id="subscriptionsExpiredCount">0</p>
-          </div>
-          <div class="dashboard-card" style="border-bottom: 4px solid #ffc107;">
-            <h4>Expiring Soon</h4>
-            <p id="subscriptionsExpiringCount">0</p>
-          </div>
-          <div class="dashboard-card" style="border-bottom: 4px solid #17a2b8;">
-            <h4>Pending / Suspended</h4>
-            <p id="subscriptionsPendingCount">0</p>
-          </div>
-        </div>
-        <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-          <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button class="btn btn-info u-m-0" onclick="setSubscriptionsFilter('all')">All</button>
-            <button class="btn btn-success u-m-0" onclick="setSubscriptionsFilter('active')">Active</button>
-            <button class="btn btn-danger u-m-0" onclick="setSubscriptionsFilter('expired')">Expired</button>
-            <button class="btn btn-warning u-m-0" onclick="setSubscriptionsFilter('expiring-soon')">Expiring Soon</button>
-            <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('pending')">Pending</button>
-            <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('suspended')">Suspended</button>
-          </div>
-          <div style="display:flex; gap:6px; flex-wrap:wrap;">
-            <button class="btn btn-info u-m-0" onclick="toggleSelectAllSubscriptionRows()">Select All Visible</button>
-            <button class="btn btn-success u-m-0" onclick="runBulkSubscriptionAction('activate')">Activate</button>
-            <button class="btn btn-warning u-m-0" onclick="runBulkSubscriptionAction('suspend')">Suspend</button>
-            <button class="btn btn-danger u-m-0" onclick="runBulkSubscriptionAction('deactivate')">Deactivate</button>
-            <button class="btn btn-purple u-m-0" onclick="runBulkSubscriptionAction('notice')">Send Notice</button>
-          </div>
-        </div>
-        <div class="u-overflow-x-auto">
-          <table class="u-w-full">
-            <thead>
-              <tr>
-                <th class="u-text-center"><input type="checkbox" id="subscriptionsSelectAllCheckbox" onclick="toggleSelectAllSubscriptionRows(this.checked)"></th>
-                <th>Shop</th>
-                <th>Owner</th>
-                <th>Contact</th>
-                <th>Status</th>
-                <th>Expires</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="appAdminSubscriptionsTableBody">
-              <tr><td colspan="7" class="u-text-center">Loading subscriptions...</td></tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       <!-- Settings View -->
       <div id="admin-settings-view" style="display:none;">
         <h3 class="u-mb-20">⚙️ App Admin Settings</h3>
@@ -1756,17 +1755,18 @@ function initAppAdminDashboardLayout() {
  */
 function switchAppAdminView(view) {
   // Toggle view visibility
-  document.getElementById('admin-dashboard-view').style.display = view === 'dashboard' ? 'block' : 'none';
+  document.getElementById('admin-dashboard-view').style.display = (view === 'dashboard' || view === 'subscriptions') ? 'block' : 'none';
   document.getElementById('admin-shops-view').style.display = view === 'shops' ? 'block' : 'none';
   document.getElementById('admin-shops-list-view').style.display = view === 'shops-table' ? 'block' : 'none';
-  document.getElementById('admin-subscriptions-view').style.display = view === 'subscriptions' ? 'block' : 'none';
   document.getElementById('admin-settings-view').style.display = view === 'settings' ? 'block' : 'none';
 
   // Conditional data fetching based on active sub-view
-  if (view === 'dashboard') fetchGlobalAnalytics();
+  if (view === 'dashboard' || view === 'subscriptions') {
+    fetchGlobalAnalytics();
+    refreshAppAdminSubscriptions();
+  }
   if (view === 'shops') refreshAppAdminShops();
   if (view === 'shops-table') refreshAppAdminShopsTable();
-  if (view === 'subscriptions') refreshAppAdminSubscriptions();
   if (view === 'settings') {
     // Ensure inputs are synced when switching to settings view
     if (document.getElementById('appAdminNameInput')) document.getElementById('appAdminNameInput').value = appAdminSettings.username;
