@@ -124,6 +124,50 @@ function getConfiguredAppAdminEmails() {
     .map((entry) => entry.email);
 }
 
+function formatPresenceValue(lastSeenValue) {
+  if (!lastSeenValue) return 'Never';
+
+  const parsed = new Date(lastSeenValue);
+  if (Number.isNaN(parsed.getTime())) return 'Never';
+
+  const diffMs = Date.now() - parsed.getTime();
+  const minutes = Math.floor(diffMs / 60000);
+  if (minutes < 1) return 'Just now';
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  return `${days}d ago`;
+}
+
+function getPresenceStatus(userData = {}) {
+  const isOnline = userData.isOnline === true;
+  const lastSeen = userData.lastSeen || userData.lastLogin;
+  const detail = isOnline ? 'Online now' : `Last seen ${formatPresenceValue(lastSeen)}`;
+
+  return {
+    isOnline,
+    detail,
+    label: isOnline ? 'Online' : 'Offline',
+    className: isOnline ? 'active' : 'suspended'
+  };
+}
+
+async function syncUserPresence(online = true) {
+  if (!dbFirestore || !auth?.currentUser?.uid) return;
+
+  try {
+    const now = new Date().toISOString();
+    await setDoc(doc(dbFirestore, 'users', auth.currentUser.uid), {
+      isOnline: online,
+      lastSeen: now,
+      ...(online ? { lastLogin: now } : {})
+    }, { merge: true });
+  } catch (error) {
+    console.warn('Presence sync failed:', error);
+  }
+}
+
 function isRecognizedAppAdminUser(user = currentUser) {
   if (!user) return false;
 
@@ -1720,13 +1764,14 @@ function initAppAdminDashboardLayout() {
                   <th>Contact</th>
                   <th>WhatsApp</th>
                   <th>Status</th>
+                  <th>Online / Last Seen</th>
                   <th>Subscription</th>
                   <th>Last Sync</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="appAdminSubscriptionsTableBody">
-                <tr><td colspan="11" class="u-text-center">Loading subscriptions...</td></tr>
+                <tr><td colspan="12" class="u-text-center">Loading subscriptions...</td></tr>
               </tbody>
             </table>
           </div>
@@ -2071,7 +2116,7 @@ async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.fil
   const tbody = document.getElementById('appAdminSubscriptionsTableBody');
   if (!tbody) return;
 
-tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinner"></span> Loading subscriptions...</td></tr>';
+tbody.innerHTML = '<tr><td colspan="12" class="u-text-center"><span class="spinner"></span> Loading subscriptions...</td></tr>';
 
   try {
     const usersSnap = await getDocs(collection(dbFirestore, 'users'));
@@ -2095,6 +2140,7 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
       const subscriptionExpires = userData.subscriptionExpires || null;
       const meta = getSubscriptionMeta({ userStatus, shopStatus, subscriptionExpires, now: today });
       const lastSync = shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never';
+      const presence = getPresenceStatus(userData);
 
       rows.push({
         uid,
@@ -2107,6 +2153,7 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
         shopStatus,
         subscriptionExpires,
         lastSync,
+        presence,
         bucket: meta.bucket,
         label: meta.label,
         className: meta.className,
@@ -2138,7 +2185,7 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
     subscriptionsAdminState.rows.forEach(row => { row.visible = true; });
 
     if (!filteredRows.length) {
-      tbody.innerHTML = '<tr><td colspan="11" class="u-text-center">No shops match this filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="12" class="u-text-center">No shops match this filter.</td></tr>';
       return;
     }
 
@@ -2162,6 +2209,10 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
         <td class="u-fs-08">${row.contact}</td>
         <td class="u-fs-08">${row.whatsapp}</td>
         <td class="u-fs-08"><span class="shop-card-status ${row.className}">${row.label}</span></td>
+        <td class="u-fs-08">
+          <span class="shop-card-status ${row.presence.className}" style="padding:2px 6px; font-size:0.7em;">${row.presence.label}</span>
+          <div class="u-fs-08" style="margin-top:2px; color: var(--text-muted);">${row.presence.detail}</div>
+        </td>
         <td class="u-fs-08">${expiryText}</td>
         <td class="u-fs-08">${row.lastSync}</td>
         <td class="u-text-right">
@@ -2188,6 +2239,14 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
     tbody.innerHTML = '';
     tbody.appendChild(fragment);
 
+    if (!window.__appAdminSubscriptionsTimer) {
+      window.__appAdminSubscriptionsTimer = setInterval(() => {
+        if (currentUserRole === 'appAdmin' && document.getElementById('admin-dashboard-view')?.style.display !== 'none') {
+          refreshAppAdminSubscriptions(subscriptionsAdminState.filter);
+        }
+      }, 30000);
+    }
+
     tbody.querySelectorAll('input.subscription-row-checkbox').forEach(checkbox => {
       checkbox.addEventListener('change', (event) => {
         const uid = event.target.getAttribute('data-uid');
@@ -2202,7 +2261,7 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
     }
   } catch (error) {
     handleFirebaseError(error, 'Load Subscription View', 'users');
-    tbody.innerHTML = '<tr><td colspan="11" class="u-text-center" style="color:red;">Error loading subscriptions.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="12" class="u-text-center" style="color:red;">Error loading subscriptions.</td></tr>';
   }
 }
 
@@ -9459,6 +9518,26 @@ async function mainInit() {
         .catch(error => console.warn('[RESTORE] Pending restore check failed:', error));
     }
 
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') {
+        syncUserPresence(false).catch(() => {});
+      } else if (auth.currentUser) {
+        syncUserPresence(true).catch(() => {});
+      }
+    });
+
+    window.addEventListener('beforeunload', () => {
+      syncUserPresence(false).catch(() => {});
+    });
+
+    window.addEventListener('online', () => {
+      syncUserPresence(true).catch(() => {});
+    });
+
+    window.addEventListener('offline', () => {
+      syncUserPresence(false).catch(() => {});
+    });
+
     // Background Cloud Sync
     onAuthStateChanged(auth, async (user) => {
       currentUser = user;
@@ -9491,6 +9570,7 @@ async function mainInit() {
 
       if (user) {
         console.log("Logged in, syncing cloud data in background...");
+        syncUserPresence(true).catch(() => {});
 
         // Initialize root user document with PENDING status for new users
         try {
@@ -9549,6 +9629,8 @@ async function mainInit() {
           console.warn('Error during tenant initialization:', e);
         }
       } else {
+        syncUserPresence(false).catch(() => {});
+
         // User signed out: fully flush session-local state to prevent cross-contamination
         try {
           // Clear session and local storage items used for identity and caches
