@@ -7,7 +7,7 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
-import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId } from './offline-architecture.mjs';
+import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
 import { getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
@@ -2766,7 +2766,7 @@ async function getPendingSyncSummary() {
     .sort((a, b) => a - b)[0] || null;
 
   const retryLaterCount = retryLaterItems.length;
-  const pendingCount = queue.length + unsyncedTransactions;
+  const pendingCount = calculatePendingSyncCount(queue, unsyncedTransactions);
 
   return {
     queue,

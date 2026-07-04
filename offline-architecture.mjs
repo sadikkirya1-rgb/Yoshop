@@ -283,6 +283,50 @@ export function mergeSnapshotData(localValue, remoteValue) {
   return remoteValue ?? localValue;
 }
 
+export function shouldCountPendingSyncItem(item = {}) {
+  if (!item || typeof item !== 'object') return false;
+
+  const status = String(item.syncStatus || '').trim().toLowerCase();
+  if (['processed', 'processed_successfully', 'synced', 'completed', 'done'].includes(status)) {
+    return false;
+  }
+
+  const payload = item.payload && typeof item.payload === 'object' ? item.payload : item;
+  const id = String(item.id || payload.id || '').trim();
+  const wrappedValue = Object.prototype.hasOwnProperty.call(payload, 'value') || Object.prototype.hasOwnProperty.call(item, 'value');
+  const stateSnapshotIds = new Set([
+    'menu',
+    'activeOrders',
+    'transactions',
+    'settings',
+    'staff',
+    'dishCategories',
+    'customers',
+    'units',
+    'restockHistory',
+    'appAdminSettings',
+    'auditTrail',
+    'businessProfile',
+    'subscription',
+    'metadata',
+    'appState',
+    'syncQueue'
+  ]);
+  const excludedEntityTypes = new Set(['snapshot', 'appstate', 'state', 'metadata', 'notifications', 'productimages', 'dashboardcache', 'auditlog']);
+  const entityType = String(item.entityType || payload.entityType || '').trim().toLowerCase();
+
+  const looksLikeStateSnapshot = wrappedValue && stateSnapshotIds.has(id);
+  return !looksLikeStateSnapshot && !excludedEntityTypes.has(entityType);
+}
+
+export function calculatePendingSyncCount(queue = [], unsyncedTransactions = 0) {
+  const meaningfulQueueItems = Array.isArray(queue)
+    ? queue.filter((item) => shouldCountPendingSyncItem(item))
+    : [];
+
+  return meaningfulQueueItems.length > 0 ? meaningfulQueueItems.length : unsyncedTransactions;
+}
+
 function getSharedMemoryDatabase(dbName) {
   if (!MEMORY_DATABASES.has(dbName)) {
     MEMORY_DATABASES.set(dbName, createMemoryDatabase(dbName));

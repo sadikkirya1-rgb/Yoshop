@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBusinessRepository, createEntityId, createSyncEnvelope, mergeSnapshotData } from '../offline-architecture.mjs';
+import { createBusinessRepository, createEntityId, createSyncEnvelope, mergeSnapshotData, calculatePendingSyncCount } from '../offline-architecture.mjs';
 
 test('createEntityId is stable for the same payload', () => {
   const first = createEntityId('transaction', { date: '2026-06-26T00:00:00.000Z', total: 25.5, items: [{ name: 'Coffee', qty: 2 }] });
@@ -45,4 +45,15 @@ test('createBusinessRepository persists entities and sync queue across repositor
   assert.equal(product.name, 'Coffee');
   assert.equal(queue.length, 1);
   assert.equal(queue[0].entityType, 'products');
+});
+
+test('calculatePendingSyncCount ignores wrapped state snapshots and uses real pending items', () => {
+  const queue = [
+    { id: 'settings-state', entityType: 'snapshot', payload: { id: 'settings', value: { theme: 'dark' } }, syncStatus: 'pending' },
+    { id: 'sale-1', entityType: 'sales', payload: { id: 'sale-1' }, syncStatus: 'pending' },
+    { id: 'sale-2', entityType: 'productRecord', payload: { id: 'product-2' }, syncStatus: 'retry' }
+  ];
+
+  assert.equal(calculatePendingSyncCount(queue, 0), 2);
+  assert.equal(calculatePendingSyncCount([], 1), 1);
 });
