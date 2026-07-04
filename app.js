@@ -3330,23 +3330,8 @@ function updateAuthUI(user) {
 
     const nav = document.querySelector('nav');
 
-    // Inject App Admin Sidebar Buttons if they don't exist
-    if (isAppAdminRole() && nav && !document.getElementById('nav-admin-shops')) {
-      const shopsBtn = document.createElement('button');
-      shopsBtn.id = 'nav-admin-shops';
-      shopsBtn.onclick = () => { showTab('appAdminTab', shopsBtn); switchAppAdminView('shops'); };
-      shopsBtn.innerHTML = `<span>🏪</span><span>Shops</span>`;
-
-      const subscriptionsBtn = document.createElement('button');
-      subscriptionsBtn.id = 'nav-admin-subscriptions';
-      subscriptionsBtn.onclick = () => { showTab('appAdminTab', subscriptionsBtn); switchAppAdminView('subscriptions'); };
-      subscriptionsBtn.innerHTML = `<span>🧾</span><span>Subscriptions</span>`;
-
-      const shopsListBtn = document.createElement('button');
-      shopsListBtn.id = 'nav-admin-shops-list';
-      shopsListBtn.onclick = () => { showTab('appAdminTab', shopsListBtn); switchAppAdminView('shops-table'); };
-      shopsListBtn.innerHTML = `<span>📋</span><span>Manage Shops</span>`;
-
+    // App admin navigation is handled inside the app admin section itself.
+    if (isAppAdminRole() && nav && !document.getElementById('nav-admin-settings')) {
       const settingsBtn = document.createElement('button');
       settingsBtn.id = 'nav-admin-settings';
       settingsBtn.onclick = () => { showTab('appAdminTab', settingsBtn); switchAppAdminView('settings'); };
@@ -3354,14 +3339,8 @@ function updateAuthUI(user) {
 
       const logoutBtn = document.getElementById('nav-logout-btn');
       if (logoutBtn) {
-        nav.insertBefore(shopsBtn, logoutBtn);
-        nav.insertBefore(subscriptionsBtn, logoutBtn);
-        nav.insertBefore(shopsListBtn, logoutBtn);
         nav.insertBefore(settingsBtn, logoutBtn);
       } else {
-        nav.appendChild(shopsBtn);
-        nav.appendChild(subscriptionsBtn);
-        nav.appendChild(shopsListBtn);
         nav.appendChild(settingsBtn);
       }
     }
