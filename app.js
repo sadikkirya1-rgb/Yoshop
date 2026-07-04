@@ -9,7 +9,7 @@ import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstat
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
-import { getSubscriptionMeta, isAppAdminRestrictedIdentity } from './admin-utils.mjs';
+import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity } from './admin-utils.mjs';
 import { getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
@@ -86,36 +86,12 @@ function normalizeEmailAddress(value = '') {
   return String(value || '').trim().toLowerCase();
 }
 
-function normalizeAdminEntry(entry) {
-  if (typeof entry === 'string') {
-    return { email: normalizeEmailAddress(entry), status: 'active', type: 'password' };
-  }
-
-  if (!entry || typeof entry !== 'object') return null;
-
-  const email = normalizeEmailAddress(entry.email || entry.address || '');
-  if (!email) return null;
-
-  return {
-    email,
-    status: String(entry.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : 'active',
-    type: String(entry.type || entry.source || 'password').toLowerCase() === 'google' ? 'google' : 'password'
-  };
-}
-
-function getConfiguredAdminEntries() {
-  const configuredEntries = Array.isArray(appAdminSettings?.adminEmails) ? appAdminSettings.adminEmails : [];
-  const normalizedEntries = configuredEntries.map((entry) => normalizeAdminEntry(entry)).filter(Boolean);
-  const currentEmail = normalizeEmailAddress(currentUser?.email || '');
-
-  if (currentEmail) {
-    const hasCurrentEmailEntry = normalizedEntries.some((entry) => entry.email === currentEmail);
-    if (!hasCurrentEmailEntry) {
-      normalizedEntries.unshift({ email: currentEmail, status: 'active', type: 'google' });
-    }
-  }
-
-  return normalizedEntries;
+function getConfiguredAdminEntries(options = {}) {
+  return getConfiguredAdminEntriesFromUtils({
+    configuredEntries: Array.isArray(appAdminSettings?.adminEmails) ? appAdminSettings.adminEmails : [],
+    currentEmail: currentUser?.email || '',
+    ...options
+  });
 }
 
 function getConfiguredAppAdminEmails() {

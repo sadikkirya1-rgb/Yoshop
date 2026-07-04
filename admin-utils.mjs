@@ -2,6 +2,39 @@ function normalizeEmailAddress(value = '') {
   return String(value || '').trim().toLowerCase();
 }
 
+function normalizeAdminEntry(entry) {
+  if (typeof entry === 'string') {
+    return { email: normalizeEmailAddress(entry), status: 'active', type: 'password' };
+  }
+
+  if (!entry || typeof entry !== 'object') return null;
+
+  const email = normalizeEmailAddress(entry.email || entry.address || '');
+  if (!email) return null;
+
+  return {
+    email,
+    status: String(entry.status || 'active').toLowerCase() === 'inactive' ? 'inactive' : 'active',
+    type: String(entry.type || entry.source || 'password').toLowerCase() === 'google' ? 'google' : 'password'
+  };
+}
+
+export function getConfiguredAdminEntries({ configuredEntries = [], currentEmail = '', includeCurrentEmail = false } = {}) {
+  const normalizedEntries = Array.isArray(configuredEntries)
+    ? configuredEntries.map((entry) => normalizeAdminEntry(entry)).filter(Boolean)
+    : [];
+
+  const normalizedCurrentEmail = normalizeEmailAddress(currentEmail);
+  if (includeCurrentEmail && normalizedCurrentEmail) {
+    const hasCurrentEmailEntry = normalizedEntries.some((entry) => entry.email === normalizedCurrentEmail);
+    if (!hasCurrentEmailEntry) {
+      normalizedEntries.unshift({ email: normalizedCurrentEmail, status: 'active', type: 'google' });
+    }
+  }
+
+  return normalizedEntries;
+}
+
 export function isAppAdminRestrictedIdentity({ email = '', uid = '', configuredAdminEmails = [], masterAdminUid = null } = {}) {
   const normalizedEmail = normalizeEmailAddress(email);
   const emailList = Array.isArray(configuredAdminEmails)
