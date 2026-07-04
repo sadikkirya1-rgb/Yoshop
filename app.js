@@ -9585,7 +9585,7 @@ async function mainInit() {
           const userSnap = await getDoc(userRef);
 
           const data = userSnap.exists() ? userSnap.data() : {};
-          const status = data.status || 'pending';
+          const status = String(data.status || 'active').trim().toLowerCase();
 
           // Save metadata locally for permission checks
           userMetadata = { ...data, status, uid: user.uid };
