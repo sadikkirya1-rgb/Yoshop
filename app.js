@@ -1616,8 +1616,8 @@ function initAppAdminDashboardLayout() {
           </div>
         </div>
 
-        <div class="u-mb-20">
-          <h4 class="u-mb-10">🧾 Subscription Overview</h4>
+        <div class="u-mb-20" style="margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border-color);">
+          <h4 class="u-mb-10">🏪 Shops Management Control Section</h4>
           <div class="dashboard-grid u-mb-20">
             <div class="dashboard-card">
               <h4>Active Shops</h4>
@@ -1657,17 +1657,21 @@ function initAppAdminDashboardLayout() {
             <table class="u-w-full">
               <thead>
                 <tr>
+                  <th class="u-text-center">#</th>
                   <th class="u-text-center"><input type="checkbox" id="subscriptionsSelectAllCheckbox" onclick="toggleSelectAllSubscriptionRows(this.checked)"></th>
+                  <th class="u-text-center">Logo</th>
                   <th>Shop</th>
                   <th>Owner</th>
                   <th>Contact</th>
+                  <th>WhatsApp</th>
                   <th>Status</th>
-                  <th>Expires</th>
+                  <th>Subscription</th>
+                  <th>Last Sync</th>
                   <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="appAdminSubscriptionsTableBody">
-                <tr><td colspan="7" class="u-text-center">Loading subscriptions...</td></tr>
+                <tr><td colspan="11" class="u-text-center">Loading subscriptions...</td></tr>
               </tbody>
             </table>
           </div>
@@ -1994,7 +1998,7 @@ async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.fil
   const tbody = document.getElementById('appAdminSubscriptionsTableBody');
   if (!tbody) return;
 
-  tbody.innerHTML = '<tr><td colspan="7" class="u-text-center"><span class="spinner"></span> Loading subscriptions...</td></tr>';
+tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinner"></span> Loading subscriptions...</td></tr>';
 
   try {
     const usersSnap = await getDocs(collection(dbFirestore, 'users'));
@@ -2011,19 +2015,25 @@ async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.fil
       const shopName = (shopData.settings && shopData.settings.name) || 'Unnamed Shop';
       const ownerEmail = (userData.email || '').trim() || uid;
       const contact = (shopData.settings && shopData.settings.contact) || 'N/A';
+      const whatsapp = userData.whatsapp || 'N/A';
+      const logoUrl = sanitizeLogoUrl((shopData.settings && shopData.settings.logo)) || 'assets/icons/icon.png';
       const userStatus = userData.status || 'active';
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
       const subscriptionExpires = userData.subscriptionExpires || null;
       const meta = getSubscriptionMeta({ userStatus, shopStatus, subscriptionExpires, now: today });
+      const lastSync = shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never';
 
       rows.push({
         uid,
         shopName,
         ownerEmail,
         contact,
+        whatsapp,
+        logoUrl,
         userStatus,
         shopStatus,
         subscriptionExpires,
+        lastSync,
         bucket: meta.bucket,
         label: meta.label,
         className: meta.className,
@@ -2055,28 +2065,47 @@ async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.fil
     subscriptionsAdminState.rows.forEach(row => { row.visible = true; });
 
     if (!filteredRows.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="u-text-center">No shops match this filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="u-text-center">No shops match this filter.</td></tr>';
       return;
     }
 
     const fragment = document.createDocumentFragment();
-    filteredRows.forEach(row => {
+    filteredRows.forEach((row, index) => {
       const tr = document.createElement('tr');
-      const expiryText = row.subscriptionExpires ? new Date(row.subscriptionExpires).toLocaleDateString() : 'No expiry';
+      const expiryText = row.subscriptionExpires ? (() => {
+        const expiryDate = new Date(row.subscriptionExpires);
+        const isExpired = expiryDate < new Date();
+        return `${expiryDate.toLocaleDateString()}${isExpired ? ' (EXPIRED)' : ''}`;
+      })() : 'PROMO PLAN';
       const isSelected = subscriptionsAdminState.selectedUids.has(row.uid);
+      const shopNameSafe = (row.shopName || 'Unnamed Shop').replace(/'/g, "\\'");
+      const ownerEmailSafe = (row.ownerEmail || 'No Email').replace(/'/g, "\\'");
       tr.innerHTML = `
+        <td class="u-text-center">${index + 1}</td>
         <td class="u-text-center"><input type="checkbox" class="subscription-row-checkbox" data-uid="${row.uid}" ${isSelected ? 'checked' : ''}></td>
+        <td class="u-text-center"><img src="${row.logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color);" onerror="this.src='assets/icons/icon.png';"></td>
         <td class="u-bold">${row.shopName}</td>
         <td class="u-fs-08">${row.ownerEmail}</td>
         <td class="u-fs-08">${row.contact}</td>
+        <td class="u-fs-08">${row.whatsapp}</td>
         <td class="u-fs-08"><span class="shop-card-status ${row.className}">${row.label}</span></td>
         <td class="u-fs-08">${expiryText}</td>
+        <td class="u-fs-08">${row.lastSync}</td>
         <td class="u-text-right">
           <div style="display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap;">
+            <button class="btn btn-info u-fs-08" style="padding:4px 8px; margin:0;" onclick="monitorShop('${row.uid}', '${shopNameSafe}')">Monitor</button>
+            ${row.userStatus === 'pending' ? `<button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetUserStatus('${row.uid}', 'active'); refreshAppAdminSubscriptions();">Approve</button>` : ''}
+            <button class="btn btn-danger u-fs-08" style="padding:4px 8px; margin:0;" onclick="deleteShop('${row.uid}', '${shopNameSafe}')">Delete</button>
+            <button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="window.open('https://wa.me/${row.whatsapp}', '_blank')" ${row.whatsapp === 'N/A' ? 'disabled' : ''}>WhatsApp</button>
             <button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'activate')">Activate</button>
             <button class="btn btn-warning u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'suspend')">Suspend</button>
             <button class="btn btn-danger u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'deactivate')">Deactivate</button>
             <button class="btn btn-purple u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'notice')">Notice</button>
+            <input type="date" id="sub-date-${row.uid}" class="u-fs-08" style="padding:3px; border-radius:4px; border:1px solid #ccc; background: white; color: black;">
+            <button class="btn btn-purple u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetSubscriptionDate('${row.uid}')">Set Expiry</button>
+            <button class="btn btn-primary-blue u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetSubscription('${row.uid}', 1)">+1 Month</button>
+            <button class="btn btn-secondary u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetSubscription('${row.uid}', 12)">+1 Year</button>
+            <button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="setFreePlan('${row.uid}')">Promo</button>
           </div>
         </td>
       `;
@@ -2100,7 +2129,7 @@ async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.fil
     }
   } catch (error) {
     handleFirebaseError(error, 'Load Subscription View', 'users');
-    tbody.innerHTML = '<tr><td colspan="7" class="u-text-center" style="color:red;">Error loading subscriptions.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="u-text-center" style="color:red;">Error loading subscriptions.</td></tr>';
   }
 }
 
@@ -2674,12 +2703,18 @@ function renderSubscriptionFooterInfo() {
   const footerEl = document.getElementById('subscription-footer-status');
   if (!footerEl) return;
 
+  if (currentUserRole === 'appAdmin') {
+    footerEl.textContent = '';
+    footerEl.style.display = 'none';
+    return;
+  }
+
   const subInfo = getSubscriptionInfo();
   const startedAtValue = userMetadata?.subscriptionStartedAt || userMetadata?.subscriptionStartDate || userMetadata?.startedAt || userMetadata?.createdAt || userMetadata?.lastLogin || userMetadata?.activationDate;
   const startedAt = startedAtValue ? new Date(startedAtValue) : null;
 
   if (subInfo.isPromoPlan || subInfo.label === 'PROMO PLAN') {
-    footerEl.textContent = 'Demo Plan';
+    footerEl.textContent = 'Promo Plan';
     footerEl.style.color = '#f59e0b';
     return;
   }
