@@ -4,7 +4,7 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, orderBy, limit, getDocs, deleteDoc, where } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, orderBy, limit, getDocs, deleteDoc, where, arrayUnion } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
@@ -2371,10 +2371,13 @@ async function updateTargetShopSubscriptionState(uid, action, message = '', refr
     const noticeMessage = message || await showAppPrompt('Enter a notice message for this shop:', 'Send Notice', 'Message');
     if (!noticeMessage) return;
     try {
+      const sentAt = new Date().toISOString();
+      // Save the current notice as latest and append to the history array
       await setDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'), {
         appAdminSettings: {
           noticeMessage,
-          noticeSentAt: new Date().toISOString()
+          noticeSentAt: sentAt,
+          notices: arrayUnion({ message: noticeMessage, sentAt, by: (currentUser && currentUser.email) ? currentUser.email : currentUser?.uid || 'admin' })
         }
       }, { merge: true });
       if (typeof showAppAlert === 'function') showAppAlert(`Notice sent to ${uid}.`);
@@ -7539,18 +7542,123 @@ async function checkForAdminNoticeForCurrentShop() {
     // If there's a timestamp and it's unchanged, skip showing again
     if (sentAt && seenAt && new Date(seenAt).getTime() >= new Date(sentAt).getTime()) return;
 
-    // Show the notice to the shop owner using existing UI helper
-    if (typeof showAppAlert === 'function') {
-      showAppAlert(notice, 'Admin Notice');
-    } else {
-      alert(notice);
-    }
+    // Prepare notice history (if available)
+    const noticesArray = Array.isArray(adminSettings.notices) ? adminSettings.notices.slice().reverse() : [{ message: notice, sentAt }];
 
-    // Record that we've shown this notice
-    try { localStorage.setItem(key, sentAt || new Date().toISOString()); } catch (e) { /* ignore */ }
+    // Create a persistent dismissible banner with 'View' and 'Dismiss' actions
+    createAdminNoticeBanner(notice, sentAt, noticesArray, key);
   } catch (error) {
     console.warn('Failed to fetch admin notice for shop:', error);
   }
+}
+
+function createAdminNoticeBanner(notice, sentAt, notices = [], storageKey) {
+  // remove existing banner if present
+  const existing = document.getElementById('admin-notice-banner');
+  if (existing) existing.remove();
+
+  const header = document.querySelector('header');
+  const container = document.createElement('div');
+  container.id = 'admin-notice-banner';
+  container.style.cssText = 'position:sticky; top:0; z-index:9999; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; background:#fff8e1; border-left:6px solid #ffc107; box-shadow:0 2px 8px rgba(0,0,0,0.06); font-size:0.95em;';
+
+  const msg = document.createElement('div');
+  msg.style.flex = '1 1 auto';
+  msg.style.marginRight = '12px';
+  msg.textContent = notice;
+
+  const actions = document.createElement('div');
+  actions.style.display = 'flex';
+  actions.style.gap = '8px';
+
+  const viewBtn = document.createElement('button');
+  viewBtn.className = 'btn btn-info';
+  viewBtn.textContent = 'View';
+  viewBtn.onclick = () => showAdminNoticesOverlay(notices);
+
+  const dismissBtn = document.createElement('button');
+  dismissBtn.className = 'btn btn-secondary';
+  dismissBtn.textContent = 'Dismiss';
+  dismissBtn.onclick = () => {
+    try { if (storageKey) localStorage.setItem(storageKey, sentAt || new Date().toISOString()); } catch (e) {}
+    container.remove();
+  };
+
+  actions.appendChild(viewBtn);
+  actions.appendChild(dismissBtn);
+
+  container.appendChild(msg);
+  container.appendChild(actions);
+
+  if (header && header.parentNode) {
+    header.parentNode.insertBefore(container, header.nextSibling);
+  } else {
+    document.body.insertBefore(container, document.body.firstChild);
+  }
+}
+
+function showAdminNoticesOverlay(notices = []) {
+  // Remove existing overlay
+  const existing = document.getElementById('admin-notices-overlay');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'admin-notices-overlay';
+  overlay.style.cssText = 'position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.4);';
+
+  const panel = document.createElement('div');
+  panel.style.cssText = 'width:90%; max-width:720px; max-height:80vh; overflow:auto; background:var(--card); padding:18px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.2);';
+
+  const title = document.createElement('h3');
+  title.textContent = 'Admin Notices';
+  title.style.marginTop = '0';
+  panel.appendChild(title);
+
+  if (!Array.isArray(notices) || notices.length === 0) {
+    const p = document.createElement('p');
+    p.textContent = 'No notices available.';
+    panel.appendChild(p);
+  } else {
+    const list = document.createElement('div');
+    list.style.display = 'flex';
+    list.style.flexDirection = 'column';
+    list.style.gap = '12px';
+
+    // Sort by sentAt desc if possible
+    const sorted = notices.slice().sort((a, b) => {
+      const ta = a && a.sentAt ? new Date(a.sentAt).getTime() : 0;
+      const tb = b && b.sentAt ? new Date(b.sentAt).getTime() : 0;
+      return tb - ta;
+    });
+
+    sorted.forEach(n => {
+      const card = document.createElement('div');
+      card.style.cssText = 'background:rgba(0,0,0,0.03); padding:12px; border-radius:8px;';
+      const t = document.createElement('div');
+      t.style.fontWeight = '600';
+      t.style.marginBottom = '6px';
+      t.textContent = n.by ? `${n.by} • ${n.sentAt ? new Date(n.sentAt).toLocaleString() : ''}` : `${n.sentAt ? new Date(n.sentAt).toLocaleString() : ''}`;
+      const m = document.createElement('div');
+      m.textContent = n.message || n;
+      card.appendChild(t);
+      card.appendChild(m);
+      list.appendChild(card);
+    });
+
+    panel.appendChild(list);
+  }
+
+  const closeRow = document.createElement('div');
+  closeRow.style.cssText = 'display:flex; justify-content:flex-end; margin-top:12px; gap:8px;';
+  const closeBtn = document.createElement('button');
+  closeBtn.className = 'btn btn-secondary';
+  closeBtn.textContent = 'Close';
+  closeBtn.onclick = () => overlay.remove();
+  closeRow.appendChild(closeBtn);
+  panel.appendChild(closeRow);
+
+  overlay.appendChild(panel);
+  document.body.appendChild(overlay);
 }
   // Safe loading helper
   const setVal = (id, val) => {
