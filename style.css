@@ -433,6 +433,11 @@
   }
   .admin-notice-banner .notice-actions { display:flex; gap:8px; }
 
+/* Header unread badge for admin notices (small round badge) */
+#update-badge { display:none; min-width:20px; height:20px; padding:0 6px; border-radius:999px; background:#ff6b35; color:#fff; font-size:0.75em; display:inline-flex; align-items:center; justify-content:center; }
+#update-badge.notice-unread-badge { display:inline-flex; }
+
+
   /* Notices overlay panel styles */
   .admin-notices-overlay { position: fixed; inset: 0; z-index: 10000; display:flex; align-items:center; justify-content:center; background: rgba(0,0,0,0.4); }
   .admin-notices-panel { width: 90%; max-width: 720px; max-height: 80vh; overflow: auto; background: var(--card); padding: 18px; border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.2); }

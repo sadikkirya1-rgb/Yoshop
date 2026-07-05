@@ -57,8 +57,36 @@ async function markNoticeReadOnServer(uid, sentAt) {
   }
 }
 
-async function renderShopNoticesInSettings() {
-  const container = document.getElementById('shopNoticesList');
+function updateHeaderNoticeBadge(unreadCount) {
+  try {
+    const badge = document.getElementById('update-badge');
+    if (!badge) return;
+    if (unreadCount > 0) {
+      badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+      badge.style.display = 'inline-block';
+      badge.classList.add('notice-unread-badge');
+    } else {
+      badge.textContent = '';
+      badge.style.display = 'none';
+      badge.classList.remove('notice-unread-badge');
+    }
+  } catch (e) { /* non-blocking */ }
+}
+
+async function showNoticesPage() {
+  // Show dedicated notices container (SPA-style)
+  const main = document.getElementById('noticesPage');
+  if (!main) return;
+  // Hide other main sections (best-effort)
+  document.querySelectorAll('main, section, [data-page]').forEach(el => { if (el.id !== 'noticesPage') el.style.display = 'none'; });
+  main.style.display = 'block';
+  // Render notices into the dedicated list container
+  const list = document.getElementById('noticesPageList');
+  await renderShopNoticesInSettings(list);
+}
+
+async function renderShopNoticesInSettings(containerParam) {
+  const container = containerParam || document.getElementById('shopNoticesList');
   if (!container) return;
   container.innerHTML = '<p style="opacity:0.7;">Loading notices...</p>';
   if (!currentUser || !dbFirestore) {
@@ -79,6 +107,8 @@ async function renderShopNoticesInSettings() {
       const t = n && n.sentAt ? new Date(n.sentAt).getTime() : 0;
       if (t && t > lastRead) unreadCount += 1;
     });
+    // Update header badge
+    try { updateHeaderNoticeBadge(unreadCount); } catch (e) {}
     // Show unread badge
     const header = document.createElement('div');
     header.style.display = 'flex';
@@ -7651,6 +7681,14 @@ async function checkForAdminNoticeForCurrentShop() {
 
     // Prepare notice history (if available)
     const noticesArray = Array.isArray(adminSettings.notices) ? adminSettings.notices.slice().reverse() : [{ message: notice, sentAt }];
+
+    // Compute unread count for header badge
+    try {
+      const lastReadTime = serverSeenAt ? new Date(serverSeenAt).getTime() : 0;
+      let unread = 0;
+      noticesArray.forEach(n => { const t = n && n.sentAt ? new Date(n.sentAt).getTime() : 0; if (t && t > lastReadTime) unread += 1; });
+      updateHeaderNoticeBadge(unread);
+    } catch (e) {}
 
     // Create a persistent dismissible banner with 'View' and 'Dismiss' actions
     createAdminNoticeBanner(notice, sentAt, noticesArray, key);

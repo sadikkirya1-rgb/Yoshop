@@ -72,7 +72,7 @@
         <span id="connectivity-status"></span>
         <span id="sync-badge" class="sync-badge" style="display:none;">Pending</span>
       </button>
-      <button id="update-notification-btn" class="icon-btn" onclick="toggleNotifications()" title="Notifications">
+      <button id="update-notification-btn" class="icon-btn" onclick="showNoticesPage()" title="Notifications">
         <span>🔔</span>
         <span id="update-badge"></span>
       </button>
@@ -91,6 +91,18 @@
       </button>
     </div>
   </header>
+
+  <main id="noticesPage" style="display:none" data-page>
+    <div class="page-header" style="display:flex; justify-content:space-between; align-items:center; padding:12px;">
+      <h2>Notices</h2>
+      <div>
+        <button class="btn" onclick="document.getElementById('noticesPage').style.display='none'; window.location.reload();">Close</button>
+      </div>
+    </div>
+    <div id="noticesPageList" style="padding:12px;">
+      <p style="opacity:0.7;">Loading notices...</p>
+    </div>
+  </main>
 
   <!-- Bill Split Modal -->
   <div id="billSplitModal" class="receipt-modal-overlay">
