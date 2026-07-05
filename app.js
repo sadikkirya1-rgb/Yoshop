@@ -1764,7 +1764,7 @@ function initAppAdminDashboardLayout() {
                   <th>Off/ON</th>
                   <th>Subscription</th>
                   <th>Last Sync</th>
-                  <th>Actions</th>
+                  <th class="u-text-center">Actions</th>
                 </tr>
               </thead>
               <tbody id="appAdminSubscriptionsTableBody">
