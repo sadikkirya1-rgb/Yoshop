@@ -7,10 +7,8 @@ const APP_SHELL_URLS = [
   '/assetlinks.json',
 
   '/style.css',
-  '/style.css?v=20260701-final',
+  '/style.css?v=20260704-v3',
   '/app.js',
-  '/app.js?v=20260701-final',
-  '/app.js?v=20260704-v1',
   '/app.js?v=20260704-v3',
 
   '/offline-architecture.mjs',
