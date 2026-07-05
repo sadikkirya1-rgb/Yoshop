@@ -122,6 +122,18 @@ async function markAllNoticesRead() {
   } catch (e) { console.warn(e); }
 }
 
+// Optional cleanup helper: clear any existing noticeReads array to reduce storage (does not run automatically)
+async function cleanupNoticeReadsForUser(uid) {
+  if (!uid || !dbFirestore) return;
+  try {
+    await setDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'), { appAdminSettings: { noticeReads: [] } }, { merge: true });
+    return true;
+  } catch (e) {
+    console.warn('Failed to cleanup noticeReads:', e);
+    return false;
+  }
+}
+
 console.log("Firebase initialized for project:", firebaseConfig.projectId);
 
 const storage = getStorage(app);
