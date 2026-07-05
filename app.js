@@ -7516,8 +7516,42 @@ function loadSettings() {
     const linkBtn = document.getElementById('link-password-btn');
     if (changeBtn) changeBtn.style.display = isEmailUser ? 'block' : 'none';
     if (linkBtn) linkBtn.style.display = (isGoogleUser && !isEmailUser) ? 'block' : 'none';
+    // Check for admin notices targeted at this shop and surface them to the owner
+    try { checkForAdminNoticeForCurrentShop(); } catch (e) { /* non-blocking */ }
   }
 
+
+async function checkForAdminNoticeForCurrentShop() {
+  if (!currentUser || !dbFirestore) return;
+  try {
+    const docRef = doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile');
+    const snap = await getDoc(docRef);
+    if (!snap.exists()) return;
+    const shopData = snap.data() || {};
+    const adminSettings = shopData.appAdminSettings || {};
+    const notice = (adminSettings.noticeMessage || '').toString().trim();
+    const sentAt = adminSettings.noticeSentAt || adminSettings.noticeAt || null;
+    if (!notice) return;
+
+    const key = `lastAdminNoticeSeen_${currentUser.uid}`;
+    const seenAt = localStorage.getItem(key);
+
+    // If there's a timestamp and it's unchanged, skip showing again
+    if (sentAt && seenAt && new Date(seenAt).getTime() >= new Date(sentAt).getTime()) return;
+
+    // Show the notice to the shop owner using existing UI helper
+    if (typeof showAppAlert === 'function') {
+      showAppAlert(notice, 'Admin Notice');
+    } else {
+      alert(notice);
+    }
+
+    // Record that we've shown this notice
+    try { localStorage.setItem(key, sentAt || new Date().toISOString()); } catch (e) { /* ignore */ }
+  } catch (error) {
+    console.warn('Failed to fetch admin notice for shop:', error);
+  }
+}
   // Safe loading helper
   const setVal = (id, val) => {
     const el = document.getElementById(id);
