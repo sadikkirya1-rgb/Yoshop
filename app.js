@@ -50,8 +50,8 @@ try {
 async function markNoticeReadOnServer(uid, sentAt) {
   if (!uid || !dbFirestore || !sentAt) return;
   try {
-    const readEntry = { sentAt, readAt: new Date().toISOString(), by: uid };
-    await setDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'), { appAdminSettings: { lastNoticeReadAt: sentAt, noticeReads: arrayUnion(readEntry) } }, { merge: true });
+    // Record the latest read timestamp only to reduce Firestore writes
+    await setDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'), { appAdminSettings: { lastNoticeReadAt: sentAt } }, { merge: true });
   } catch (e) {
     console.warn('Failed to mark notice read on server:', e);
   }
@@ -72,6 +72,24 @@ async function renderShopNoticesInSettings() {
     const notices = Array.isArray(data.appAdminSettings && data.appAdminSettings.notices) ? (data.appAdminSettings.notices.slice().reverse()) : (data.appAdminSettings && data.appAdminSettings.noticeMessage ? [{ message: data.appAdminSettings.noticeMessage, sentAt: data.appAdminSettings.noticeSentAt }] : []);
     if (!notices || notices.length === 0) { container.innerHTML = '<p style="opacity:0.7;">No notices.</p>'; return; }
     container.innerHTML = '';
+    // compute unread count comparing sentAt to lastNoticeReadAt
+    const lastRead = data.appAdminSettings && data.appAdminSettings.lastNoticeReadAt ? new Date(data.appAdminSettings.lastNoticeReadAt).getTime() : 0;
+    let unreadCount = 0;
+    notices.forEach(n => {
+      const t = n && n.sentAt ? new Date(n.sentAt).getTime() : 0;
+      if (t && t > lastRead) unreadCount += 1;
+    });
+    // Show unread badge
+    const header = document.createElement('div');
+    header.style.display = 'flex';
+    header.style.justifyContent = 'space-between';
+    header.style.alignItems = 'center';
+    const title = document.createElement('div'); title.textContent = `Notices (${notices.length})`;
+    header.appendChild(title);
+    if (unreadCount > 0) {
+      const badge = document.createElement('div'); badge.textContent = `${unreadCount} unread`; badge.style.background = '#ff6b35'; badge.style.color = 'white'; badge.style.padding = '4px 8px'; badge.style.borderRadius = '999px'; badge.style.fontSize = '0.8em'; header.appendChild(badge);
+    }
+    container.appendChild(header);
     notices.forEach(n => {
       const card = document.createElement('div');
       card.className = 'admin-notice-card';
@@ -7606,11 +7624,18 @@ async function checkForAdminNoticeForCurrentShop() {
     const sentAt = adminSettings.noticeSentAt || adminSettings.noticeAt || null;
     if (!notice) return;
 
+    const serverSeenAt = adminSettings.lastNoticeReadAt || null;
     const key = `lastAdminNoticeSeen_${currentUser.uid}`;
-    const seenAt = localStorage.getItem(key);
+    const localSeenAt = localStorage.getItem(key);
 
-    // If there's a timestamp and it's unchanged, skip showing again
-    if (sentAt && seenAt && new Date(seenAt).getTime() >= new Date(sentAt).getTime()) return;
+    // Decide whether to show banner: show when sentAt is newer than server or local seen timestamps
+    const sentTime = sentAt ? new Date(sentAt).getTime() : 0;
+    const serverSeenTime = serverSeenAt ? new Date(serverSeenAt).getTime() : 0;
+    const localSeenTime = localSeenAt ? new Date(localSeenAt).getTime() : 0;
+
+    if (sentTime <= 0) return;
+    if (sentTime <= serverSeenTime) return; // already read on server
+    if (sentTime <= localSeenTime) return; // already dismissed locally
 
     // Prepare notice history (if available)
     const noticesArray = Array.isArray(adminSettings.notices) ? adminSettings.notices.slice().reverse() : [{ message: notice, sentAt }];
