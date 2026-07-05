@@ -390,6 +390,27 @@
     border-radius: 10px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.08);
   }
+
+  /* Constrain chart canvas sizes for admin dashboard smaller layout */
+  .charts-container .chart-wrapper canvas {
+    width: 100% !important;
+    max-height: 240px !important;
+    height: 220px !important;
+    display: block;
+  }
+
+  /* Square wrappers for pie/doughnut charts to avoid stretching */
+  .chart-wrapper.chart-pie {
+    aspect-ratio: 1 / 1;
+    max-width: 260px;
+    min-width: 180px;
+    padding: 10px;
+  }
+  .chart-wrapper.chart-pie canvas {
+    width: 100% !important;
+    height: 100% !important;
+    display: block;
+  }
   .menu-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(170px, 170px));

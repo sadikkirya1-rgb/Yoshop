@@ -1703,13 +1703,32 @@ function initAppAdminDashboardLayout() {
             <h4>Pending Approval</h4>
             <p id="globalPendingShops">0</p>
           </div>
-        </div>
-        <div class="charts-container">
-          <div class="chart-wrapper">
-            <canvas id="adminGlobalRevenueChart"></canvas>
+          <div class="dashboard-card">
+            <h4>Avg Order Value</h4>
+            <p id="adminAvgOrderValue">-</p>
           </div>
-          <div class="chart-wrapper">
-            <canvas id="adminShopsComparisonChart"></canvas>
+          <div class="dashboard-card">
+            <h4>Sales Today</h4>
+            <p id="adminTotalSalesToday">-</p>
+          </div>
+          <div class="dashboard-card">
+            <h4>New Shops (7d)</h4>
+            <p id="adminNewShopsThisWeek">-</p>
+          </div>
+        </div>
+
+        <div class="charts-container">
+          <div class="chart-wrapper" style="flex: 1 1 260px; min-width:220px;">
+            <canvas id="adminGlobalRevenueChart" style="height:220px;"></canvas>
+          </div>
+          <div class="chart-wrapper" style="flex: 1 1 260px; min-width:220px;">
+            <canvas id="adminShopsComparisonChart" style="height:220px;"></canvas>
+          </div>
+          <div class="chart-wrapper chart-pie" style="flex: 1 1 220px; min-width:200px;">
+            <canvas id="adminPaymentMethodsChart"></canvas>
+          </div>
+          <div class="chart-wrapper chart-pie" style="flex: 1 1 220px; min-width:200px;">
+            <canvas id="adminShopsStatusChart"></canvas>
           </div>
         </div>
 
@@ -1731,6 +1750,18 @@ function initAppAdminDashboardLayout() {
             <div class="dashboard-card" style="border-bottom: 4px solid #17a2b8;">
               <h4>Pending / Suspended</h4>
               <p id="subscriptionsPendingCount">0</p>
+            </div>
+            <div class="dashboard-card">
+              <h4>Trialing</h4>
+              <p id="subscriptionsTrialingCount">0</p>
+            </div>
+            <div class="dashboard-card">
+              <h4>Free / Promo</h4>
+              <p id="subscriptionsFreeCount">0</p>
+            </div>
+            <div class="dashboard-card">
+              <h4>No Sales (7d)</h4>
+              <p id="subscriptionsNoSalesCount">0</p>
             </div>
           </div>
           <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
@@ -1924,6 +1955,10 @@ async function fetchGlobalAnalytics() {
 
     const revenuePerShop = {};
     const revenuePerDay = {};
+    const paymentMethodsTotals = {};
+    const statusCounts = {};
+    let salesToday = 0;
+    let newShopsThisWeek = 0;
 
     for (const userDoc of usersSnap.docs) {
       const uid = userDoc.id;
@@ -1960,13 +1995,40 @@ async function fetchGlobalAnalytics() {
         shopRevenue += amount;
         totalTxCount++;
 
+        // revenue per day
         if (t.date) {
           const date = new Date(t.date).toLocaleDateString();
           revenuePerDay[date] = (revenuePerDay[date] || 0) + amount;
+
+          // sales today
+          const txDate = new Date(t.date);
+          const today = new Date();
+          if (txDate.toDateString() === today.toDateString()) salesToday += amount;
         }
+
+        // payment methods aggregation
+        const pm = (t.paymentMethod || 'Unknown');
+        paymentMethodsTotals[pm] = (paymentMethodsTotals[pm] || 0) + amount;
       });
 
       revenuePerShop[shopName] = (revenuePerShop[shopName] || 0) + shopRevenue;
+
+      // status counts
+      const st = userData.status || (shopData.status) || 'active';
+      statusCounts[st] = (statusCounts[st] || 0) + 1;
+
+      // new shops this week (best-effort using createdAt fields)
+      try {
+        const createdRaw = userData.createdAt || userData.joinedAt || shopData.createdAt || userDoc.createTime && userDoc.createTime.toDate && userDoc.createTime.toDate();
+        if (createdRaw) {
+          const createdDate = (typeof createdRaw === 'string') ? new Date(createdRaw) : (createdRaw instanceof Date ? createdRaw : new Date(createdRaw));
+          const sevenDaysAgo = new Date();
+          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+          if (createdDate >= sevenDaysAgo) newShopsThisWeek++;
+        }
+      } catch (e) {
+        // ignore parsing errors
+      }
     }
 
     if (displayShops) displayShops.textContent = validShopCount;
@@ -1974,8 +2036,19 @@ async function fetchGlobalAnalytics() {
     if (displayTx) displayTx.textContent = totalTxCount;
     if (displayPending) displayPending.textContent = pendingCount;
 
+    // update new small cards
+    const avgOrderEl = document.getElementById('adminAvgOrderValue');
+    const salesTodayEl = document.getElementById('adminTotalSalesToday');
+    const newShopsEl = document.getElementById('adminNewShopsThisWeek');
+    const avgOrder = totalTxCount ? (totalRevenue / totalTxCount) : 0;
+    if (avgOrderEl) avgOrderEl.textContent = formatCurrency(avgOrder);
+    if (salesTodayEl) salesTodayEl.textContent = formatCurrency(salesToday);
+    if (newShopsEl) newShopsEl.textContent = newShopsThisWeek;
+
     renderAdminGlobalRevenueChart(revenuePerDay);
     renderAdminShopsComparisonChart(revenuePerShop);
+    renderAdminPaymentMethodsChart(paymentMethodsTotals);
+    renderAdminShopsStatusChart(statusCounts);
   } catch (error) {
     handleFirebaseError(error, "Global Analytics", "users (collection level)");
   }
@@ -2042,11 +2115,17 @@ function updateSubscriptionsSummaryCards(stats = {}) {
   const expiredEl = document.getElementById('subscriptionsExpiredCount');
   const expiringEl = document.getElementById('subscriptionsExpiringCount');
   const pendingEl = document.getElementById('subscriptionsPendingCount');
+  const trialEl = document.getElementById('subscriptionsTrialingCount');
+  const freeEl = document.getElementById('subscriptionsFreeCount');
+  const noSalesEl = document.getElementById('subscriptionsNoSalesCount');
 
   if (activeEl) activeEl.textContent = stats.active || 0;
   if (expiredEl) expiredEl.textContent = stats.expired || 0;
   if (expiringEl) expiringEl.textContent = stats['expiring-soon'] || 0;
   if (pendingEl) pendingEl.textContent = (stats.pending || 0) + (stats.suspended || 0);
+  if (trialEl) trialEl.textContent = stats.trialing || 0;
+  if (freeEl) freeEl.textContent = stats.free || 0;
+  if (noSalesEl) noSalesEl.textContent = stats['no-sales-7d'] || 0;
 }
 
 function setSubscriptionsFilter(filter) {
@@ -2119,6 +2198,8 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
     const usersSnap = await getDocs(collection(dbFirestore, 'users'));
     const rows = [];
     const today = new Date();
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
     for (const userDoc of usersSnap.docs) {
       const uid = userDoc.id;
@@ -2139,6 +2220,28 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
       const lastSync = shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never';
       const presence = getPresenceStatus(userData);
 
+      // compute plan details and recent sales
+      const planType = String(userData?.planType || userData?.subscriptionPlan || userData?.plan || userData?.billingCycle || userData?.subscriptionType || '').trim().toLowerCase();
+      const isTrial = planType === 'trial' || planType === 'trialing' || userData?.isTrial === true;
+      const isFree = planType === 'promo' || planType === 'demo' || planType === 'free' || (!userData?.subscriptionExpires && !userData?.subscriptionStartedAt && !userData?.subscriptionStartDate && !userData?.startedAt);
+
+      // check recent transactions (lightweight: fetch latest tx date)
+      let hasRecentSales = false;
+      try {
+        const txRef = collection(dbFirestore, 'users', uid, 'transactions');
+        const q = query(txRef, orderBy('date', 'desc'), limit(1));
+        const txSnap = await getDocs(q);
+        if (!txSnap.empty) {
+          const lastTx = txSnap.docs[0].data();
+          if (lastTx && lastTx.date) {
+            const lastDate = new Date(lastTx.date);
+            if (!Number.isNaN(lastDate.getTime()) && lastDate >= sevenDaysAgo) hasRecentSales = true;
+          }
+        }
+      } catch (e) {
+        // ignore failures to avoid blocking subscription view
+      }
+
       rows.push({
         uid,
         shopName,
@@ -2154,11 +2257,15 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
         bucket: meta.bucket,
         label: meta.label,
         className: meta.className,
+        planType,
+        isTrial,
+        isFree,
+        hasRecentSales,
         visible: true
       });
     }
 
-    const stats = { active: 0, expired: 0, 'expiring-soon': 0, pending: 0, suspended: 0 };
+    const stats = { active: 0, expired: 0, 'expiring-soon': 0, pending: 0, suspended: 0, trialing: 0, free: 0, 'no-sales-7d': 0 };
     const filteredRows = rows.filter(row => {
       if (filter === 'all') return true;
       if (filter === 'active') return row.bucket === 'active';
@@ -2175,6 +2282,9 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
       if (row.bucket === 'expiring-soon') stats['expiring-soon'] += 1;
       if (row.bucket === 'pending') stats.pending += 1;
       if (row.bucket === 'suspended') stats.suspended += 1;
+      if (row.isTrial) stats.trialing += 1;
+      if (row.isFree) stats.free += 1;
+      if (!row.hasRecentSales) stats['no-sales-7d'] += 1;
     });
 
     updateSubscriptionsSummaryCards(stats);
@@ -3522,6 +3632,67 @@ function updateAuthUI(user) {
       header.appendChild(authContainer);
     }
   }
+}
+
+function renderAdminPaymentMethodsChart(paymentMethodsTotals) {
+  if (typeof Chart === 'undefined') return;
+  const canvas = document.getElementById('adminPaymentMethodsChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const entries = Object.entries(paymentMethodsTotals || {});
+  const labels = entries.map(([k]) => k);
+  const data = entries.map(([, v]) => v);
+
+  if (adminPaymentMethodsChartInstance) adminPaymentMethodsChartInstance.destroy();
+
+  adminPaymentMethodsChartInstance = new Chart(ctx, {
+    type: 'pie',
+    data: { labels, datasets: [{ data, backgroundColor: ['#ff6b35','#3d5a80','#7dcdb8','#f7c59f','#98c1d9'] }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1,
+      plugins: {
+        title: { display: true, text: 'Payment Methods', font: { size: 14 } },
+        legend: { position: 'bottom', labels: { boxWidth: 12, usePointStyle: true, font: { size: 12 } } },
+        tooltip: { enabled: true }
+      },
+      elements: { arc: { borderColor: '#ffffff', borderWidth: 1 } },
+      animation: { duration: 500 }
+    }
+  });
+}
+
+function renderAdminShopsStatusChart(statusCounts) {
+  if (typeof Chart === 'undefined') return;
+  const canvas = document.getElementById('adminShopsStatusChart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const entries = Object.entries(statusCounts || {});
+  const labels = entries.map(([k]) => k);
+  const data = entries.map(([, v]) => v);
+
+  if (adminShopsStatusChartInstance) adminShopsStatusChartInstance.destroy();
+
+  adminShopsStatusChartInstance = new Chart(ctx, {
+    type: 'doughnut',
+    data: { labels, datasets: [{ data, backgroundColor: ['#3d5a80','#ff6b35','#f7c59f','#7dcdb8'] }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      aspectRatio: 1,
+      cutout: '40%',
+      plugins: {
+        title: { display: true, text: 'Shops by Status', font: { size: 14 } },
+        legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 12 } } },
+        tooltip: { enabled: true }
+      },
+      elements: { arc: { borderColor: '#ffffff', borderWidth: 1 } },
+      animation: { duration: 500 }
+    }
+  });
 }
 
 function lockApp() {
@@ -6885,6 +7056,8 @@ let bestSellingItemsChartInstance;
 let dailySalesChartInstance;
 let adminGlobalRevenueChartInstance;
 let adminShopsComparisonChartInstance;
+let adminPaymentMethodsChartInstance;
+let adminShopsStatusChartInstance;
 let staffRevenueChartInstance;
 let reportProfitChartInstance;
 let monthlyRevenueChartInstance;
@@ -7227,10 +7400,13 @@ function renderAdminGlobalRevenueChart(revenuePerDay) {
       }]
     },
     options: {
+      responsive: true,
+      maintainAspectRatio: false,
       scales: { y: { beginAtZero: true } },
       plugins: {
-        title: { display: true, text: 'Global Daily Revenue' },
-        legend: { display: false }
+        title: { display: true, text: 'Global Daily Revenue', font: { size: 14 } },
+        legend: { display: false },
+        tooltip: { mode: 'index', intersect: false }
       }
     }
   });
@@ -7256,8 +7432,10 @@ function renderAdminShopsComparisonChart(revenuePerShop) {
     },
     options: {
       indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
       scales: { x: { beginAtZero: true } },
-      plugins: { title: { display: true, text: 'Top 10 Shops by Revenue' }, legend: { display: false } }
+      plugins: { title: { display: true, text: 'Top 10 Shops by Revenue', font: { size: 13 } }, legend: { display: false } }
     }
   });
 }
