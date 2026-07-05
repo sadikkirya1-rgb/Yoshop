@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v40';
+const CACHE_NAME = 'yoshop-v41';
 
 const APP_SHELL_URLS = [
   '/',
@@ -7,9 +7,9 @@ const APP_SHELL_URLS = [
   '/assetlinks.json',
 
   '/style.css',
-  '/style.css?v=20260705-v1',
+  '/style.css?v=20260705-v2',
   '/app.js',
-  '/app.js?v=20260705-v1',
+  '/app.js?v=20260705-v2',
 
   '/offline-architecture.mjs',
   '/auth-utils.mjs',
