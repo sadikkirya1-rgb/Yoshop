@@ -1759,7 +1759,6 @@ function initAppAdminDashboardLayout() {
                   <th class="u-text-center">Logo</th>
                   <th>Shop</th>
                   <th>Owner</th>
-                  <th>Contact</th>
                   <th>WhatsApp</th>
                   <th>Status</th>
                   <th>Online / Last Seen</th>
@@ -1769,7 +1768,7 @@ function initAppAdminDashboardLayout() {
                 </tr>
               </thead>
               <tbody id="appAdminSubscriptionsTableBody">
-                <tr><td colspan="12" class="u-text-center">Loading subscriptions...</td></tr>
+                <tr><td colspan="11" class="u-text-center">Loading subscriptions...</td></tr>
               </tbody>
             </table>
           </div>
@@ -2114,7 +2113,7 @@ async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.fil
   const tbody = document.getElementById('appAdminSubscriptionsTableBody');
   if (!tbody) return;
 
-tbody.innerHTML = '<tr><td colspan="12" class="u-text-center"><span class="spinner"></span> Loading subscriptions...</td></tr>';
+tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinner"></span> Loading subscriptions...</td></tr>';
 
   try {
     const usersSnap = await getDocs(collection(dbFirestore, 'users'));
@@ -2183,7 +2182,7 @@ tbody.innerHTML = '<tr><td colspan="12" class="u-text-center"><span class="spinn
     subscriptionsAdminState.rows.forEach(row => { row.visible = true; });
 
     if (!filteredRows.length) {
-      tbody.innerHTML = '<tr><td colspan="12" class="u-text-center">No shops match this filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="11" class="u-text-center">No shops match this filter.</td></tr>';
       return;
     }
 
@@ -2204,7 +2203,6 @@ tbody.innerHTML = '<tr><td colspan="12" class="u-text-center"><span class="spinn
         <td class="u-text-center"><img src="${row.logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color);" onerror="this.src='assets/icons/icon.png';"></td>
         <td class="u-bold">${row.shopName}</td>
         <td class="u-fs-08">${row.ownerEmail}</td>
-        <td class="u-fs-08">${row.contact}</td>
         <td class="u-fs-08">${row.whatsapp}</td>
         <td class="u-fs-08"><span class="shop-card-status ${row.className}">${row.label}</span></td>
         <td class="u-fs-08">
@@ -2259,7 +2257,7 @@ tbody.innerHTML = '<tr><td colspan="12" class="u-text-center"><span class="spinn
     }
   } catch (error) {
     handleFirebaseError(error, 'Load Subscription View', 'users');
-    tbody.innerHTML = '<tr><td colspan="12" class="u-text-center" style="color:red;">Error loading subscriptions.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="u-text-center" style="color:red;">Error loading subscriptions.</td></tr>';
   }
 }
 
@@ -9307,11 +9305,11 @@ async function updateVersionDisplay() {
       const match = text.match(/CACHE_NAME\s*=\s*['"]yoshop-(v\d+)['"]/);
       if (match) displayEl.textContent = match[1].toUpperCase();
     } else {
-      displayEl.textContent = '1.5.0'; // Fallback on non-200 response
+      displayEl.textContent = '1.5.1'; // Fallback on non-200 response
     }
   } catch (e) {
     console.warn('[Version] Failed to fetch service worker version:', e.message);
-    displayEl.textContent = '1.5.0'; // Fallback
+    displayEl.textContent = '1.5.1'; // Fallback
   }
 
   renderSubscriptionFooterInfo();
