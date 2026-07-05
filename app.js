@@ -59,7 +59,7 @@ async function markNoticeReadOnServer(uid, sentAt) {
 
 function updateHeaderNoticeBadge(unreadCount) {
   try {
-    const badge = document.getElementById('update-badge');
+          const badge = document.getElementById('update-badge');
     if (!badge) return;
     if (unreadCount > 0) {
       badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
@@ -107,9 +107,8 @@ async function renderShopNoticesInSettings(containerParam) {
       const t = n && n.sentAt ? new Date(n.sentAt).getTime() : 0;
       if (t && t > lastRead) unreadCount += 1;
     });
-    // Update header badge
-    try { updateHeaderNoticeBadge(unreadCount); } catch (e) {}
-    // Show unread badge
+    addOrUpdateAdminNoticeNotification(notices[0].message || '', notices[0].sentAt || new Date().toISOString(), notices);
+    // Show unread summary at top of page list
     const header = document.createElement('div');
     header.style.display = 'flex';
     header.style.justifyContent = 'space-between';
@@ -148,6 +147,7 @@ async function markAllNoticesRead() {
     if (latest && latest.sentAt) await markNoticeReadOnServer(currentUser.uid, latest.sentAt);
     // Also set local seen key
     try { localStorage.setItem(`lastAdminNoticeSeen_${currentUser.uid}`, latest && latest.sentAt ? latest.sentAt : new Date().toISOString()); } catch (e) {}
+    removeAdminNoticeNotification();
     renderShopNoticesInSettings();
   } catch (e) { console.warn(e); }
 }
@@ -6711,18 +6711,6 @@ function renderReport() {
               </tbody>
             </table>
           </div>
-          <!-- Notices Panel (shop owner view) -->
-          <div class="form-panel">
-            <h4 class="u-m-0">Notices</h4>
-            <p class="u-fs-08 u-text-muted u-mb-15">Messages sent by the App Admin. Recent notices appear at the top.</p>
-            <div id="shopNoticesList">
-              <p style="opacity:0.7;">Loading notices...</p>
-            </div>
-            <div style="display:flex; gap:8px; margin-top:10px;">
-              <button class="btn btn-info" onclick="renderShopNoticesInSettings()">Refresh Notices</button>
-              <button class="btn btn-secondary" onclick="markAllNoticesRead()">Mark All Read</button>
-            </div>
-          </div>
         </div>`;
 
     if (showCharts) {
@@ -7649,10 +7637,18 @@ function loadSettings() {
     if (changeBtn) changeBtn.style.display = isEmailUser ? 'block' : 'none';
     if (linkBtn) linkBtn.style.display = (isGoogleUser && !isEmailUser) ? 'block' : 'none';
     // Check for admin notices targeted at this shop and surface them to the owner
-    try { checkForAdminNoticeForCurrentShop(); } catch (e) { /* non-blocking */ }
-    try { renderShopNoticesInSettings(); } catch (e) { /* non-blocking */ }
+    try { if (typeof window.checkForAdminNoticeForCurrentShop === 'function') { window.checkForAdminNoticeForCurrentShop(); } else if (typeof checkForAdminNoticeForCurrentShop === 'function') { checkForAdminNoticeForCurrentShop(); } } catch (e) { /* non-blocking */ }
   }
 
+function closeNoticesPage() {
+  const page = document.getElementById('noticesPage');
+  if (page) page.style.display = 'none';
+  document.querySelectorAll('main, section, [data-page]').forEach(el => {
+    if (el.id !== 'noticesPage') el.style.display = '';
+  });
+  const activeTabBtn = document.querySelector('nav button.active');
+  if (activeTabBtn) activeTabBtn.click();
+}
 
 async function checkForAdminNoticeForCurrentShop() {
   if (!currentUser || !dbFirestore) return;
@@ -7682,20 +7678,15 @@ async function checkForAdminNoticeForCurrentShop() {
     // Prepare notice history (if available)
     const noticesArray = Array.isArray(adminSettings.notices) ? adminSettings.notices.slice().reverse() : [{ message: notice, sentAt }];
 
-    // Compute unread count for header badge
-    try {
-      const lastReadTime = serverSeenAt ? new Date(serverSeenAt).getTime() : 0;
-      let unread = 0;
-      noticesArray.forEach(n => { const t = n && n.sentAt ? new Date(n.sentAt).getTime() : 0; if (t && t > lastReadTime) unread += 1; });
-      updateHeaderNoticeBadge(unread);
-    } catch (e) {}
-
     // Create a persistent dismissible banner with 'View' and 'Dismiss' actions
+    addOrUpdateAdminNoticeNotification(notice, sentAt, noticesArray);
     createAdminNoticeBanner(notice, sentAt, noticesArray, key);
   } catch (error) {
     console.warn('Failed to fetch admin notice for shop:', error);
   }
 }
+// Export to window immediately so startup callers can access it even before global export
+try { window.checkForAdminNoticeForCurrentShop = checkForAdminNoticeForCurrentShop; } catch (e) { /* ignore in restricted contexts */ }
 
 function createAdminNoticeBanner(notice, sentAt, notices = [], storageKey) {
   // remove existing banner if present
@@ -7725,6 +7716,7 @@ function createAdminNoticeBanner(notice, sentAt, notices = [], storageKey) {
   dismissBtn.onclick = () => {
     try { if (storageKey) localStorage.setItem(storageKey, sentAt || new Date().toISOString()); } catch (e) {}
     if (currentUser && sentAt) markNoticeReadOnServer(currentUser.uid, sentAt);
+    removeAdminNoticeNotification();
     container.remove();
   };
 
@@ -9055,6 +9047,8 @@ function populateUnitDropdown() {
 }
 
 async function saveNewStockItem() {
+  console.log('[DEBUG_STOCK] saveNewStockItem start');
+  try {
   const name = document.getElementById('newStockItemName').value.trim();
   const unit = document.getElementById('newStockItemUnit').value;
   const costPrice = parseFloat(document.getElementById('newStockItemCost').value);
@@ -9143,6 +9137,7 @@ async function saveNewStockItem() {
     await showAppAlert(`Item "${name}" updated successfully.`, 'Stock Item Updated');
   } else {
     // Add new item
+    console.log('[DEBUG_STOCK] Adding new stock item', { name, unit, costPrice, stock });
     // It's a primary ingredient, so calculate its selling price based on markup
     let price;
     if (sellingPriceInput && !isNaN(parseFloat(sellingPriceInput))) {
@@ -9172,15 +9167,34 @@ async function saveNewStockItem() {
     restockHistory.unshift(restockRecord);
     enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
     menu.push(newItem);
-    enqueueEnterpriseRecordChange('products', newItem, 'upsert').catch(console.warn);
-    await showAppAlert(`Item "${name}" added successfully.`, 'Stock Item Added');
+    try { if (newItem && (newItem.recordId || newItem.id)) lastLocallyAddedProductIds.add(newItem.recordId || newItem.id); } catch(e) {}
+    console.log('[DEBUG_STOCK] newItem prepared', { newItem });
+    try {
+      await enqueueEnterpriseRecordChange('products', newItem, 'upsert');
+    } catch (e) { console.warn('[DEBUG_STOCK] enqueueEnterpriseRecordChange failed', e); }
+    console.log('[DEBUG_STOCK] newItem pushed to menu', { name, menuLen: menu.length });
+    await showAppAlert(`Item \"${name}\" added successfully.`, 'Stock Item Added');
   }
 
-  saveData();
-  toggleNewStockItemForm(false);
-  renderStockListTable();
-  renderMenu();
-  renderDishesTable();
+  // Ensure local save completes before closing the form to reduce race conditions
+  try {
+    console.log('[DEBUG_STOCK] calling saveData', { menuLenBefore: menu.length });
+    await saveData();
+    console.log('[DEBUG_STOCK] saveData completed', { menuLen: menu.length, containsNew: !!menu.find(m => m && m.name === name) });
+  } catch (e) {
+    console.error('[DEBUG_STOCK] saveData failed', e);
+  }
+  try {
+    toggleNewStockItemForm(false);
+    renderStockListTable();
+    renderMenu();
+    renderDishesTable();
+  } catch (e) { console.error('[DEBUG_STOCK] render after save failed', e); }
+  console.log('[DEBUG_STOCK] saveNewStockItem end');
+  } catch (errSave) {
+    console.error('[DEBUG_STOCK] saveNewStockItem error', errSave);
+    try { showAppAlert('An error occurred while saving the stock item. Check console for details.', 'Save Failed'); } catch (e) {}
+  }
 }
 
 /**
@@ -9295,6 +9309,8 @@ function notifyOtherTabsAboutCloudChange(targetUid) {
  * Updates all tabs/devices instantly when cloud data changes
  */
 let unsubscribeEnterpriseRecordSyncs = [];
+// Track recent locally-added product IDs for debugging sync merges
+const lastLocallyAddedProductIds = new Set();
 
 function stopEnterpriseRecordSyncs() {
   unsubscribeEnterpriseRecordSyncs.forEach(unsubscribe => {
@@ -9474,6 +9490,12 @@ function setupEnterpriseRecordCollectionSync(uid) {
       recordRef,
       { includeMetadataChanges: true },
       async snapshot => {
+        try {
+          if (config.collectionName === 'products') {
+            console.log(`[SYNC_PRODUCTS] snapshot received: docChanges=${snapshot.docChanges().length} remoteSize=${snapshot.size} localMenu=${Array.isArray(menu)?menu.length:0} trackedLocalAdded=${Array.from(lastLocallyAddedProductIds).slice(0,5)}`);
+          }
+        } catch (e) { /* ignore logging errors */ }
+
         if (snapshot.metadata.hasPendingWrites) return;
 
         let nextRecords = config.getRecords();
@@ -9493,6 +9515,18 @@ function setupEnterpriseRecordCollectionSync(uid) {
         });
 
         config.setRecords(nextRecords);
+        try {
+          if (config.collectionName === 'products') {
+            const presentIds = (nextRecords || []).map(r => getEnterpriseRecordId(r));
+            const missing = Array.from(lastLocallyAddedProductIds).filter(id => !presentIds.includes(id));
+            if (missing.length > 0) {
+              console.warn('[SYNC_PRODUCTS] Local-added product IDs missing after snapshot:', missing, 'presentIdsSample=', presentIds.slice(0,10));
+            } else {
+              console.log('[SYNC_PRODUCTS] Local-added products present after snapshot');
+            }
+          }
+        } catch (e) { /* ignore */ }
+
         config.render();
         updateDashboard();
 
@@ -9626,23 +9660,59 @@ function setupRealTimeSync(uid) {
                   }
 
                   // Update global state with cloud data
-                  // Preserve locally-known images when cloud entries lack them
+                  try {
+                    if (Array.isArray(updateData.menu)) {
+                      console.log('[SYNC_MENU_APPLY] remote menu length=', updateData.menu.length, 'local menu length=', menu.length, 'sample remote names=', updateData.menu.slice(0,5).map(m=>m.name), 'sample local names=', menu.slice(0,5).map(m=>m.name));
+                    }
+                  } catch(e) { /* ignore logging errors */ }
+                  // Merge remote menu with local pending/new items to avoid overwriting recent local adds
                   if (Array.isArray(updateData.menu) && Array.isArray(menu)) {
-                    updateData.menu = updateData.menu.map(pd => {
+                    const remoteById = new Map();
+                    updateData.menu.forEach(r => {
+                      try { remoteById.set(getEnterpriseRecordId(r), r); } catch (e) { }
+                    });
+
+                    const merged = [];
+
+                    updateData.menu.forEach(remote => {
                       try {
-                        const isPlaceholderImage = !isValidMenuImage(pd.image);
-                        if (isPlaceholderImage) {
-                          const localDish = menu.find(m => m && m.name === pd.name);
-                          if (localDish && isValidMenuImage(localDish.image)) {
-                            pd.image = localDish.image;
-                          } else {
-                            const cachedImage = getCachedDishImage(pd.name);
-                            if (cachedImage) pd.image = cachedImage;
+                        const id = getEnterpriseRecordId(remote);
+                        const local = menu.find(m => getEnterpriseRecordId(m) === id);
+                        const copy = { ...(remote || {}) };
+
+                        // Preserve images from local when remote lacks them
+                        if (!isValidMenuImage(copy.image)) {
+                          if (local && isValidMenuImage(local.image)) copy.image = local.image;
+                          else {
+                            const cached = getCachedDishImage(copy.name);
+                            if (cached) copy.image = cached;
                           }
                         }
-                      } catch (e) { /* ignore */ }
-                      return pd;
+
+                        // Prefer local pending or newer updates
+                        if (local) {
+                          const localUpdated = local.updatedAt ? new Date(local.updatedAt).getTime() : 0;
+                          const remoteUpdated = copy.updatedAt ? new Date(copy.updatedAt).getTime() : 0;
+                          const localPending = local.syncStatus === 'pending' || (local.deviceId && local.deviceId === getSyncMetadataContext().deviceId);
+                          if (localPending || localUpdated > remoteUpdated) {
+                            merged.push(local);
+                            return;
+                          }
+                        }
+
+                        merged.push(copy);
+                      } catch (e) { merged.push(remote); }
                     });
+
+                    // Include any purely-local items that the remote doesn't know about (new adds)
+                    menu.forEach(local => {
+                      try {
+                        const id = getEnterpriseRecordId(local);
+                        if (!remoteById.has(id)) merged.push(local);
+                      } catch (e) { merged.push(local); }
+                    });
+
+                    updateData.menu = merged;
                   }
                   menu = normalizeProductCatalog(updateData.menu || []);
                   activeOrders = updateData.activeOrders;
@@ -10096,6 +10166,16 @@ async function mainInit() {
           }
         } catch (e) {
           console.warn('Error during tenant initialization:', e);
+        }
+
+        try {
+          if (window.checkForAdminNoticeForCurrentShop) {
+            await window.checkForAdminNoticeForCurrentShop();
+          } else {
+            console.warn('Admin notice check function is not available');
+          }
+        } catch (noticeError) {
+          console.warn('Admin notice check failed on startup:', noticeError);
         }
       } else {
         syncUserPresence(false).catch(() => {});
@@ -10564,6 +10644,8 @@ async function loginWithPIN() {
     if (typeof prepareLogin === 'function') prepareLogin('staff');
   }
 }
+// Ensure early global availability for inline handlers
+try { window.loginWithPIN = loginWithPIN; } catch (e) { /* ignore */ }
 
 /**
  * Helper to set session storage and update UI after successful PIN verification
@@ -12009,6 +12091,49 @@ function addNotification(message, type = 'info', action = null) {
   renderNotifications();
 }
 
+function addOrUpdateAdminNoticeNotification(message, sentAt, notices = []) {
+  if (!message || !sentAt) return;
+  const existingIndex = appNotifications.findIndex(n => n.type === 'admin-notice');
+  const notif = {
+    id: 'admin-notice',
+    message,
+    type: 'admin-notice',
+    action: `openAdminNoticeFromNotification(${JSON.stringify('admin-notice')})`,
+    date: new Date(),
+    sentAt,
+    notices
+  };
+  if (existingIndex >= 0) {
+    appNotifications[existingIndex] = notif;
+  } else {
+    appNotifications.unshift(notif);
+  }
+  updateNotificationBadge();
+  renderNotifications();
+}
+
+function removeAdminNoticeNotification() {
+  const before = appNotifications.length;
+  appNotifications = appNotifications.filter(n => n.type !== 'admin-notice');
+  const banner = document.getElementById('admin-notice-banner');
+  if (banner) banner.remove();
+  if (appNotifications.length !== before) {
+    updateNotificationBadge();
+    renderNotifications();
+  }
+}
+
+function openAdminNoticeFromNotification(id = 'admin-notice') {
+  const notice = appNotifications.find(n => n.id === id);
+  if (!notice) return;
+  const payload = Array.isArray(notice.notices) && notice.notices.length ? notice.notices : [{ message: notice.message, sentAt: notice.sentAt }];
+  showAdminNoticesOverlay(payload);
+  if (currentUser && notice.sentAt) {
+    markNoticeReadOnServer(currentUser.uid, notice.sentAt);
+    removeAdminNoticeNotification();
+  }
+}
+
 function updateNotificationBadge() {
   const badge = document.getElementById('update-badge');
   const btn = document.getElementById('update-notification-btn');
@@ -12044,9 +12169,9 @@ function renderNotifications() {
   }
 
   list.innerHTML = appNotifications.map(n => {
-    const actionBtn = n.action ? `<button class="btn" onclick="${n.action}" style="font-size: 0.8em; padding: 4px 8px; margin-top: 5px; background: var(--primary);">Action</button>` : '';
-    const background = n.type === 'alert' ? 'rgba(255,0,0,0.05)' : 'transparent';
-
+    const actionBtn = n.action ? `<button class="btn" onclick="${n.action}" style="font-size: 0.8em; padding: 4px 8px; margin-top: 5px; background: var(--primary);">View</button>` : '';
+    const background = n.type === 'alert' ? 'rgba(255,0,0,0.05)' : (n.type === 'admin-notice' ? 'rgba(255, 0, 0, 0.08)' : 'transparent');
+    const encodedId = typeof n.id === 'string' ? JSON.stringify(n.id) : n.id;
     return `
             <div style="padding: 10px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: start; background: ${background};">
                 <div style="font-size: 0.9em; flex-grow: 1;">
@@ -12054,12 +12179,18 @@ function renderNotifications() {
                     <div style="font-size: 0.8em; color: #888;">${n.date.toLocaleTimeString()}</div>
                     ${actionBtn}
                 </div>
-                <button onclick="dismissNotification(${n.id})" style="background: none; border: none; cursor: pointer; color: #888; font-size: 1.2em; padding: 0 5px;">&times;</button>
+                <button onclick="dismissNotification(${encodedId})" style="background: none; border: none; cursor: pointer; color: #888; font-size: 1.2em; padding: 0 5px;">&times;</button>
             </div>`;
   }).join('');
 }
 
 function dismissNotification(id) {
+  const existing = appNotifications.find(n => n.id === id);
+  if (existing && existing.type === 'admin-notice' && currentUser && existing.sentAt) {
+    markNoticeReadOnServer(currentUser.uid, existing.sentAt);
+    removeAdminNoticeNotification();
+    return;
+  }
   appNotifications = appNotifications.filter(n => n.id !== id);
   updateNotificationBadge();
   renderNotifications();
@@ -12121,6 +12252,7 @@ Object.assign(window, {
   triggerAppUpdate, exportTransactionsToCSV, backupAllData, restoreData, syncRestoredBackupToCloud, prepareLogin,
   manualBarcodeInput, startCameraScan, closeCameraScanner, startMobileConnection, login, loginWithEmail, registerWithEmail, handleForgotPassword, logout, syncNow, renderSyncHealthPanel, closeMobileConnectModal, generateAndPrintBarcodes, requestNotificationPermission,
   showLoginOverlay, testLocalNotification, toggleNotifications, dismissNotification, selectLoginRole, resetLoginStage,
+  renderShopNoticesInSettings, showNoticesPage, closeNoticesPage, addOrUpdateAdminNoticeNotification, removeAdminNoticeNotification, openAdminNoticeFromNotification, checkForAdminNoticeForCurrentShop,
   clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage,
   toggleAdminAccessForm, saveAdminAccessEntry, editAdminAccessEntry, deleteAdminAccessEntry, toggleAdminAccessStatus,
   refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus,
