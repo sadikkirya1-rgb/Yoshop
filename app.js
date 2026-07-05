@@ -1761,7 +1761,7 @@ function initAppAdminDashboardLayout() {
                   <th>Owner</th>
                   <th>WhatsApp</th>
                   <th>Status</th>
-                  <th>Online / Last Seen</th>
+                  <th>Off/ON</th>
                   <th>Subscription</th>
                   <th>Last Sync</th>
                   <th>Actions</th>
