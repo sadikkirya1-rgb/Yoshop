@@ -2235,13 +2235,8 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
     tbody.innerHTML = '';
     tbody.appendChild(fragment);
 
-    if (!window.__appAdminSubscriptionsTimer) {
-      window.__appAdminSubscriptionsTimer = setInterval(() => {
-        if (currentUserRole === 'appAdmin' && document.getElementById('admin-dashboard-view')?.style.display !== 'none') {
-          refreshAppAdminSubscriptions(subscriptionsAdminState.filter);
-        }
-      }, 30000);
-    }
+    // Disable auto-refresh to prevent the dashboard section from shifting or scrolling unexpectedly.
+    // If manual refresh is needed, the admin can still use the Refresh button.
 
     tbody.querySelectorAll('input.subscription-row-checkbox').forEach(checkbox => {
       checkbox.addEventListener('change', (event) => {
