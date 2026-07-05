@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v41';
+const CACHE_NAME = 'yoshop-v42';
 
 const APP_SHELL_URLS = [
   '/',

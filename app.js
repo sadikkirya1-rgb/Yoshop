@@ -542,6 +542,7 @@ let editingAdminEmail = null;
 let syncFailureCount = 0;
 let syncDebounceTimer = null;
 let isDebouncing = false;
+let isSyncing = false;
 const SYNC_DEBOUNCE_DELAY = 300; // 300ms debounce for rapid changes
 let lastSyncTime = 0;
 const MIN_SYNC_INTERVAL = 500; // Minimum 500ms between syncs to respect Firebase limits
@@ -1042,7 +1043,7 @@ async function enqueueLocalSyncAction(action) {
   const envelope = await repositoryService.enqueueSyncAction(action);
   if (envelope) {
     pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
-    updateOnlineStatus().catch(error => {
+    await updateOnlineStatus().catch(error => {
       console.warn('[SYNC] Could not refresh sync status after queue update:', error);
     });
   }
@@ -1664,8 +1665,21 @@ async function syncCloudAction(action) {
 
 async function flushLocalSyncQueue(options = {}) {
   if (!currentUser || !dbFirestore || !navigator.onLine || !localRepositoryReady || !repositoryService) return [];
+  if (isSyncing) return [];
+
+  const statusEl = document.getElementById('connectivity-status');
+  if (statusEl) {
+    statusEl.classList.add('sync-pulse');
+    statusEl.title = 'Online • syncing to cloud...';
+  }
+  isSyncing = true;
 
   const results = await repositoryService.flushSyncQueue(options);
+
+  isSyncing = false;
+  if (statusEl) {
+    statusEl.classList.remove('sync-pulse');
+  }
 
   try {
     if (localRepository && typeof localRepository.getSyncQueue === 'function') {
@@ -1675,9 +1689,11 @@ async function flushLocalSyncQueue(options = {}) {
     console.warn('[SYNC] Could not refresh local sync queue after flush:', error);
   }
 
-  await updateOnlineStatus().catch(error => {
-    console.warn('[SYNC] Could not refresh sync status after queue flush:', error);
-  });
+  if (!options.skipStatusUpdate) {
+    await updateOnlineStatus().catch(error => {
+      console.warn('[SYNC] Could not refresh sync status after queue flush:', error);
+    });
+  }
   return results;
 }
 
@@ -3184,20 +3200,14 @@ async function saveData(syncToCloud = true, options = {}) {
           const statusEl = document.getElementById('connectivity-status');
           if (statusEl) statusEl.style.opacity = '0.5';
 
-          if (syncFailureCount > 5) {
-            console.warn("Sync suspended due to repeated failures. Check Firebase Console configuration.");
-            isDebouncing = false;
-            return;
-          }
-
-          const syncResults = await flushLocalSyncQueue();
+                  const syncResults = await flushLocalSyncQueue({ force: true, skipStatusUpdate: true });
           const syncSummary = summarizeSyncResults(syncResults);
 
           lastSyncTime = Date.now();
 
           if (syncSummary.failed > 0) {
             syncFailureCount += syncSummary.failed;
-          } else if (syncSummary.scheduled === 0) {
+          } else {
             syncFailureCount = 0;
           }
 
@@ -3578,6 +3588,12 @@ async function updateOnlineStatus() {
   const statusEl = document.getElementById('connectivity-status');
   if (!statusEl) return;
 
+  if (navigator.onLine && !isSyncing) {
+    await flushLocalSyncQueue({ force: true, skipStatusUpdate: true }).catch(error => {
+      console.warn('[SYNC] Forced online queue flush failed:', error);
+    });
+  }
+
   const { pendingCount, retryCount, retryNowCount, retryLaterCount, nextRetryAt } = await getPendingSyncSummary();
   renderSyncHealthPanel().catch(console.warn);
 
@@ -3594,46 +3610,31 @@ async function updateOnlineStatus() {
     return;
   }
 
-  if (retryLaterCount > 0 && retryNowCount === 0 && syncFailureCount === 0) {
-    const retryTime = nextRetryAt
-      ? new Date(nextRetryAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-      : 'soon';
-
+  if (isSyncing) {
     renderSyncStatus({
-      state: '🟠',
-      label: `${pendingCount} Retry Later`,
-      title: `Online • ${retryLaterCount} item(s) waiting to retry at ${retryTime}`,
-      background: '#f97316',
-      showBadge: true
-    });
-    return;
-  }
-
-  if (syncFailureCount > 0 || retryNowCount > 0) {
-    renderSyncStatus({
-      state: '🟠',
-      label: pendingCount > 0 ? `${pendingCount} Retry` : 'Retry',
-      title: `Online • sync needs retry (${syncFailureCount || retryNowCount} issue(s))`,
-      background: '#dc2626',
-      showBadge: true
+      state: '🟢',
+      label: '',
+      title: 'Online • syncing to cloud...',
+      background: '#16a34a',
+      showBadge: false
     });
     return;
   }
 
   if (pendingCount > 0) {
     renderSyncStatus({
-      state: '🟡',
-      label: `${pendingCount} Pending`,
-      title: `Online • ${pendingCount} change(s) waiting to sync`,
+      state: '🔄',
+      label: '',
+      title: `Online • syncing ${pendingCount} item(s) to cloud...`,
       background: '#f59e0b',
-      showBadge: true
+      showBadge: false
     });
     return;
   }
 
   renderSyncStatus({
     state: '🟢',
-    label: 'Synced',
+    label: '',
     title: 'Online & synced',
     background: '#16a34a',
     showBadge: false
