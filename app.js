@@ -47,6 +47,63 @@ try {
   console.error("Firestore init error:", error);
 }
 
+async function markNoticeReadOnServer(uid, sentAt) {
+  if (!uid || !dbFirestore || !sentAt) return;
+  try {
+    const readEntry = { sentAt, readAt: new Date().toISOString(), by: uid };
+    await setDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'), { appAdminSettings: { lastNoticeReadAt: sentAt, noticeReads: arrayUnion(readEntry) } }, { merge: true });
+  } catch (e) {
+    console.warn('Failed to mark notice read on server:', e);
+  }
+}
+
+async function renderShopNoticesInSettings() {
+  const container = document.getElementById('shopNoticesList');
+  if (!container) return;
+  container.innerHTML = '<p style="opacity:0.7;">Loading notices...</p>';
+  if (!currentUser || !dbFirestore) {
+    container.innerHTML = '<p style="opacity:0.7;">Not available.</p>';
+    return;
+  }
+  try {
+    const snap = await getDoc(doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile'));
+    if (!snap.exists()) { container.innerHTML = '<p style="opacity:0.7;">No notices.</p>'; return; }
+    const data = snap.data() || {};
+    const notices = Array.isArray(data.appAdminSettings && data.appAdminSettings.notices) ? (data.appAdminSettings.notices.slice().reverse()) : (data.appAdminSettings && data.appAdminSettings.noticeMessage ? [{ message: data.appAdminSettings.noticeMessage, sentAt: data.appAdminSettings.noticeSentAt }] : []);
+    if (!notices || notices.length === 0) { container.innerHTML = '<p style="opacity:0.7;">No notices.</p>'; return; }
+    container.innerHTML = '';
+    notices.forEach(n => {
+      const card = document.createElement('div');
+      card.className = 'admin-notice-card';
+      const meta = document.createElement('div'); meta.className = 'meta'; meta.textContent = n.by ? `${n.by} • ${n.sentAt ? new Date(n.sentAt).toLocaleString() : ''}` : `${n.sentAt ? new Date(n.sentAt).toLocaleString() : ''}`;
+      const msg = document.createElement('div'); msg.textContent = n.message || n;
+      const actions = document.createElement('div'); actions.style.marginTop = '8px'; actions.style.display = 'flex'; actions.style.gap = '8px'; actions.style.justifyContent = 'flex-end';
+      const markBtn = document.createElement('button'); markBtn.className = 'btn btn-secondary'; markBtn.textContent = 'Mark Read'; markBtn.onclick = async () => { try { await markNoticeReadOnServer(currentUser.uid, n.sentAt || new Date().toISOString()); markBtn.textContent = 'Marked'; markBtn.disabled = true; } catch (e) {} };
+      actions.appendChild(markBtn);
+      card.appendChild(meta); card.appendChild(msg); card.appendChild(actions);
+      container.appendChild(card);
+    });
+  } catch (e) {
+    console.warn('Failed to render shop notices:', e);
+    container.innerHTML = '<p style="color:red;">Error loading notices.</p>';
+  }
+}
+
+async function markAllNoticesRead() {
+  if (!currentUser) return;
+  try {
+    const snap = await getDoc(doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile'));
+    if (!snap.exists()) return;
+    const data = snap.data() || {};
+    const notices = Array.isArray(data.appAdminSettings && data.appAdminSettings.notices) ? data.appAdminSettings.notices : [];
+    const latest = notices.length ? notices[notices.length - 1] : (data.appAdminSettings && data.appAdminSettings.noticeSentAt) ? { sentAt: data.appAdminSettings.noticeSentAt } : null;
+    if (latest && latest.sentAt) await markNoticeReadOnServer(currentUser.uid, latest.sentAt);
+    // Also set local seen key
+    try { localStorage.setItem(`lastAdminNoticeSeen_${currentUser.uid}`, latest && latest.sentAt ? latest.sentAt : new Date().toISOString()); } catch (e) {}
+    renderShopNoticesInSettings();
+  } catch (e) { console.warn(e); }
+}
+
 console.log("Firebase initialized for project:", firebaseConfig.projectId);
 
 const storage = getStorage(app);
@@ -6594,6 +6651,18 @@ function renderReport() {
               </tbody>
             </table>
           </div>
+          <!-- Notices Panel (shop owner view) -->
+          <div class="form-panel">
+            <h4 class="u-m-0">Notices</h4>
+            <p class="u-fs-08 u-text-muted u-mb-15">Messages sent by the App Admin. Recent notices appear at the top.</p>
+            <div id="shopNoticesList">
+              <p style="opacity:0.7;">Loading notices...</p>
+            </div>
+            <div style="display:flex; gap:8px; margin-top:10px;">
+              <button class="btn btn-info" onclick="renderShopNoticesInSettings()">Refresh Notices</button>
+              <button class="btn btn-secondary" onclick="markAllNoticesRead()">Mark All Read</button>
+            </div>
+          </div>
         </div>`;
 
     if (showCharts) {
@@ -7521,6 +7590,7 @@ function loadSettings() {
     if (linkBtn) linkBtn.style.display = (isGoogleUser && !isEmailUser) ? 'block' : 'none';
     // Check for admin notices targeted at this shop and surface them to the owner
     try { checkForAdminNoticeForCurrentShop(); } catch (e) { /* non-blocking */ }
+    try { renderShopNoticesInSettings(); } catch (e) { /* non-blocking */ }
   }
 
 
@@ -7560,27 +7630,26 @@ function createAdminNoticeBanner(notice, sentAt, notices = [], storageKey) {
   const header = document.querySelector('header');
   const container = document.createElement('div');
   container.id = 'admin-notice-banner';
-  container.style.cssText = 'position:sticky; top:0; z-index:9999; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; background:#fff8e1; border-left:6px solid #ffc107; box-shadow:0 2px 8px rgba(0,0,0,0.06); font-size:0.95em;';
+  container.className = 'admin-notice-banner';
 
   const msg = document.createElement('div');
-  msg.style.flex = '1 1 auto';
-  msg.style.marginRight = '12px';
+  msg.className = 'notice-message';
   msg.textContent = notice;
 
   const actions = document.createElement('div');
-  actions.style.display = 'flex';
-  actions.style.gap = '8px';
+  actions.className = 'notice-actions';
 
   const viewBtn = document.createElement('button');
   viewBtn.className = 'btn btn-info';
   viewBtn.textContent = 'View';
-  viewBtn.onclick = () => showAdminNoticesOverlay(notices);
+  viewBtn.onclick = () => { showAdminNoticesOverlay(notices); if (currentUser && sentAt) markNoticeReadOnServer(currentUser.uid, sentAt); };
 
   const dismissBtn = document.createElement('button');
   dismissBtn.className = 'btn btn-secondary';
   dismissBtn.textContent = 'Dismiss';
   dismissBtn.onclick = () => {
     try { if (storageKey) localStorage.setItem(storageKey, sentAt || new Date().toISOString()); } catch (e) {}
+    if (currentUser && sentAt) markNoticeReadOnServer(currentUser.uid, sentAt);
     container.remove();
   };
 
@@ -7604,10 +7673,10 @@ function showAdminNoticesOverlay(notices = []) {
 
   const overlay = document.createElement('div');
   overlay.id = 'admin-notices-overlay';
-  overlay.style.cssText = 'position:fixed; inset:0; z-index:10000; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,0.4);';
+  overlay.className = 'admin-notices-overlay';
 
   const panel = document.createElement('div');
-  panel.style.cssText = 'width:90%; max-width:720px; max-height:80vh; overflow:auto; background:var(--card); padding:18px; border-radius:12px; box-shadow:0 10px 30px rgba(0,0,0,0.2);';
+  panel.className = 'admin-notices-panel';
 
   const title = document.createElement('h3');
   title.textContent = 'Admin Notices';
@@ -7620,9 +7689,7 @@ function showAdminNoticesOverlay(notices = []) {
     panel.appendChild(p);
   } else {
     const list = document.createElement('div');
-    list.style.display = 'flex';
-    list.style.flexDirection = 'column';
-    list.style.gap = '12px';
+    list.className = 'admin-notices-list';
 
     // Sort by sentAt desc if possible
     const sorted = notices.slice().sort((a, b) => {
