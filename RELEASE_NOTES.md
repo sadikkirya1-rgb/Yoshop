@@ -1,11 +1,11 @@
-YoShop - Release 2026-07-05 v20260705-v2
+YoShop - Release 2026-07-06 v20260706-v1
 
 Changes in this release:
 
 - Fix: Prevent newly-added stock items from disappearing due to cloud snapshot overwrites. Remote menu updates now merge with local pending/new items and prefer local pending changes.
 - Fix: Await local `saveData()` in `saveNewStockItem()` and added robust try/catch/logging to surface errors.
 - Improvement: Exposed inline handlers (`loginWithPIN`, `toggleNav`, `closeNoticesPage`, `checkForAdminNoticeForCurrentShop`) early to avoid ReferenceErrors when module loads late or is cached by SW.
-- Improvement: Bumped service worker cache name to `yoshop-v41` and updated versioned assets to `app.js?v=20260705-v2` and `style.css?v=20260705-v2`.
+- Improvement: Bumped service worker cache name to `yoshop-v43` and updated versioned assets to `app.js?v=20260706-v1` and `style.css?v=20260706-v1`.
 - Diagnostics: Added `[DEBUG_STOCK]` and `[SYNC_PRODUCTS]` console logs to help trace save/sync flows.
 
 Deployment instructions:

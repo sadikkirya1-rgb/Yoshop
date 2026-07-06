@@ -543,9 +543,9 @@ let syncFailureCount = 0;
 let syncDebounceTimer = null;
 let isDebouncing = false;
 let isSyncing = false;
-const SYNC_DEBOUNCE_DELAY = 300; // 300ms debounce for rapid changes
+const SYNC_DEBOUNCE_DELAY = 200; // 200ms debounce for rapid changes (reduced for quicker sync)
 let lastSyncTime = 0;
-const MIN_SYNC_INTERVAL = 500; // Minimum 500ms between syncs to respect Firebase limits
+const MIN_SYNC_INTERVAL = 200; // Minimum 200ms between syncs to allow near-immediate updates
 
 // ===== PRODUCTION OPTIMIZATION: Request Deduplication & Caching =====
 const requestCache = new Map(); // Cache for expensive queries
@@ -1107,8 +1107,24 @@ function looksLikeDefaultSettings(value) {
     value.address === defaults.address &&
     value.contact === defaults.contact &&
     value.currency === defaults.currency &&
-    !value.logo
+    value.logo === defaults.logo
   );
+}
+
+// Global sanitizer to convert undefined values to null recursively for Firestore
+function sanitizeForFirestore(value) {
+  if (value === undefined) return null;
+  if (value === null) return null;
+  if (Array.isArray(value)) return value.map(v => sanitizeForFirestore(v));
+  if (typeof value === 'object') {
+    const out = {};
+    Object.keys(value).forEach(k => {
+      const v = value[k];
+      out[k] = sanitizeForFirestore(v);
+    });
+    return out;
+  }
+  return value;
 }
 
 function shouldProtectSettingsOverwrite(incomingSettings, remoteSettings) {
@@ -1386,17 +1402,17 @@ async function syncEnterpriseRecordAction(action) {
     const normalizedPayload = normalizeProductCatalog([payload])[0] || payload;
     const canonicalId = normalizedPayload.recordId || normalizedPayload.id || String(recordId);
     if (canonicalId && canonicalId !== String(recordId)) {
-      await setDoc(doc(dbFirestore, 'users', currentUser.uid, collectionName, String(canonicalId)), {
-        ...normalizedPayload,
-        id: String(canonicalId),
-        recordId: String(canonicalId),
-        deleted: false,
-        deletedAt: null,
-        operation: null,
-        syncStatus: 'synced',
-        lastSyncedAt: new Date().toISOString(),
-        lastSyncAt: new Date().toISOString()
-      }, { merge: true });
+        await setDoc(doc(dbFirestore, 'users', currentUser.uid, collectionName, String(canonicalId)), sanitizeForFirestore({
+          ...normalizedPayload,
+          id: String(canonicalId),
+          recordId: String(canonicalId),
+          deleted: false,
+          deletedAt: null,
+          operation: null,
+          syncStatus: 'synced',
+          lastSyncedAt: new Date().toISOString(),
+          lastSyncAt: new Date().toISOString()
+        }), { merge: true });
     }
   }
 
@@ -1426,7 +1442,7 @@ async function syncEnterpriseRecordAction(action) {
   }
   const { operation, ...recordPayload } = payload;
 
-  await setDoc(recordRef, {
+  await setDoc(recordRef, sanitizeForFirestore({
     ...recordPayload,
     deleted: false,
     deletedAt: null,
@@ -1434,7 +1450,7 @@ async function syncEnterpriseRecordAction(action) {
     syncStatus: 'synced',
     lastSyncedAt: new Date().toISOString(),
     lastSyncAt: new Date().toISOString()
-  }, { merge: true });
+  }), { merge: true });
 
   await markEnterpriseRecordSyncedLocally(action);
 
@@ -1515,7 +1531,7 @@ async function cleanupDuplicateProductRecordsInCloud(uid) {
       const canonicalId = String(canonicalRecord?.recordId || canonicalRecord?.id || group[0]?.recordId || group[0]?.id || '').trim();
       if (!canonicalId) continue;
 
-      await setDoc(doc(dbFirestore, 'users', uid, 'products', canonicalId), {
+      await setDoc(doc(dbFirestore, 'users', uid, 'products', canonicalId), sanitizeForFirestore({
         ...canonicalRecord,
         id: canonicalId,
         recordId: canonicalId,
@@ -1525,7 +1541,7 @@ async function cleanupDuplicateProductRecordsInCloud(uid) {
         syncStatus: 'synced',
         lastSyncedAt: new Date().toISOString(),
         lastSyncAt: new Date().toISOString()
-      }, { merge: true });
+      }), { merge: true });
 
       const duplicatesToDelete = group.filter(record => String(record?.recordId || record?.id || '').trim() !== canonicalId);
       await Promise.allSettled(duplicatesToDelete.map(record => deleteDoc(doc(dbFirestore, 'users', uid, 'products', String(record?.id || record?.recordId || '')))));
@@ -1571,26 +1587,26 @@ async function backfillEnterpriseRecordCollectionsOnce(uid) {
         const deduped = normalizeProductCatalog([hydratedRecord])[0] || hydratedRecord;
         const canonicalId = deduped.recordId || deduped.id || String(recordId);
         if (canonicalId !== String(recordId)) {
-          await setDoc(doc(dbFirestore, 'users', uid, group.collectionName, String(canonicalId)), {
+          await setDoc(doc(dbFirestore, 'users', uid, group.collectionName, String(canonicalId)), sanitizeForFirestore({
             ...deduped,
             id: String(canonicalId),
             recordId: String(canonicalId),
             syncStatus: 'synced',
             lastSyncedAt: new Date().toISOString(),
             lastSyncAt: new Date().toISOString()
-          }, { merge: true });
+          }), { merge: true });
           continue;
         }
       }
 
       await setDoc(
         doc(dbFirestore, 'users', uid, group.collectionName, String(recordId)),
-        {
+        sanitizeForFirestore({
           ...hydratedRecord,
           syncStatus: 'synced',
           lastSyncedAt: new Date().toISOString(),
           lastSyncAt: new Date().toISOString()
-        },
+        }),
         { merge: true }
       );
     }
@@ -1607,35 +1623,52 @@ async function syncCloudAction(action) {
     throw new Error('Cloud sync is waiting for an authenticated session.');
   }
 
+  // Convert undefined values to null recursively so Firestore doesn't reject documents
+  function sanitizeForFirestore(value) {
+    if (value === undefined) return null;
+    if (value === null) return null;
+    if (Array.isArray(value)) return value.map(v => sanitizeForFirestore(v));
+    if (typeof value === 'object') {
+      const out = {};
+      Object.keys(value).forEach(k => {
+        const v = value[k];
+        out[k] = sanitizeForFirestore(v);
+      });
+      return out;
+    }
+    return value;
+  }
+
   const queueCollectionPath = getSyncQueueCollectionPath(currentUser.uid);
   const queueDocRef = doc(collection(dbFirestore, ...queueCollectionPath), action.id);
-  await setDoc(queueDocRef, { ...action, syncStatus: 'synced', lastSyncAt: new Date().toISOString() }, { merge: true });
+  const sanitizedQueueEntry = sanitizeForFirestore({ ...action, syncStatus: 'synced', lastSyncAt: new Date().toISOString() });
+  await setDoc(queueDocRef, sanitizedQueueEntry, { merge: true });
 
   if (await syncEnterpriseRecordAction(action)) {
     return;
   }
 
   const cloudPayload = getCloudPayloadForSyncAction(action);
-  if (cloudPayload) {
-    const shopDocRef = doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile');
-    const safeCloudPayload = await protectCloudPayloadFromEmptyOverwrite(shopDocRef, cloudPayload, action);
-    if (safeCloudPayload) {
-      await setDoc(shopDocRef, safeCloudPayload, { merge: true });
+    if (cloudPayload) {
+      const shopDocRef = doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile');
+      const safeCloudPayload = await protectCloudPayloadFromEmptyOverwrite(shopDocRef, cloudPayload, action);
+      if (safeCloudPayload) {
+        await setDoc(shopDocRef, sanitizeForFirestore(safeCloudPayload), { merge: true });
+      }
+      return;
     }
-    return;
-  }
 
   if (action.entityType === 'sales' || action.entityType === 'transactions') {
     const txRef = collection(dbFirestore, 'users', currentUser.uid, 'transactions');
     const payload = action.payload || {};
     const txId = payload.id || action.id;
-    await setDoc(doc(txRef, txId), {
+    await setDoc(doc(txRef, txId), sanitizeForFirestore({
       ...payload,
       synced: true,
       syncStatus: 'synced',
       lastSyncedAt: new Date().toISOString(),
       lastSyncAt: new Date().toISOString()
-    }, { merge: true });
+    }), { merge: true });
 
     await markTransactionSyncedLocally(action);
     return;
@@ -1645,12 +1678,12 @@ async function syncCloudAction(action) {
     const auditRef = collection(dbFirestore, 'users', currentUser.uid, 'audit_log');
     const payload = action.payload || {};
     const auditId = payload.id || action.id;
-    await setDoc(doc(auditRef, auditId), {
+    await setDoc(doc(auditRef, auditId), sanitizeForFirestore({
       ...payload,
       syncStatus: 'synced',
       lastSyncedAt: new Date().toISOString(),
       lastSyncAt: new Date().toISOString()
-    }, { merge: true });
+    }), { merge: true });
     return;
   }
 
@@ -1658,7 +1691,7 @@ async function syncCloudAction(action) {
     const notificationRef = collection(dbFirestore, 'users', currentUser.uid, 'notifications');
     const payload = action.payload || {};
     const notificationId = payload.id || action.id;
-    await setDoc(doc(notificationRef, notificationId), { ...payload, lastSyncedAt: new Date().toISOString() }, { merge: true });
+    await setDoc(doc(notificationRef, notificationId), sanitizeForFirestore({ ...payload, lastSyncedAt: new Date().toISOString() }), { merge: true });
     return;
   }
 }
@@ -1727,7 +1760,7 @@ async function scheduleBackgroundSync() {
     } catch (error) {
       console.warn('[SYNC] Background sync failed:', error);
     }
-  }, 2000);
+  }, 300);
 }
 
 async function restoreImageCache() {
@@ -3189,6 +3222,14 @@ async function saveData(syncToCloud = true, options = {}) {
     // Debounce cloud sync to prevent excessive Firebase writes
     const effectiveUid = getEffectiveUid();
     if (syncToCloud && effectiveUid && isInitialLoadComplete && dbFirestore) {
+      // If we're online and ready, attempt an immediate flush so new items sync on-spot
+      if (navigator.onLine && !isSyncing) {
+        try {
+          await flushLocalSyncQueue({ force: true, skipStatusUpdate: true });
+        } catch (e) {
+          console.warn('[SYNC] Immediate flush failed:', e);
+        }
+      }
       if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
       syncDebounceTimer = setTimeout(async () => {
         syncDebounceTimer = null;
@@ -3532,8 +3573,16 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
   const syncBtn = document.getElementById('header-sync-status');
 
   if (statusEl) {
-    statusEl.textContent = state;
-    statusEl.title = title;
+    const isSyncVisual = /syncing/i.test(String(title || '')) || state === '🔄' || isSyncing === true;
+    if (isSyncVisual) {
+      statusEl.innerHTML = '🟢';
+      statusEl.title = title;
+      statusEl.classList.add('sync-pulse');
+    } else {
+      statusEl.classList.remove('sync-pulse');
+      statusEl.textContent = state;
+      statusEl.title = title;
+    }
   }
 
   if (syncBtn) {

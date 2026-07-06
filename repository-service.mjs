@@ -122,6 +122,7 @@ export function createRepositoryService(options = {}) {
       const queue = await repository.getSyncQueue();
       const results = [];
       const now = Date.now();
+      console.log('[SYNC] Flushing sync queue, length:', Array.isArray(queue) ? queue.length : 0);
 
       for (const action of queue) {
         const nextRetryTime = action.nextRetryAt ? new Date(action.nextRetryAt).getTime() : 0;
@@ -136,12 +137,15 @@ export function createRepositoryService(options = {}) {
         }
 
         try {
+          console.log('[SYNC] Processing action:', action.id, action.entityType, action.payload && (action.payload.recordId || action.payload.id));
           await cloudSyncHandler(action);
           await repository.markSyncActionProcessed(action.id);
           results.push({ id: action.id, status: 'processed' });
+          console.log('[SYNC] Processed action:', action.id);
         } catch (error) {
           await repository.markSyncActionFailed(action.id, error.message || 'Sync failed');
           results.push({ id: action.id, status: 'pending', error: error.message || 'Sync failed' });
+          console.warn('[SYNC] Action failed:', action.id, error && error.message);
         }
       }
 

@@ -580,6 +580,11 @@ export function createBusinessRepository(options = {}) {
         allRequest.onerror = () => reject(allRequest.error || new Error('Failed to inspect sync queue'));
       });
 
+      // Debug: log enqueue details for tracing
+      try {
+        // eslint-disable-next-line no-console
+        console.log('[SYNC] Enqueued sync action:', envelope.id, envelope.entityType, envelope.payload && (envelope.payload.recordId || envelope.payload.id));
+      } catch (e) {}
       return envelope;
     },
     getSyncQueue: async () => {
