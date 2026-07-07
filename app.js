@@ -8984,6 +8984,7 @@ function setupSettingsAccordion() {
 // ===== Inventory Management (Settings Tab) =====
 function renderInventoryReport() {
   const tbody = document.getElementById('lowStockReportBody');
+  const dashboardTbody = document.getElementById('dashboardLowStockBody');
   if (!tbody) return;
   tbody.innerHTML = '';
   const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
@@ -8993,9 +8994,10 @@ function renderInventoryReport() {
 
   if (lowStockItems.length === 0) {
     tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; padding: 15px;">No items are currently low on stock.</td></tr>`;
+    if (dashboardTbody) dashboardTbody.innerHTML = `<tr><td colspan="3" style="text-align: center; padding: 12px;">No items are currently low on stock.</td></tr>`;
     return;
   }
-
+  // Populate full low stock table
   lowStockItems.forEach(item => {
     const stock = calculateDishStock(item, true);
     const tr = document.createElement('tr');
@@ -9006,6 +9008,21 @@ function renderInventoryReport() {
       `;
     tbody.appendChild(tr);
   });
+
+  // Populate dashboard low stock with up to 5 items for quick view
+  if (dashboardTbody) {
+    dashboardTbody.innerHTML = '';
+    lowStockItems.slice(0, 5).forEach(item => {
+      const stock = calculateDishStock(item, true);
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+          <td>${item.name}</td>
+          <td>${item.category}</td>
+          <td style="text-align: right; color: #dc3545; font-weight: bold;">${Number(stock).toFixed(1)}</td>
+        `;
+      dashboardTbody.appendChild(tr);
+    });
+  }
 }
 
 function renderStockListTable() {
