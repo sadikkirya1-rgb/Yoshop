@@ -368,6 +368,7 @@
       <button onclick="showTab('unitTab', this)"><span>📏</span><span>Units</span></button>
       <button onclick="showTab('staffTab', this)"><span>👥</span><span>Staff</span></button>
       <button onclick="showTab('customerTab', this)"><span>👤</span><span>Customers</span></button>
+      <button onclick="showTab('invoicesTab', this)"><span>📄</span><span>Invoices</span></button>
       <button onclick="showTab('stockTab', this)"><span>📦</span><span>Stock</span></button>
       <button onclick="showTab('transactionsTab', this)"><span>🧾</span><span>Sales</span></button>
       <button onclick="showTab('reportsTab', this)"><span>📈</span><span>Reports</span></button>
@@ -632,15 +633,62 @@
                 <th>Name</th>
                 <th>Contact</th>
                 <th>Address</th>
-                <th style="text-align: right;">Subtotal</th>
-                <th style="text-align: right;">Total</th>
-                <th style="text-align: right;">Paid</th>
-                <th style="text-align: right;">Balance</th>
-                <th style="text-align: right;">Date</th>
-                <th style="text-align: right; white-space: nowrap;">Action</th>
               </tr>
             </thead>
             <tbody id="customerListBody"></tbody>
+          </table>
+          <div id="customerDetailsSection" class="form-panel" style="display:none; margin-top:20px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+              <h5 style="margin:0;">Customer Details</h5>
+              <button class="btn btn-secondary" type="button" onclick="hideCustomerDetails()">Close</button>
+            </div>
+            <div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom:12px;">
+              <div><strong>Name</strong><div id="customerDetailsName" style="margin-top:6px;"></div></div>
+              <div><strong>Contact</strong><div id="customerDetailsContact" style="margin-top:6px;"></div></div>
+              <div><strong>Address</strong><div id="customerDetailsAddress" style="margin-top:6px;"></div></div>
+              <div><strong>Balance</strong><div id="customerDetailsBalance" style="margin-top:6px;"></div></div>
+            </div>
+            <div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom:12px;">
+              <div><strong>Subtotal</strong><div id="customerDetailsSubtotal" style="margin-top:6px;"></div></div>
+              <div><strong>Total</strong><div id="customerDetailsTotal" style="margin-top:6px;"></div></div>
+              <div><strong>Paid</strong><div id="customerDetailsPaid" style="margin-top:6px;"></div></div>
+              <div><strong>Last Active</strong><div id="customerDetailsLastDate" style="margin-top:6px;"></div></div>
+            </div>
+            <div>
+              <h6 style="margin:0 0 8px 0;">Recent Adjustments</h6>
+              <div id="customerDetailsAdjustments" style="background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:10px;">
+                <p style="margin:0; color:#6c757d;">Select a customer to view adjustments.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Invoices -->
+      <section id="invoicesTab">
+        <h3>🧾 Invoices</h3>
+        <div class="input-row u-mb-15" style="gap: 10px; flex-wrap: wrap;">
+          <input type="date" id="invoiceStartDate" onchange="renderInvoices()">
+          <input type="date" id="invoiceEndDate" onchange="renderInvoices()">
+        </div>
+        <div class="u-mb-10" id="invoiceCountInfo">Showing 0 of 0 invoices</div>
+        <div class="u-overflow-x-auto">
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllInvoiceRows" onchange="toggleSelectAllRows('invoiceListBody', this.checked); updateSelectAllHeader('invoiceListBody','selectAllInvoiceRows')"></th>
+                <th>#</th>
+                <th>Date</th>
+                <th>Customer</th>
+                <th>Invoice #</th>
+                <th style="text-align: right;">Subtotal</th>
+                <th style="text-align: right;">Paid</th>
+                <th style="text-align: right;">Balance</th>
+                <th style="text-align: right;">Adjusted</th>
+                <th style="text-align: right;">Action</th>
+              </tr>
+            </thead>
+            <tbody id="invoiceListBody"></tbody>
           </table>
         </div>
       </section>
@@ -1128,3 +1176,4 @@
   </div>
 
 </body>
+</html>
