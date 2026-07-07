@@ -390,6 +390,37 @@
     border-radius: 10px;
     box-shadow: 0 2px 6px rgba(0,0,0,0.08);
   }
+  .dashboard-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .dashboard-controls .input-row {
+    margin: 0;
+  }
+  .dashboard-filter-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+  }
+  .dashboard-filter-buttons .button-group {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .dashboard-filter-buttons button {
+    min-width: 110px;
+    margin: 0;
+  }
+  .dashboard-filter-buttons .input-row {
+    margin: 0;
+  }
+  .dashboard-filter-buttons .input-row label {
+    margin-right: 6px;
+  }
 
   /* Constrain chart canvas sizes for admin dashboard smaller layout */
   .charts-container .chart-wrapper canvas {

@@ -11,5 +11,6 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "acorn": "^8.17.0"
   }
 }

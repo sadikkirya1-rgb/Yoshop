@@ -4402,6 +4402,7 @@ function showTab(tabId, btn) {
   // Special rendering logic for tabs
   switch (tabId) {
     case 'dashboardTab':
+      initializeDashboardFilters();
       updateDashboard();
       break;
     case 'transactionsTab':
@@ -7232,6 +7233,85 @@ let staffRevenueChartInstance;
 let reportProfitChartInstance;
 let monthlyRevenueChartInstance;
 
+let dashboardDateFilterMode = 'all';
+
+function updateQuickFilterButtons(selected) {
+  document.querySelectorAll('.dashboard-filter-buttons button').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.filter === selected);
+  });
+}
+
+function setDashboardFilter(filter) {
+  dashboardDateFilterMode = filter;
+  const fromInput = document.getElementById('dashboardFromDate');
+  const toInput = document.getElementById('dashboardToDate');
+  const now = new Date();
+  const todayValue = now.toISOString().split('T')[0];
+
+  if (filter === 'today') {
+    if (fromInput) fromInput.value = todayValue;
+    if (toInput) toInput.value = todayValue;
+  } else if (filter === 'yesterday') {
+    const yesterday = new Date(now);
+    yesterday.setDate(now.getDate() - 1);
+    const yesterdayValue = yesterday.toISOString().split('T')[0];
+    if (fromInput) fromInput.value = yesterdayValue;
+    if (toInput) toInput.value = yesterdayValue;
+  } else if (filter === '7d') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 6);
+    if (fromInput) fromInput.value = start.toISOString().split('T')[0];
+    if (toInput) toInput.value = todayValue;
+  } else if (filter === '30d') {
+    const start = new Date(now);
+    start.setDate(now.getDate() - 29);
+    if (fromInput) fromInput.value = start.toISOString().split('T')[0];
+    if (toInput) toInput.value = todayValue;
+  } else {
+    if (fromInput) fromInput.value = '';
+    if (toInput) toInput.value = '';
+  }
+
+  updateQuickFilterButtons(filter);
+  updateDashboard();
+}
+
+function applyDashboardDateFilter() {
+  dashboardDateFilterMode = 'custom';
+  updateQuickFilterButtons('custom');
+  updateDashboard();
+}
+
+function getDashboardDateRange() {
+  const fromValue = document.getElementById('dashboardFromDate')?.value;
+  const toValue = document.getElementById('dashboardToDate')?.value;
+  let startDate = fromValue ? new Date(fromValue) : null;
+  let endDate = toValue ? new Date(toValue) : null;
+  if (startDate && Number.isNaN(startDate.getTime())) startDate = null;
+  if (endDate && !Number.isNaN(endDate.getTime())) {
+    endDate.setHours(23, 59, 59, 999);
+  } else {
+    endDate = null;
+  }
+  return { startDate, endDate };
+}
+
+function getFilteredDashboardTransactions() {
+  const { startDate, endDate } = getDashboardDateRange();
+  const allTx = Array.isArray(transactions) ? transactions : [];
+  return allTx.filter(tx => {
+    const txDate = new Date(tx.date);
+    if (Number.isNaN(txDate.getTime())) return false;
+    if (startDate && txDate < startDate) return false;
+    if (endDate && txDate > endDate) return false;
+    return true;
+  });
+}
+
+function initializeDashboardFilters() {
+  updateQuickFilterButtons(dashboardDateFilterMode);
+}
+
 function updateDashboard() {
   // Initialize with defaults even if data is not yet loaded
   // This ensures the dashboard always shows cards with 0 values
@@ -7239,6 +7319,7 @@ function updateDashboard() {
   if (!transactions) transactions = [];
 
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
+  const filteredTransactions = getFilteredDashboardTransactions();
   const allProducts = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
   const categoriesForDashboard = new Set([
     ...allProducts.map(d => d && d.category).filter(Boolean),
@@ -7253,45 +7334,59 @@ function updateDashboard() {
     .filter(item => item.stock !== undefined) // Filter for items with a stock property (raw ingredients)
     .reduce((sum, item) => sum + (item.stock * (item.costPrice || 0)), 0);
 
-  // Calculate total revenue and total cost of goods sold (COGS) from all transactions
-  const totalRevenue = transactions.reduce((sum, t) => sum + (t.total || 0), 0);
-  const totalCost = transactions.reduce((sum, t) => {
+  // Calculate total revenue and total cost of goods sold (COGS) from filtered transactions
+  const totalRevenue = filteredTransactions.reduce((sum, t) => sum + (t.total || 0), 0);
+  const totalCost = filteredTransactions.reduce((sum, t) => {
     const transactionCost = (t.items || []).reduce((itemSum, item) => {
       const dish = menu.find(d => d.name === item.name);
-      // Use the costPrice stored on the dish, which is calculated from its recipe
       return itemSum + ((dish ? dish.costPrice : 0) * (item.qty || 0));
     }, 0);
     return sum + transactionCost;
   }, 0);
 
   const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
-  const totalBills = transactions.length;
+  const netProfit = totalRevenue - totalCost;
+  const totalBills = filteredTransactions.length;
+  const outstandingDebt = (Array.isArray(customers) ? customers : []).reduce((sum, customer) => {
+    const balance = parseFloat(customer.balance) || 0;
+    return sum + (balance < 0 ? Math.abs(balance) : 0);
+  }, 0);
+  const pendingInvoices = (Array.isArray(customers) ? customers : []).filter(customer => (parseFloat(customer.balance) || 0) < 0).length;
 
   // Always update dashboard cards (even with 0 values)
   document.getElementById('stockValue').textContent = formatCurrency(totalStockValue);
   document.getElementById('profitPercentage').textContent = profitMargin.toFixed(2);
+  document.getElementById('netProfit').textContent = formatCurrency(netProfit);
   document.getElementById('totalRevenue').textContent = formatCurrency(totalRevenue);
   document.getElementById('totalBills').textContent = totalBills;
+  document.getElementById('outstandingDebt').textContent = formatCurrency(outstandingDebt);
+  document.getElementById('pendingInvoices').textContent = pendingInvoices;
+  const avgOrderValue = totalBills > 0 ? totalRevenue / totalBills : 0;
+  document.getElementById('avgOrderValue').textContent = formatCurrency(avgOrderValue);
 
   updateCurrencyDisplay();
 
   // Render charts - they will show empty/zero state if no data
   try {
     renderDashboardChart();
-    renderBestSellingItemsChart();
-    renderDailySalesChart();
+    renderBestSellingItemsChart(filteredTransactions);
+    renderDailySalesChart(filteredTransactions);
   } catch (error) {
     console.error('Error rendering dashboard charts:', error);
   }
 }
 
-function renderBestSellingItemsChart() {
+window.updateDashboard = updateDashboard;
+window.setDashboardFilter = setDashboardFilter;
+window.applyDashboardDateFilter = applyDashboardDateFilter;
+
+function renderBestSellingItemsChart(sourceTransactions = transactions) {
   if (typeof Chart === 'undefined') return;
   const ctx = document.getElementById('bestSellingItemsChart').getContext('2d');
 
   // Safely handle empty transactions
-  const itemSales = (transactions && transactions.length > 0)
-    ? transactions.flatMap(t => t.items || []).reduce((acc, item) => {
+  const itemSales = (sourceTransactions && sourceTransactions.length > 0)
+    ? sourceTransactions.flatMap(t => t.items || []).reduce((acc, item) => {
       acc[item.name] = (acc[item.name] || 0) + (item.qty || 0);
       return acc;
     }, {})
@@ -7448,13 +7543,13 @@ function renderMonthlyRevenueChart(data) {
   });
 }
 
-function renderDailySalesChart() {
+function renderDailySalesChart(sourceTransactions = transactions) {
   if (typeof Chart === 'undefined') return;
   const ctx = document.getElementById('dailySalesChart').getContext('2d');
 
   // Safely handle empty transactions
-  const salesByDay = (transactions && transactions.length > 0)
-    ? transactions.reduce((acc, t) => {
+  const salesByDay = (sourceTransactions && sourceTransactions.length > 0)
+    ? sourceTransactions.reduce((acc, t) => {
       const date = new Date(t.date).toLocaleDateString();
       acc[date] = (acc[date] || 0) + (t.total || 0);
       return acc;
