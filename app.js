@@ -5921,6 +5921,27 @@ function getBarcodeDataUrl(code) {
   } catch (e) { return ''; }
 }
 
+function getInvoiceNumber(transaction = null) {
+  if (transaction?.invoiceNumber) return transaction.invoiceNumber;
+
+  const dateValue = transaction?.date ? new Date(transaction.date) : new Date();
+  const datePart = dateValue.toISOString().slice(0, 10).replace(/-/g, '');
+  const storageKey = 'yoshop_invoice_counter';
+
+  try {
+    const storedValue = parseInt(localStorage.getItem(storageKey) || '0', 10);
+    const nextNumber = Number.isFinite(storedValue) ? storedValue + 1 : 1;
+    localStorage.setItem(storageKey, String(nextNumber));
+    const invoiceNumber = `INV-${datePart}-${String(nextNumber).padStart(4, '0')}`;
+    if (transaction && typeof transaction === 'object') transaction.invoiceNumber = invoiceNumber;
+    return invoiceNumber;
+  } catch (error) {
+    const fallbackNumber = `INV-${datePart}-${String(Date.now()).slice(-4)}`;
+    if (transaction && typeof transaction === 'object') transaction.invoiceNumber = fallbackNumber;
+    return fallbackNumber;
+  }
+}
+
 async function printReceipt() {
   // If a device is connected, the user might want to use that instead.
   if (printerDevice) {
@@ -5952,6 +5973,7 @@ async function printReceipt() {
 
   const { date, customerName, tableNo, items, total } = printTransaction;
   const transactionId = new Date(date).getTime();
+  const invoiceNumber = getInvoiceNumber(printTransaction);
 
   const currencySymbol = getCurrencySymbol();
   const logoUrl = sanitizeLogoUrl(settings.logo);
@@ -5971,6 +5993,7 @@ async function printReceipt() {
         <p>${settings.address || '123 Business Avenue, Suite 100'}</p>
       </div>
       <div class="receipt-details">
+        <div><span>Invoice No:</span> <span>${invoiceNumber}</span></div>
         <div><span>Transaction ID:</span> <span>${transactionId}</span></div>
         <div><span>Date:</span> <span>${new Date(date).toLocaleDateString()}</span></div>
         <div><span>Time:</span> <span>${new Date(date).toLocaleTimeString()}</span></div>
@@ -6382,6 +6405,7 @@ async function downloadBillAsPDF(transactionIndex) {
 function populateReceiptContent(transaction) {
   const { date, customerName, tableNo, items, total, subtotal, tax, discount, receiptType, paymentMethod, note, amountPaid } = transaction;
   const transactionId = new Date(date).getTime();
+  const invoiceNumber = getInvoiceNumber(transaction);
   const currencySymbol = getCurrencySymbol();
 
   // Fallback for old transactions that might not have subtotal/tax saved
@@ -6446,6 +6470,7 @@ function populateReceiptContent(transaction) {
         </div>
         <div class="receipt-details">
           <div><span>Invoice Type:</span> <span>${isAdjustmentReceipt ? 'Customer Adjustment' : 'Transaction'}</span></div>
+          <div><span>Invoice No:</span> <span>${invoiceNumber}</span></div>
           <div><span>Transaction ID:</span> <span>${transactionId}</span></div>
           <div><span>Date:</span> <span>${new Date(date).toLocaleDateString()}</span></div>
           <div><span>Time:</span> <span>${new Date(date).toLocaleTimeString()}</span></div>
