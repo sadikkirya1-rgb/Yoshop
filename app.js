@@ -3341,6 +3341,9 @@ async function mirrorSaleDetailsLocally(transaction = {}) {
  * Records a single transaction to local storage and Firestore sub-collection
  */
 async function recordTransaction(transaction) {
+  if (!transaction.invoiceNumber) {
+    transaction.invoiceNumber = getInvoiceNumber(transaction);
+  }
   // 1. Mark as not synced initially and add to local state for immediate UI update
   transaction = enrichEnterpriseRecord('sales', {
     ...transaction,
@@ -5930,24 +5933,54 @@ function getBarcodeDataUrl(code) {
   } catch (e) { return ''; }
 }
 
+function normalizeInvoiceNumber(invoiceNumber) {
+  if (!invoiceNumber || typeof invoiceNumber !== 'string') return invoiceNumber;
+  const trimmed = invoiceNumber.trim();
+  if (/^INV-\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) return trimmed;
+  const oldDashMatch = /^INV-(\d{2})(\d{2})-(\d{4})$/.exec(trimmed);
+  if (oldDashMatch) return `INV-${oldDashMatch[1]}/${oldDashMatch[2]}/${oldDashMatch[3]}`;
+  const dashDateMatch = /^INV-(\d{2})\/(\d{2})-(\d{4})$/.exec(trimmed);
+  if (dashDateMatch) return `INV-${dashDateMatch[1]}/${dashDateMatch[2]}/${dashDateMatch[3]}`;
+  return trimmed;
+}
+
+function parseInvoiceSequence(invoiceNumber) {
+  const normalized = normalizeInvoiceNumber(invoiceNumber);
+  const match = /^INV-\d{2}\/\d{2}\/(\d{4})$/.exec(normalized);
+  return match ? Number(match[1]) : null;
+}
+
 function getInvoiceNumber(transaction = null) {
-  if (transaction?.invoiceNumber) return transaction.invoiceNumber;
+  if (transaction?.invoiceNumber) return normalizeInvoiceNumber(transaction.invoiceNumber);
 
   const dateValue = transaction?.date ? new Date(transaction.date) : new Date();
   const dd = String(dateValue.getDate()).padStart(2, '0');
   const mm = String(dateValue.getMonth() + 1).padStart(2, '0');
-  const datePart = `${dd}${mm}`; // DDMM without year
-  const storageKey = 'yoshop_invoice_counter';
+  const datePart = `${dd}/${mm}`; // DD/MM without year
+  const storageKey = `yoshop_invoice_counter_${dd}${mm}`;
 
   try {
     const storedValue = parseInt(localStorage.getItem(storageKey) || '0', 10);
-    const nextNumber = Number.isFinite(storedValue) ? storedValue + 1 : 1;
+    const existingSerials = Array.isArray(transactions)
+      ? transactions
+          .map(tx => tx?.invoiceNumber ? parseInvoiceSequence(tx.invoiceNumber) : null)
+          .filter(num => Number.isFinite(num) && num > 0)
+      : [];
+    const highestSerial = existingSerials.length ? Math.max(...existingSerials) : 0;
+    let nextNumber = 1;
+
+    if (highestSerial > 0) {
+      nextNumber = Math.max(highestSerial, Number.isFinite(storedValue) ? storedValue : 0) + 1;
+    } else if (Number.isFinite(storedValue) && storedValue > 0) {
+      nextNumber = 1;
+    }
+
     localStorage.setItem(storageKey, String(nextNumber));
-    const invoiceNumber = `INV-${datePart}-${String(nextNumber).padStart(4, '0')}`;
+    const invoiceNumber = `INV-${datePart}/${String(nextNumber).padStart(4, '0')}`;
     if (transaction && typeof transaction === 'object') transaction.invoiceNumber = invoiceNumber;
     return invoiceNumber;
   } catch (error) {
-    const fallbackNumber = `INV-${datePart}-${String(Date.now()).slice(-4)}`;
+    const fallbackNumber = `INV-${datePart}/${String(Date.now()).slice(-4)}`;
     if (transaction && typeof transaction === 'object') transaction.invoiceNumber = fallbackNumber;
     return fallbackNumber;
   }
@@ -6485,7 +6518,8 @@ function populateReceiptContent(transaction) {
     ? `<div class="summary-line"><span>Balance</span> <span style="color:#dc3545; font-weight:bold;"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(transaction.balance)}</span></div>`
     : '';
   const receiptHtml = `
-        <div class="receipt-header">
+        <div>
+          <div class="receipt-header">
           <div class="logo">${logoHtml}</div>
           <h3>${settings.name || 'My Business'}</h3>
           <p>${settings.address || '123 Business Avenue, Suite 100'}</p>
@@ -6514,9 +6548,20 @@ function populateReceiptContent(transaction) {
           ${balanceLine}
           ${taxHtml}
           ${discountHtml}
-          <div class="summary-line total"><span>TOTAL</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(total)}</span></div>
+          <div class="summary-line total" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+            <span>TOTAL</span>
+            <span style="display:flex; align-items:center; gap:10px; justify-content:flex-end;">
+              ${ transaction.balance !== undefined && parseFloat(transaction.balance) === 0 ? `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 12px; border-radius:14px; border:2px dashed rgba(40,167,69,0.55); color:#28a745; font-weight:700; font-size:0.78rem; letter-spacing:0.08em; background:rgba(40,167,69,0.06); text-transform: uppercase; box-shadow: inset 0 0 0 1px rgba(40,167,69,0.18);">INVOICE PAID FULLY</span>` : '' }
+              <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(total)}</span>
+            </span>
+          </div>
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:0.82rem; opacity:0.78; letter-spacing:0.03em;">
+            <span style="font-weight:700;">INVOICE</span>
+            <span>${invoiceNumber} • ${new Date(date).toLocaleDateString()}</span>
+          </div>
         </div>
-        <div class="receipt-footer"><p style="font-weight: bold; margin-bottom: 10px;">${titleText}</p>${barcodeHtml}<p class="promo">Get 10% off on your next visit!</p><p style="font-size:0.75em; margin-top:15px; opacity:0.5;">Power by YoShop POS</p></div>`;
+        <div class="receipt-footer"><p style="font-weight: bold; margin-bottom: 10px;">${titleText}</p>${barcodeHtml}<p class="promo">Get 10% off on your next visit!</p><p style="font-size:0.75em; margin-top:15px; opacity:0.5;">Power by YoShop POS</p></div>
+        </div>`;
   document.getElementById('receiptContent').innerHTML = receiptHtml;
 }
 
@@ -8693,6 +8738,27 @@ function createCustomerDebtInvoice(customer) {
   const balance = parseFloat(customer.balance) || 0;
   const lastAdjustment = (Array.isArray(customer.adjustments) && customer.adjustments.length) ? customer.adjustments[customer.adjustments.length - 1] : null;
 
+  const dateValue = customer.lastTransactionDate ? new Date(customer.lastTransactionDate) : new Date();
+  const previousInvoiceFromTransactions = Array.isArray(transactions)
+    ? transactions
+        .filter(tx => tx && tx.invoiceNumber && ((customer?.id && tx.customerId && tx.customerId === customer.id) || (tx.customerNameReal && customer?.name && tx.customerNameReal === customer.name) || (tx.customerName && customer?.name && tx.customerName === customer.name)))
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .map(tx => normalizeInvoiceNumber(tx.invoiceNumber))
+        .find(Boolean)
+    : null;
+  const invoiceNumber = normalizeInvoiceNumber(
+    customer.invoiceNumber || customer.lastInvoiceNumber || previousInvoiceFromTransactions || getInvoiceNumber({ date: dateValue.toISOString() })
+  );
+  if (!customer.invoiceNumber || customer.invoiceNumber !== invoiceNumber) {
+    customer.invoiceNumber = invoiceNumber;
+    if (typeof saveData === 'function') {
+      saveData();
+    }
+  }
+  if (!customer.lastInvoiceNumber || customer.lastInvoiceNumber !== invoiceNumber) {
+    customer.lastInvoiceNumber = invoiceNumber;
+  }
+
   return {
     date: customer.lastTransactionDate || new Date().toISOString(),
     customerName: customer.name || 'Unknown Customer',
@@ -8712,7 +8778,8 @@ function createCustomerDebtInvoice(customer) {
     amountPaid: amountPaid,
     balance: balance,
     lastAdjustment: lastAdjustment,
-    adjustments: Array.isArray(customer.adjustments) ? customer.adjustments : []
+    adjustments: Array.isArray(customer.adjustments) ? customer.adjustments : [],
+    invoiceNumber
   };
 }
 
@@ -8742,23 +8809,19 @@ function renderInvoices() {
     const totalSales = parseFloat(customer.totalSales ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.total) || 0), 0)) || 0;
     const totalPaid = parseFloat(customer.totalPaid ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.amountPaid) || 0), 0)) || 0;
     const balance = parseFloat(customer.balance) || 0;
-    const now = new Date();
-    const dd = String(now.getDate()).padStart(2,'0');
-    const mm = String(now.getMonth() + 1).padStart(2,'0');
-    const datePart = `${dd}${mm}`; // DDMM without year
-    const invoiceNumber = `INV-${datePart}-${String(idx + 1).padStart(4,'0')}`;
     const previewData = createCustomerDebtInvoice(customer);
+    const invoiceNumber = customer.invoiceNumber || previewData?.invoiceNumber || 'INV-UNKNOWN';
     const previewDataJson = previewData ? JSON.stringify(previewData).replace(/'/g, "\\'") : 'null';
     const lastDate = customer.lastTransactionDate ? new Date(customer.lastTransactionDate).toLocaleString() : new Date().toLocaleString();
     const lastAdjustment = (Array.isArray(customer.adjustments) && customer.adjustments.length > 0) ? customer.adjustments[customer.adjustments.length - 1] : null;
     const adjAmount = lastAdjustment ? (parseFloat(lastAdjustment.amount) || 0) : 0;
-    const adjDate = lastAdjustment ? new Date(lastAdjustment.date).toLocaleDateString() : '';
-    const adjustedHtml = lastAdjustment ? `${currencySymbol}${formatCurrency(adjAmount)}<br><small style="opacity:0.8;">${adjDate}</small>` : '-';
+    const adjMethod = lastAdjustment ? (lastAdjustment.method || '') : '';
+    const adjustedHtml = lastAdjustment ? `${adjMethod ? adjMethod + ' ' : ''}${currencySymbol}${formatCurrency(adjAmount)}` : '-';
 
     const isPaid = Math.abs(balance) === 0;
     const adjustDisabledAttr = isPaid ? 'disabled' : '';
     const adjustStyle = isPaid ? 'opacity:0.45; pointer-events:none;' : '';
-    const statusBadge = isPaid ? `<span style="margin-left:8px; padding:4px 8px; background:#28a745; color:#fff; border-radius:6px; font-size:0.85em;">Paid</span>` : '';
+    const statusBadge = isPaid ? `<span style="margin-left:8px; padding:4px 8px; background:#28a745; color:#fff; border-radius:6px; font-size:0.85em;">Paid Fully</span>` : '';
 
     return `<tr class="u-cursor-pointer">
       <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('invoiceListBody','selectAllInvoiceRows')"></td>
@@ -10233,11 +10296,11 @@ async function updateVersionDisplay() {
       const match = text.match(/CACHE_NAME\s*=\s*['"]yoshop-(v\d+)['"]/);
       if (match) displayEl.textContent = match[1].toUpperCase();
     } else {
-      displayEl.textContent = '1.5.1'; // Fallback on non-200 response
+      displayEl.textContent = '1.0.4'; // Fallback on non-200 response
     }
   } catch (e) {
     console.warn('[Version] Failed to fetch service worker version:', e.message);
-    displayEl.textContent = '1.5.1'; // Fallback
+    displayEl.textContent = '1.0.4'; // Fallback
   }
 
   renderSubscriptionFooterInfo();
