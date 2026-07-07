@@ -5862,7 +5862,7 @@ async function downloadCurrentReceiptAsPDF() {
     const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
     pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`receipt-${Date.now()}.pdf`);
+    pdf.save(`invoice-${Date.now()}.pdf`);
 
   } catch (error) {
     console.error("Error generating PDF:", error);
@@ -5881,12 +5881,12 @@ async function shareReceipt() {
   try {
     const canvas = await html2canvas(receiptContentEl, { scale: 2, useCORS: true });
     canvas.toBlob(async (blob) => {
-      const file = new File([blob], "receipt.png", { type: "image/png" });
+      const file = new File([blob], "invoice.png", { type: "image/png" });
       if (navigator.share) {
         try {
           await navigator.share({
-            title: 'Receipt',
-            text: 'Here is your receipt from YoShop.',
+            title: 'Invoice',
+            text: 'Here is your invoice from YoShop.',
             files: [file]
           });
         } catch (err) {
@@ -5953,7 +5953,7 @@ async function printReceipt() {
   const { date, customerName, tableNo, items, total } = printTransaction;
   const transactionId = new Date(date).getTime();
 
-  const currencySymbol = settings.currency || '$';
+  const currencySymbol = getCurrencySymbol();
   const logoUrl = sanitizeLogoUrl(settings.logo);
   const logoHtml = logoUrl ? `<img src="${logoUrl}" onerror="this.src='assets/icons/icon.png';" style="width:50px; height:50px; object-fit:contain;">` : '🧾';
   const barcodeImgUrl = getBarcodeDataUrl(transactionId.toString());
@@ -5984,8 +5984,8 @@ async function printReceipt() {
       </div>
       <div class="receipt-footer"><p>THANK YOU FOR YOUR PATRONAGE!</p>${barcodeHtml}<p class="promo">Get 10% off on your next visit!</p><p style="font-size:0.7em; margin-top:10px; opacity:0.6;">Power by YoShop POS</p></div>`;
 
-  const printWindow = window.open('', 'Print Receipt', 'width=420,height=600,scrollbars=yes');
-  const printHtml = `<html><head><title>Print Receipt</title><style>body { margin: 0; padding: 10px; background: #f0f0f0; } .receipt-paper { font-family: 'Courier New', Courier, monospace; background: #fff; color: #000; padding: 30px 20px; max-width: 400px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); } .receipt-header { text-align: center; margin-bottom: 15px; } .receipt-header h2 { margin: 0; font-size: 1.4em; text-transform: uppercase; } .receipt-header p { margin: 2px 0; font-size: 0.8em; } .receipt-details { font-size: 0.8em; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0; margin: 15px 0; } .receipt-details div { display: flex; justify-content: space-between; } .receipt-items .table-header { display: flex; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 8px; font-size: 0.8em; } .receipt-items .item-row { display: flex; margin-bottom: 5px; font-size: 0.8em; } .receipt-items .col-name { width: 50%; } .receipt-items .col-qty { width: 10%; text-align: left; } .receipt-items .col-price { width: 20%; text-align: right; } .receipt-items .col-total { width: 20%; text-align: right; } .receipt-summary { border-top: 1px dashed #000; padding-top: 10px; margin-top: 15px; font-size: 0.9em; } .summary-line { display: flex; justify-content: space-between; margin-bottom: 5px; } .summary-line.total { font-weight: bold; font-size: 1.4em; border-top: 1px double #000; padding-top: 5px; } .receipt-footer { text-align: center; margin-top: 25px; font-size: 0.8em; } .receipt-footer .promo { margin-top: 15px; font-weight: bold; border: 1px dashed #000; padding: 5px; display: inline-block; }</style></head><body><div class="receipt-paper">${receiptHtml}</div></body></html>`;
+  const printWindow = window.open('', 'Print Invoice', 'width=420,height=600,scrollbars=yes');
+  const printHtml = `<html><head><title>Print Invoice</title><style>body { margin: 0; padding: 10px; background: #f0f0f0; } .receipt-paper { font-family: 'Courier New', Courier, monospace; background: #fff; color: #000; padding: 30px 20px; max-width: 400px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); } .receipt-header { text-align: center; margin-bottom: 15px; } .receipt-header h2 { margin: 0; font-size: 1.4em; text-transform: uppercase; } .receipt-header p { margin: 2px 0; font-size: 0.8em; } .receipt-details { font-size: 0.8em; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0; margin: 15px 0; } .receipt-details div { display: flex; justify-content: space-between; } .receipt-items .table-header { display: flex; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 8px; font-size: 0.8em; } .receipt-items .item-row { display: flex; margin-bottom: 5px; font-size: 0.8em; } .receipt-items .col-name { width: 50%; } .receipt-items .col-qty { width: 10%; text-align: left; } .receipt-items .col-price { width: 20%; text-align: right; } .receipt-items .col-total { width: 20%; text-align: right; } .receipt-summary { border-top: 1px dashed #000; padding-top: 10px; margin-top: 15px; font-size: 0.9em; } .summary-line { display: flex; justify-content: space-between; margin-bottom: 5px; } .summary-line.total { font-weight: bold; font-size: 1.4em; border-top: 1px double #000; padding-top: 5px; } .receipt-footer { text-align: center; margin-top: 25px; font-size: 0.8em; } .receipt-footer .promo { margin-top: 15px; font-weight: bold; border: 1px dashed #000; padding: 5px; display: inline-block; }</style></head><body><div class="receipt-paper">${receiptHtml}</div></body></html>`;
   printWindow.document.write(printHtml);
   printWindow.document.close();
   printWindow.focus(); // Focus on the new window
@@ -6382,7 +6382,7 @@ async function downloadBillAsPDF(transactionIndex) {
 function populateReceiptContent(transaction) {
   const { date, customerName, tableNo, items, total, subtotal, tax, discount, receiptType, paymentMethod, note, amountPaid } = transaction;
   const transactionId = new Date(date).getTime();
-  const currencySymbol = settings.currency || '$';
+  const currencySymbol = getCurrencySymbol();
 
   // Fallback for old transactions that might not have subtotal/tax saved
   const displaySubtotal = subtotal !== undefined ? subtotal : total; // If no tax info, assume total is subtotal
@@ -6398,8 +6398,8 @@ function populateReceiptContent(transaction) {
           <div class="item-row">
             <div class="col-name">${o.name} ${notesHtml}</div>
             <div class="col-qty">${o.qty}x</div>
-            <div class="col-price"><span class="currency-symbol">$</span>${formatCurrency(o.price)}</div>
-            <div class="col-total"><span class="currency-symbol">$</span>${formatCurrency(o.qty * o.price)}</div>
+            <div class="col-price"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(o.price)}</div>
+            <div class="col-total"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(o.qty * o.price)}</div>
           </div>`;
   }).join('');
 
@@ -6422,8 +6422,10 @@ function populateReceiptContent(transaction) {
   const logoHtml = finalLogoUrl ? `<img src="${finalLogoUrl}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width:50px; height:50px; object-fit:contain;">` : '🧾';
 
   const isAdjustmentReceipt = receiptType === 'customerAdjustment';
-  const titleText = isAdjustmentReceipt ? 'CUSTOMER PAYMENT RECEIPT' : 'TRANSACTION RECEIPT';
+  const titleText = isAdjustmentReceipt ? 'CUSTOMER PAYMENT INVOICE' : 'TRANSACTION INVOICE';
   const customerLine = customerName ? `<div class="summary-line"><span>Customer</span> <span>${customerName}</span></div>` : '';
+  const customerContactLine = (transaction.customerContact || transaction.contact) ? `<div class="summary-line"><span>Contact</span> <span>${transaction.customerContact || transaction.contact}</span></div>` : '';
+  const customerAddressLine = (transaction.customerAddress || transaction.address) ? `<div class="summary-line"><span>Address</span> <span>${transaction.customerAddress || transaction.address}</span></div>` : '';
   const methodLine = paymentMethod ? `<div class="summary-line"><span>Method</span> <span>${paymentMethod}</span></div>` : '';
   const noteLine = note ? `<div class="summary-line"><span>Note</span> <span>${note}</span></div>` : '';
   const paidLine = amountPaid !== undefined ? `<div class="summary-line"><span>Amount Paid</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(amountPaid)}</span></div>` : '';
@@ -6443,7 +6445,7 @@ function populateReceiptContent(transaction) {
           <p>${settings.address || '123 Business Avenue, Suite 100'}</p>
         </div>
         <div class="receipt-details">
-          <div><span>Receipt Type:</span> <span>${isAdjustmentReceipt ? 'Customer Adjustment' : 'Transaction'}</span></div>
+          <div><span>Invoice Type:</span> <span>${isAdjustmentReceipt ? 'Customer Adjustment' : 'Transaction'}</span></div>
           <div><span>Transaction ID:</span> <span>${transactionId}</span></div>
           <div><span>Date:</span> <span>${new Date(date).toLocaleDateString()}</span></div>
           <div><span>Time:</span> <span>${new Date(date).toLocaleTimeString()}</span></div>
@@ -6455,6 +6457,8 @@ function populateReceiptContent(transaction) {
         <div class="receipt-summary">
           <div class="summary-line"><span>Subtotal</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(displaySubtotal)}</span></div>
           ${customerLine}
+          ${customerContactLine}
+          ${customerAddressLine}
           ${methodLine}
           ${noteLine}
           ${totalAmountLine}
@@ -8591,7 +8595,7 @@ function renderCustomerList() {
         <div style="display:flex; justify-content:space-between; align-items:center; background:#f1f3f5; padding:10px 12px; border-bottom:1px solid #dee2e6;">
           <div style="font-weight:700; color:#495057;">Customer Adjustments</div>
           <div style="display:flex; gap:6px; align-items:center;">
-            <button class="btn btn-info" type="button" onclick="showCustomerAdjustmentReceipt(${i})" style="padding:6px 10px; font-size:0.85rem;">Receipt</button>
+            <button class="btn btn-info" type="button" onclick="showCustomerAdjustmentReceipt(${i})" style="padding:6px 10px; font-size:0.85rem;">Invoice</button>
             <button class="icon-btn" title="Close" onclick="toggleCustomerAdjustmentPanel(${i})" style="padding:6px;">✕</button>
           </div>
         </div>
@@ -8679,6 +8683,8 @@ function showCustomerAdjustmentReceipt(index, adjustmentIndex = null) {
     date: adjustment.date || new Date().toISOString(),
     customerName: customer.name,
     customerNameReal: customer.name,
+    customerContact: customer.contact || customer.phone || customer.mobile || '',
+    customerAddress: customer.address || '',
     tableNo: 'Customer Account',
     items: [{ name: 'Customer Payment Adjustment', qty: 1, price: adjustment.amount, notes: adjustment.note || '' }],
     total: adjustment.amount,
