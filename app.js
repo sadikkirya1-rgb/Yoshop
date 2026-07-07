@@ -6322,16 +6322,17 @@ function renderTransactions() {
 
   if (remainingRows.length > 0) {
     const showMoreRow = document.createElement('tr');
+    // Use an IIFE in the onclick to safely reveal hidden rows regardless of class removal order
     showMoreRow.innerHTML = `
         <td colspan="3" style="text-align: center; padding: 20px;">
-          <button class="btn btn-info" onclick="const tbody = this.closest('tbody'); tbody.querySelectorAll('tr.txn-row-hidden').forEach(r => r.classList.remove('txn-row-hidden')); tbody.querySelectorAll('tr.txn-row-hidden').forEach(r => r.style.display = ''); this.closest('tr').style.display = 'none';" style="padding: 8px 20px;">
+          <button class="btn btn-info" onclick="(function(btn){ const tbody = btn.closest('tbody'); const hidden = Array.from(tbody.querySelectorAll('tr.txn-row-hidden')); hidden.forEach(r => { r.classList.remove('txn-row-hidden'); r.style.display = ''; }); btn.closest('tr').style.display = 'none'; })(this);" style="padding: 8px 20px;">
             Show ${remainingRows.length} More Transactions
           </button>
         </td>
       `;
     tbody.appendChild(showMoreRow);
 
-    // Add hidden class to remaining rows
+    // Add hidden class to remaining rows and keep them appended after the show-more row
     remainingRows.forEach(row => {
       row.classList.add('txn-row-hidden');
       row.style.display = 'none';
