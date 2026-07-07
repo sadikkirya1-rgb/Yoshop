@@ -426,6 +426,13 @@
     margin-right: 6px;
   }
 
+  .dashboard-filter-buttons input[type="date"] {
+    font-size: 0.85rem;
+    padding: 4px 6px;
+    min-height: 30px;
+    width: 120px;
+  }
+
   /* Constrain chart canvas sizes for admin dashboard smaller layout */
   .charts-container .chart-wrapper canvas {
     width: 100% !important;
