@@ -8682,30 +8682,9 @@ function showCustomerDetails(index) {
   document.getElementById('customerDetailsPaid').textContent = `${currencySymbol}${formatCurrency(totalPaid)}`;
   document.getElementById('customerDetailsLastDate').textContent = lastDate;
 
-  const adjustments = Array.isArray(customer.adjustments) ? customer.adjustments : [];
   const adjustmentsContainer = document.getElementById('customerDetailsAdjustments');
-  if (adjustments.length === 0) {
-    adjustmentsContainer.innerHTML = '<p style="margin:0; color:#6c757d;">No adjustments recorded yet.</p>';
-  } else {
-    adjustmentsContainer.innerHTML = `
-      <table style="width:100%; border-collapse:collapse;">
-        <thead>
-          <tr>
-            <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #dee2e6;">Date</th>
-            <th style="text-align:right; padding:6px 8px; border-bottom:1px solid #dee2e6;">Amount</th>
-            <th style="text-align:left; padding:6px 8px; border-bottom:1px solid #dee2e6;">Note</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${adjustments.map(adj => `
-            <tr>
-              <td style="padding:8px; border-bottom:1px solid #f1f3f5;">${new Date(adj.date).toLocaleDateString()}</td>
-              <td style="padding:8px; border-bottom:1px solid #f1f3f5; text-align:right;">${currencySymbol}${formatCurrency(adj.amount || 0)}</td>
-              <td style="padding:8px; border-bottom:1px solid #f1f3f5;">${adj.note || ''}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>`;
+  if (adjustmentsContainer) {
+    adjustmentsContainer.innerHTML = '<p style="margin:0; color:#6c757d;">Invoice adjustments are recorded directly on each invoice.</p>';
   }
 
   document.getElementById('customerDetailsSection').style.display = 'block';
@@ -8722,7 +8701,7 @@ function createCustomerDebtInvoice(customer) {
   const totalSales = parseFloat(customer.totalSales ?? 0) || 0;
   const amountPaid = parseFloat(customer.totalPaid ?? 0) || 0;
   const balance = parseFloat(customer.balance) || 0;
-  const lastAdjustment = (Array.isArray(customer.adjustments) && customer.adjustments.length) ? customer.adjustments[customer.adjustments.length - 1] : null;
+  const lastAdjustment = null;
 
   const dateValue = customer.lastTransactionDate ? new Date(customer.lastTransactionDate) : new Date();
   const previousInvoiceFromTransactions = Array.isArray(transactions)
@@ -8764,7 +8743,7 @@ function createCustomerDebtInvoice(customer) {
     amountPaid: amountPaid,
     balance: balance,
     lastAdjustment: lastAdjustment,
-    adjustments: Array.isArray(customer.adjustments) ? customer.adjustments : [],
+    adjustments: [],
     invoiceNumber
   };
 }
@@ -8816,7 +8795,7 @@ function renderInvoices() {
       <td style="text-align: right; color:${balance < 0 ? '#dc3545' : '#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</td>
       <td style="text-align: right;">${adjustedHtml}</td>
       <td style="text-align: right; display:flex; gap:6px; justify-content:flex-end; align-items:center;">
-        <button class="btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(customer?.id || '')}); event.stopPropagation();'>Adjust</button>
+        <button class="btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(row.transaction || null)}); event.stopPropagation();'>Adjust</button>
         <button class="btn" type="button" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>Preview</button>
         ${statusBadge}
       </td>
@@ -8834,10 +8813,18 @@ function renderInvoices() {
   }
 }
 
-async function showInvoiceAdjustmentPrompt(customerId) {
-  const id = customerId;
-  const idx = customers.findIndex(c => c && (c.id === id || String(c.id) === String(id)));
-  if (idx < 0) return;
+async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
+  const transaction = transactionOrCustomer && typeof transactionOrCustomer === 'object'
+    ? transactionOrCustomer
+    : (Array.isArray(transactions)
+      ? transactions.find(tx => tx && (tx.id === transactionOrCustomer || tx.invoiceNumber === transactionOrCustomer || String(tx.customerId) === String(transactionOrCustomer)))
+      : null);
+
+  if (!transaction) return;
+
+  const customer = transaction.customerId
+    ? customers.find(c => c && (c.id === transaction.customerId || String(c.id) === String(transaction.customerId))) || null
+    : null;
 
   const modal = document.getElementById('appPopupModal');
   const titleEl = document.getElementById('appPopupTitle');
@@ -8897,7 +8884,6 @@ async function showInvoiceAdjustmentPrompt(customerId) {
       return;
     }
 
-    const customer = customers[idx];
     const adjustment = {
       id: `adj-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
       date: new Date().toISOString(),
@@ -8906,17 +8892,20 @@ async function showInvoiceAdjustmentPrompt(customerId) {
       note: ''
     };
 
-    customer.adjustments = Array.isArray(customer.adjustments) ? customer.adjustments : [];
-    customer.adjustments.push(adjustment);
-    customer.balance = (parseFloat(customer.balance) || 0) + amount;
-    customer.totalPaid = (parseFloat(customer.totalPaid) || 0) + amount;
-    customer.lastTransactionDate = adjustment.date;
+    transaction.adjustments = Array.isArray(transaction.adjustments) ? transaction.adjustments : [];
+    transaction.adjustments.push(adjustment);
+    transaction.lastAdjustment = adjustment;
+    transaction.lastTransactionDate = adjustment.date;
+    const adjustmentTotal = transaction.adjustments.reduce((sum, entry) => sum + (parseFloat(entry?.amount) || 0), 0);
+    const updatedAmountPaid = (parseFloat(transaction.amountPaid) || 0) + amount;
+    transaction.amountPaid = updatedAmountPaid;
+    transaction.balance = Math.min(0, updatedAmountPaid - (parseFloat(transaction.total) || 0) + adjustmentTotal);
 
-    enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
+    enqueueEnterpriseRecordChange('transactions', transaction, 'upsert').catch(console.warn);
     saveData();
     renderInvoices();
-    renderCustomerList();
-    showCustomerAdjustmentReceipt(idx, customer.adjustments.length - 1);
+    renderTransactions();
+    previewOrder(transaction);
 
     modal.style.display = 'none';
     document.body.style.overflow = '';

@@ -128,7 +128,7 @@ test('buildInvoiceListItems keeps a paid invoice number from the linked customer
   assert.equal(rows[0].balance, 0);
 });
 
-test('buildInvoiceListItems includes customer and transaction adjustments for the matching invoice date', () => {
+test('buildInvoiceListItems uses only transaction adjustments for the matching invoice date', () => {
   const customer = {
     id: 'cust-4',
     name: 'Dana',
@@ -151,12 +151,12 @@ test('buildInvoiceListItems includes customer and transaction adjustments for th
   const rows = buildInvoiceListItems({ customers: [customer], transactions });
 
   assert.equal(rows.length, 1);
-  assert.equal(rows[0].previewData.adjustments.length, 2);
-  assert.equal(rows[0].previewData.lastAdjustment.amount, 20);
-  assert.equal(rows[0].previewData.lastAdjustment.method, 'Cash');
+  assert.equal(rows[0].previewData.adjustments.length, 1);
+  assert.equal(rows[0].previewData.lastAdjustment.amount, 10);
+  assert.equal(rows[0].previewData.lastAdjustment.method, 'Mobile Money');
 });
 
-test('buildInvoiceListItems does not carry customer adjustments onto a later invoice date', () => {
+test('buildInvoiceListItems ignores customer adjustments on later invoice dates', () => {
   const customer = {
     id: 'cust-5',
     name: 'Eve',
@@ -192,7 +192,7 @@ test('buildInvoiceListItems does not carry customer adjustments onto a later inv
   assert.equal(rows[1].previewData.adjustments.length, 0);
 });
 
-test('buildInvoiceListItems shows a customer adjustment only on the matching invoice date', () => {
+test('buildInvoiceListItems ignores customer adjustments entirely for invoice previews', () => {
   const customer = {
     id: 'cust-6',
     name: 'Frank',
@@ -223,8 +223,8 @@ test('buildInvoiceListItems shows a customer adjustment only on the matching inv
 
   assert.equal(rows.length, 2);
   assert.equal(rows[0].previewData.adjustments.length, 0);
-  assert.equal(rows[1].previewData.adjustments.length, 1);
-  assert.equal(rows[1].previewData.lastAdjustment.amount, 25);
+  assert.equal(rows[1].previewData.adjustments.length, 0);
+  assert.equal(rows[1].previewData.lastAdjustment, null);
 });
 
 test('mergeTransactionsPreservingDuplicates keeps separate transactions that share a date', () => {

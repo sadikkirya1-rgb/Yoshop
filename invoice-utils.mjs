@@ -21,19 +21,15 @@ function getDateKey(dateValue) {
 
 function getRelevantAdjustments(transaction = {}, customer = null) {
   const transactionAdjustments = Array.isArray(transaction.adjustments) ? transaction.adjustments.filter(Boolean) : [];
-  const customerAdjustments = Array.isArray(customer?.adjustments) ? customer.adjustments.filter(Boolean) : [];
-  const transactionDateKey = getDateKey(transaction?.date);
-
-  if (!transactionDateKey) {
+  if (transactionAdjustments.length > 0) {
     return transactionAdjustments;
   }
 
-  const relevantCustomerAdjustments = customerAdjustments.filter(adj => {
-    const adjustmentDateKey = getDateKey(adj?.date);
-    return Boolean(adjustmentDateKey && adjustmentDateKey === transactionDateKey);
-  });
+  const fallbackAdjustment = transaction?.lastAdjustment && typeof transaction.lastAdjustment === 'object'
+    ? [transaction.lastAdjustment]
+    : [];
 
-  return [...transactionAdjustments, ...relevantCustomerAdjustments];
+  return fallbackAdjustment;
 }
 
 export function mergeTransactionsPreservingDuplicates(existingTransactions = [], incomingTransactions = []) {
@@ -88,11 +84,15 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
       const mergedAdjustments = getRelevantAdjustments(transaction, customer);
       const lastAdjustment = mergedAdjustments.length > 0 ? mergedAdjustments[mergedAdjustments.length - 1] : (transaction.lastAdjustment || null);
 
+      const adjustmentTotal = mergedAdjustments.reduce((sum, adj) => sum + (Number(adj?.amount) || 0), 0);
       const effectiveBalance = (() => {
+        if (mergedAdjustments.length > 0) {
+          return Math.min(0, amountPaid - total + adjustmentTotal);
+        }
+
         const txnBalance = transaction.balance !== undefined ? Number(transaction.balance) : balance;
         const computedBalance = Number.isFinite(txnBalance) && txnBalance !== 0 ? txnBalance : (balance ?? 0);
         if (computedBalance !== 0) return computedBalance;
-        const adjustmentTotal = mergedAdjustments.reduce((sum, adj) => sum + (Number(adj?.amount) || 0), 0);
         return Math.min(0, amountPaid - total + adjustmentTotal);
       })();
 
