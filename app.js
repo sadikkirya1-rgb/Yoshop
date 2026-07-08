@@ -9856,22 +9856,46 @@ let unsubscribeSync = null;
 let lastRemoteDataHash = '';
 let cloudSyncChannel = null;
 const cloudSyncChannelName = 'yoshop-cloud-sync';
+const cloudHashIgnoredKeys = new Set(['updatedAt', 'lastUpdated', 'lastSyncedAt', 'lastSyncAt', 'createdAt', 'date', 'timestamp', 'version', 'syncStatus', 'businessId', 'userId', 'staffId', 'deviceId']);
+
+function normalizeCloudHashValue(value) {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (value instanceof Date) return value.toISOString();
+
+  if (Array.isArray(value)) {
+    return value.map(item => normalizeCloudHashValue(item));
+  }
+
+  if (typeof value === 'object') {
+    return Object.keys(value)
+      .filter(key => !cloudHashIgnoredKeys.has(key))
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = normalizeCloudHashValue(value[key]);
+        return acc;
+      }, {});
+  }
+
+  return String(value);
+}
 
 function getCloudDataHash(data) {
   if (!data) return '';
-  return JSON.stringify({
-    // NOTE: lastUpdated is intentionally excluded from the hash.
-    // We only want to detect real data changes (counts, settings) not timestamp noise.
-    menuCount: getCloudMenuItems(data).length,
-    activeOrdersCount: data.activeOrders && typeof data.activeOrders === 'object' ? Object.keys(data.activeOrders).length : 0,
-    settings: data.settings || {},
-    staffCount: Array.isArray(data.staff) ? data.staff.length : 0,
-    customerCount: Array.isArray(data.customers) ? data.customers.length : 0,
-    categoryCount: getCloudCategoryList(data).length,
-    unitsCount: Array.isArray(data.units) ? data.units.length : 0,
-    restockCount: Array.isArray(data.restockHistory) ? data.restockHistory.length : 0,
-    appAdminSettings: data.appAdminSettings || {}
-  });
+
+  const normalizedPayload = {
+    menu: normalizeCloudHashValue(getCloudMenuItems(data)),
+    activeOrders: normalizeCloudHashValue(data.activeOrders || {}),
+    settings: normalizeCloudHashValue(data.settings || {}),
+    staff: normalizeCloudHashValue(Array.isArray(data.staff) ? data.staff : []),
+    customers: normalizeCloudHashValue(Array.isArray(data.customers) ? data.customers : []),
+    categories: normalizeCloudHashValue(getCloudCategoryList(data)),
+    units: normalizeCloudHashValue(Array.isArray(data.units) ? data.units : []),
+    restockHistory: normalizeCloudHashValue(Array.isArray(data.restockHistory) ? data.restockHistory : []),
+    appAdminSettings: normalizeCloudHashValue(data.appAdminSettings || {})
+  };
+
+  return JSON.stringify(normalizedPayload);
 }
 
 function notifyOtherTabsAboutCloudChange(targetUid) {
@@ -10173,9 +10197,9 @@ function setupRealTimeSync(uid) {
           // hasPendingWrites = false means this is an update from another device
           if (!docSnap.metadata.hasPendingWrites) {
             const isNewRemoteData = cloudHash !== lastRemoteDataHash;
-            lastRemoteDataHash = cloudHash;
+            const shouldApplyRemoteRefresh = isNewRemoteData && cloudHash && lastRemoteDataHash !== '';
 
-            if (isNewRemoteData) {
+            if (shouldApplyRemoteRefresh) {
               console.log('🔄 [SYNC] ✅ Immediate refresh triggered by new cloud data');
               notifyOtherTabsAboutCloudChange(uid);
 
