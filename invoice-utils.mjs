@@ -51,6 +51,26 @@ function getTransactionDuplicateKey(transaction = {}) {
   return '';
 }
 
+export function isDuplicateTransactionRecord(existingTransaction = {}, candidateTransaction = {}) {
+  if (!existingTransaction || !candidateTransaction || typeof existingTransaction !== 'object' || typeof candidateTransaction !== 'object') {
+    return false;
+  }
+
+  const existingInvoice = normalizeInvoiceNumber(existingTransaction.invoiceNumber);
+  const candidateInvoice = normalizeInvoiceNumber(candidateTransaction.invoiceNumber);
+  if (existingInvoice && candidateInvoice && existingInvoice === candidateInvoice) {
+    return true;
+  }
+
+  const existingId = existingTransaction.id || existingTransaction.recordId || existingTransaction.transactionId;
+  const candidateId = candidateTransaction.id || candidateTransaction.recordId || candidateTransaction.transactionId;
+  if (existingId && candidateId && String(existingId) === String(candidateId)) {
+    return true;
+  }
+
+  return false;
+}
+
 export function deduplicateTransactions(transactions = []) {
   const source = Array.isArray(transactions) ? transactions : [];
   const deduped = [];
@@ -65,8 +85,8 @@ export function deduplicateTransactions(transactions = []) {
       return;
     }
 
-    const existingIndex = seen.get(key);
-    if (existingIndex === undefined) {
+    const existingIndex = deduped.findIndex(item => isDuplicateTransactionRecord(item, transaction));
+    if (existingIndex < 0) {
       seen.set(key, deduped.length);
       deduped.push({ ...transaction, duplicateCount: 0 });
       return;

@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, isDuplicateTransactionRecord } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -1037,10 +1037,43 @@ async function loadState(key) {
   return repositoryService.loadState(key);
 }
 
+function isDuplicateTransactionSyncAction(action = {}) {
+  if (!action || (action.entityType !== 'sales' && action.entityType !== 'transactions')) return false;
+
+  const payload = action.payload || {};
+  const candidateInvoice = normalizeTransactionInvoiceNumber(payload.invoiceNumber || payload.invoice || '');
+  const candidateId = payload.id || action.id || payload.recordId || payload.transactionId;
+
+  if (candidateInvoice) {
+    const hasExisting = Array.isArray(transactions) && transactions.some(existing => normalizeTransactionInvoiceNumber(existing.invoiceNumber) === candidateInvoice);
+    const hasQueued = Array.isArray(pendingSyncQueue) && pendingSyncQueue.some(item => {
+      const queuedPayload = item?.payload || {};
+      return (item?.entityType === action.entityType || item?.entityType === 'sales' || item?.entityType === 'transactions') && normalizeTransactionInvoiceNumber(queuedPayload.invoiceNumber || queuedPayload.invoice || '') === candidateInvoice;
+    });
+    return hasExisting || hasQueued;
+  }
+
+  if (candidateId) {
+    const hasExisting = Array.isArray(transactions) && transactions.some(existing => String(existing.id || existing.recordId || existing.transactionId || '') === String(candidateId));
+    const hasQueued = Array.isArray(pendingSyncQueue) && pendingSyncQueue.some(item => {
+      const queuedPayload = item?.payload || {};
+      return (item?.entityType === action.entityType || item?.entityType === 'sales' || item?.entityType === 'transactions') && String(queuedPayload.id || item.id || queuedPayload.recordId || queuedPayload.transactionId || '') === String(candidateId);
+    });
+    return hasExisting || hasQueued;
+  }
+
+  return false;
+}
+
 async function enqueueLocalSyncAction(action) {
   if (!localRepositoryReady || !repositoryService) {
     await initDB(sessionStorage.getItem('currentUserUid') || 'guest');
   }
+
+  if (isDuplicateTransactionSyncAction(action)) {
+    return null;
+  }
+
   const envelope = await repositoryService.enqueueSyncAction(action);
   if (envelope) {
     pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
@@ -1663,7 +1696,18 @@ async function syncCloudAction(action) {
     const txRef = collection(dbFirestore, 'users', currentUser.uid, 'transactions');
     const payload = action.payload || {};
     const txId = payload.id || action.id;
-    await setDoc(doc(txRef, txId), sanitizeForFirestore({
+    let targetDocRef = doc(txRef, txId);
+
+    const invoiceNumber = normalizeTransactionInvoiceNumber(payload.invoiceNumber || payload.invoice || '');
+    if (invoiceNumber) {
+      const existingSnapshot = await getDocs(query(txRef, where('invoiceNumber', '==', invoiceNumber), limit(1)));
+      if (!existingSnapshot.empty) {
+        const existingDoc = existingSnapshot.docs[0];
+        targetDocRef = doc(txRef, existingDoc.id);
+      }
+    }
+
+    await setDoc(targetDocRef, sanitizeForFirestore({
       ...payload,
       synced: true,
       syncStatus: 'synced',
@@ -3410,22 +3454,22 @@ async function recordTransaction(transaction) {
     syncStatus: 'pending'
   }, transaction);
 
-  const duplicateIndex = transactions.findIndex(existing => {
-    if (!existing || !existing.date) return false;
-    const sameId = Boolean(existing.id && transaction.id && existing.id === transaction.id);
-    const sameInvoiceNumber = Boolean(
-      normalizeTransactionInvoiceNumber(existing.invoiceNumber) &&
-      normalizeTransactionInvoiceNumber(transaction.invoiceNumber) &&
-      normalizeTransactionInvoiceNumber(existing.invoiceNumber) === normalizeTransactionInvoiceNumber(transaction.invoiceNumber)
-    );
-    return sameId || sameInvoiceNumber;
-  });
+  const duplicateIndex = transactions.findIndex(existing => isDuplicateTransactionRecord(existing, transaction));
 
   if (duplicateIndex >= 0) {
-    transactions[duplicateIndex] = { ...transactions[duplicateIndex], ...transaction };
-  } else {
-    transactions.unshift(transaction);
+    transactions[duplicateIndex] = {
+      ...transactions[duplicateIndex],
+      ...transaction,
+      updatedAt: transaction.updatedAt || transactions[duplicateIndex].updatedAt || new Date().toISOString()
+    };
+    transactions = deduplicateTransactions(transactions);
+    await saveState('transactions', transactions, { enqueueSync: false });
+    renderTransactions();
+    updateDashboard();
+    return;
   }
+
+  transactions.unshift(transaction);
 
   transactions = deduplicateTransactions(transactions);
   appendAuditEvent('sale_completed', {
