@@ -128,11 +128,11 @@ test('buildInvoiceListItems keeps a paid invoice number from the linked customer
   assert.equal(rows[0].balance, 0);
 });
 
-test('buildInvoiceListItems includes customer and transaction adjustments in preview data', () => {
+test('buildInvoiceListItems includes customer and transaction adjustments for the matching invoice date', () => {
   const customer = {
     id: 'cust-4',
     name: 'Dana',
-    adjustments: [{ amount: 20, method: 'Cash', date: '2024-10-07T10:00:00.000Z' }],
+    adjustments: [{ amount: 20, method: 'Cash', date: '2024-10-08T10:00:00.000Z' }],
     balance: -20
   };
 
@@ -156,7 +156,7 @@ test('buildInvoiceListItems includes customer and transaction adjustments in pre
   assert.equal(rows[0].previewData.lastAdjustment.method, 'Cash');
 });
 
-test('buildInvoiceListItems does not leak later adjustments to earlier invoices', () => {
+test('buildInvoiceListItems does not carry customer adjustments onto a later invoice date', () => {
   const customer = {
     id: 'cust-5',
     name: 'Eve',
@@ -189,8 +189,42 @@ test('buildInvoiceListItems does not leak later adjustments to earlier invoices'
 
   assert.equal(rows.length, 2);
   assert.equal(rows[0].previewData.adjustments.length, 0);
+  assert.equal(rows[1].previewData.adjustments.length, 0);
+});
+
+test('buildInvoiceListItems shows a customer adjustment only on the matching invoice date', () => {
+  const customer = {
+    id: 'cust-6',
+    name: 'Frank',
+    adjustments: [{ amount: 25, method: 'Cash', date: '2024-07-01T15:56:41.000Z' }],
+    balance: -25
+  };
+
+  const transactions = [
+    {
+      id: 'tx-10',
+      date: '2024-07-01T15:56:41.000Z',
+      customerId: 'cust-6',
+      customerNameReal: 'Frank',
+      total: 100,
+      amountPaid: 75
+    },
+    {
+      id: 'tx-11',
+      date: '2024-07-08T08:44:22.000Z',
+      customerId: 'cust-6',
+      customerNameReal: 'Frank',
+      total: 100,
+      amountPaid: 75
+    }
+  ];
+
+  const rows = buildInvoiceListItems({ customers: [customer], transactions });
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].previewData.adjustments.length, 0);
   assert.equal(rows[1].previewData.adjustments.length, 1);
-  assert.equal(rows[1].previewData.balance, 0);
+  assert.equal(rows[1].previewData.lastAdjustment.amount, 25);
 });
 
 test('mergeTransactionsPreservingDuplicates keeps separate transactions that share a date', () => {

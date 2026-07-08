@@ -8794,10 +8794,8 @@ function renderInvoices() {
     const invoiceNumber = row.invoiceNumber || 'INV-UNKNOWN';
     const previewDataJson = previewData ? JSON.stringify(previewData).replace(/'/g, "\\'") : 'null';
     const lastDate = row.date ? new Date(row.date).toLocaleString() : new Date().toLocaleString();
-    const transactionAdjustments = Array.isArray(row.transaction?.adjustments) ? row.transaction.adjustments : [];
-    const customerAdjustments = Array.isArray(customer?.adjustments) ? customer.adjustments : [];
-    const allAdjustments = [...transactionAdjustments, ...customerAdjustments];
-    const lastAdjustment = allAdjustments.length > 0 ? allAdjustments[allAdjustments.length - 1] : null;
+    const allAdjustments = Array.isArray(previewData?.adjustments) ? previewData.adjustments : [];
+    const lastAdjustment = previewData?.lastAdjustment || (allAdjustments.length > 0 ? allAdjustments[allAdjustments.length - 1] : null);
     const adjAmount = lastAdjustment ? (parseFloat(lastAdjustment.amount) || 0) : 0;
     const adjMethod = lastAdjustment ? (lastAdjustment.method || '') : '';
     const adjustedHtml = lastAdjustment ? `${adjMethod ? adjMethod + ' ' : ''}${currencySymbol}${formatCurrency(adjAmount)}` : '-';

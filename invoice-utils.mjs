@@ -12,6 +12,30 @@ function findMatchingCustomer(customer, transaction) {
   return matchesCustomerId || matchesCustomerName || matchesLegacyCustomerName ? customer : null;
 }
 
+function getDateKey(dateValue) {
+  if (!dateValue) return null;
+  const parsedDate = new Date(dateValue);
+  if (!Number.isFinite(parsedDate.getTime())) return null;
+  return `${parsedDate.getFullYear()}-${String(parsedDate.getMonth() + 1).padStart(2, '0')}-${String(parsedDate.getDate()).padStart(2, '0')}`;
+}
+
+function getRelevantAdjustments(transaction = {}, customer = null) {
+  const transactionAdjustments = Array.isArray(transaction.adjustments) ? transaction.adjustments.filter(Boolean) : [];
+  const customerAdjustments = Array.isArray(customer?.adjustments) ? customer.adjustments.filter(Boolean) : [];
+  const transactionDateKey = getDateKey(transaction?.date);
+
+  if (!transactionDateKey) {
+    return transactionAdjustments;
+  }
+
+  const relevantCustomerAdjustments = customerAdjustments.filter(adj => {
+    const adjustmentDateKey = getDateKey(adj?.date);
+    return Boolean(adjustmentDateKey && adjustmentDateKey === transactionDateKey);
+  });
+
+  return [...transactionAdjustments, ...relevantCustomerAdjustments];
+}
+
 export function mergeTransactionsPreservingDuplicates(existingTransactions = [], incomingTransactions = []) {
   const merged = [...(Array.isArray(existingTransactions) ? existingTransactions : [])];
   const incoming = Array.isArray(incomingTransactions) ? incomingTransactions : [];
@@ -61,18 +85,11 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
       const shouldIncludeInvoice = hasRealCustomer && (balance <= 0 || transaction.amountPaid !== undefined);
       if (!shouldIncludeInvoice) return null;
 
-      const transactionAdjustments = Array.isArray(transaction.adjustments) ? transaction.adjustments : [];
-      const customerAdjustments = Array.isArray(customer?.adjustments) ? customer.adjustments : [];
-      const transactionDateTime = transaction.date ? new Date(transaction.date).getTime() : null;
-      const relevantCustomerAdjustments = customerAdjustments.filter(adj => {
-        const adjDateTime = adj?.date ? new Date(adj.date).getTime() : null;
-        return Number.isFinite(adjDateTime) && Number.isFinite(transactionDateTime) ? adjDateTime <= transactionDateTime : true;
-      });
-      const mergedAdjustments = [...transactionAdjustments, ...relevantCustomerAdjustments];
+      const mergedAdjustments = getRelevantAdjustments(transaction, customer);
       const lastAdjustment = mergedAdjustments.length > 0 ? mergedAdjustments[mergedAdjustments.length - 1] : (transaction.lastAdjustment || null);
 
       const effectiveBalance = (() => {
-        const txnBalance = Number(transaction.balance ?? transaction.amountPaid !== undefined ? transaction.amountPaid - total : 0);
+        const txnBalance = transaction.balance !== undefined ? Number(transaction.balance) : balance;
         const computedBalance = Number.isFinite(txnBalance) && txnBalance !== 0 ? txnBalance : (balance ?? 0);
         if (computedBalance !== 0) return computedBalance;
         const adjustmentTotal = mergedAdjustments.reduce((sum, adj) => sum + (Number(adj?.amount) || 0), 0);
