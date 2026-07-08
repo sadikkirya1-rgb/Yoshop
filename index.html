@@ -613,7 +613,6 @@
             <div class="input-row">
               <input type="text" id="customerNameInput" placeholder="Customer Name" class="u-flex-2">
               <input type="text" id="customerContactInput" placeholder="Contact (Phone/Email)" class="u-flex-2">
-              <input type="number" id="customerBalanceInput" placeholder="Starting Balance (negative for debt, positive for credit)" step="0.01" class="u-flex-grow-1">
             </div>
             <div class="input-row"><input type="text" id="customerAddressInput" placeholder="Address"></div>
             <div class="input-row" style="justify-content: flex-end;">
@@ -633,34 +632,12 @@
                 <th>Name</th>
                 <th>Contact</th>
                 <th>Address</th>
+                <th>Outstanding</th>
+                <th style="text-align: right;">Actions</th>
               </tr>
             </thead>
             <tbody id="customerListBody"></tbody>
           </table>
-          <div id="customerDetailsSection" class="form-panel" style="display:none; margin-top:20px;">
-            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-              <h5 style="margin:0;">Customer Details</h5>
-              <button class="btn btn-secondary" type="button" onclick="hideCustomerDetails()">Close</button>
-            </div>
-            <div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom:12px;">
-              <div><strong>Name</strong><div id="customerDetailsName" style="margin-top:6px;"></div></div>
-              <div><strong>Contact</strong><div id="customerDetailsContact" style="margin-top:6px;"></div></div>
-              <div><strong>Address</strong><div id="customerDetailsAddress" style="margin-top:6px;"></div></div>
-              <div><strong>Balance</strong><div id="customerDetailsBalance" style="margin-top:6px;"></div></div>
-            </div>
-            <div style="display:grid; gap:10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); margin-bottom:12px;">
-              <div><strong>Subtotal</strong><div id="customerDetailsSubtotal" style="margin-top:6px;"></div></div>
-              <div><strong>Total</strong><div id="customerDetailsTotal" style="margin-top:6px;"></div></div>
-              <div><strong>Paid</strong><div id="customerDetailsPaid" style="margin-top:6px;"></div></div>
-              <div><strong>Last Active</strong><div id="customerDetailsLastDate" style="margin-top:6px;"></div></div>
-            </div>
-            <div>
-              <h6 style="margin:0 0 8px 0;">Invoice Adjustments</h6>
-              <div id="customerDetailsAdjustments" style="background:#fff; border:1px solid #dee2e6; border-radius:8px; padding:10px;">
-                <p style="margin:0; color:#6c757d;">Invoice adjustments are recorded directly on each invoice.</p>
-              </div>
-            </div>
-          </div>
         </div>
       </section>
 

@@ -4255,8 +4255,6 @@ window.updateOrderCustomer = updateOrderCustomer;
 window.toggleCustomerAdjustmentPanel = toggleCustomerAdjustmentPanel;
 window.recordCustomerAdjustment = recordCustomerAdjustment;
 window.showCustomerAdjustmentReceipt = showCustomerAdjustmentReceipt;
-window.showCustomerDetails = showCustomerDetails;
-window.hideCustomerDetails = hideCustomerDetails;
 window.previewOrder = previewOrder;
 window.createCustomerDebtInvoice = createCustomerDebtInvoice;
 window.showInvoiceAdjustmentPrompt = showInvoiceAdjustmentPrompt;
@@ -8606,7 +8604,6 @@ function toggleAddCustomerForm(show) {
     document.getElementById('customerNameInput').value = '';
     document.getElementById('customerContactInput').value = '';
     document.getElementById('customerAddressInput').value = '';
-    document.getElementById('customerBalanceInput').value = '';
   } else {
     formContainer.style.display = 'none';
     if (toggleButton) toggleButton.style.display = 'inline-block'; // Show the 'Add New' button
@@ -8630,69 +8627,30 @@ function renderCustomerList() {
       const matchesCustomerName = transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
       return matchesCustomerId || matchesCustomerName;
     });
-    const subtotalSales = parseFloat(customer.subtotalSales ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.subtotal) || 0), 0)) || 0;
-    const totalSales = parseFloat(customer.totalSales ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.total) || 0), 0)) || 0;
-    const totalPaid = parseFloat(customer.totalPaid ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.amountPaid) || 0), 0)) || 0;
-    const balance = parseFloat(customer.balance) || 0;
-    const adjustments = Array.isArray(customer.adjustments) ? customer.adjustments : [];
-    const balanceText = balance === 0
+    const outstandingBalance = buildInvoiceListItems({
+      customers: [customer],
+      transactions: customerTransactions
+    }).reduce((sum, row) => sum + (Number(row.balance) || 0), 0);
+    const outstandingText = outstandingBalance === 0
       ? `${currencySymbol}0`
-      : `<span style="${balance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</span>`;
-    const lastDate = customer.lastTransactionDate
-      ? new Date(customer.lastTransactionDate).toLocaleDateString()
-      : (customerTransactions.length > 0 ? new Date(customerTransactions[customerTransactions.length - 1].date).toLocaleDateString() : new Date().toLocaleDateString());
+      : `<span style="${outstandingBalance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${outstandingBalance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(outstandingBalance))}</span>`;
 
     const tr = document.createElement('tr');
-    tr.style.cursor = 'pointer';
-    tr.addEventListener('click', (event) => {
-      if (event.target.closest('button') || event.target.closest('input')) return;
-      showCustomerDetails(i);
-    });
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
                         <td>${i + 1}</td>
                         <td>${customer.name}</td>
                         <td>${customer.contact || customer.phone || customer.mobile || ''}</td>
-                        <td>${customer.address || ''}</td>`;
+                        <td>${customer.address || ''}</td>
+                        <td>${outstandingText}</td>
+                        <td style="text-align: right; white-space: nowrap;">
+                          <button class="icon-btn" title="Edit Customer" onclick="editCustomer(${i}); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
+                          <button class="icon-btn" title="Delete Customer" onclick="deleteCustomer(${i}); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
+                        </td>`;
     tbody.appendChild(tr);
   });
   
   populateCustomerDropdowns();
   renderInvoices();
-}
-
-function showCustomerDetails(index) {
-  const customer = customers[index];
-  if (!customer) return;
-
-  const currencySymbol = getCurrencySymbol();
-  const subtotalSales = parseFloat(customer.subtotalSales ?? 0) || 0;
-  const totalSales = parseFloat(customer.totalSales ?? 0) || 0;
-  const totalPaid = parseFloat(customer.totalPaid ?? 0) || 0;
-  const balance = parseFloat(customer.balance) || 0;
-  const lastDate = customer.lastTransactionDate
-    ? new Date(customer.lastTransactionDate).toLocaleDateString()
-    : 'N/A';
-
-  document.getElementById('customerDetailsName').textContent = customer.name || 'N/A';
-  document.getElementById('customerDetailsContact').textContent = customer.contact || customer.phone || customer.mobile || 'N/A';
-  document.getElementById('customerDetailsAddress').textContent = customer.address || 'N/A';
-  document.getElementById('customerDetailsBalance').textContent = `${currencySymbol}${formatCurrency(balance)}`;
-  document.getElementById('customerDetailsSubtotal').textContent = `${currencySymbol}${formatCurrency(subtotalSales)}`;
-  document.getElementById('customerDetailsTotal').textContent = `${currencySymbol}${formatCurrency(totalSales)}`;
-  document.getElementById('customerDetailsPaid').textContent = `${currencySymbol}${formatCurrency(totalPaid)}`;
-  document.getElementById('customerDetailsLastDate').textContent = lastDate;
-
-  const adjustmentsContainer = document.getElementById('customerDetailsAdjustments');
-  if (adjustmentsContainer) {
-    adjustmentsContainer.innerHTML = '<p style="margin:0; color:#6c757d;">Invoice adjustments are recorded directly on each invoice.</p>';
-  }
-
-  document.getElementById('customerDetailsSection').style.display = 'block';
-}
-
-function hideCustomerDetails() {
-  const section = document.getElementById('customerDetailsSection');
-  if (section) section.style.display = 'none';
 }
 
 function createCustomerDebtInvoice(customer) {
@@ -9082,7 +9040,6 @@ function addCustomer() {
   const nameInput = document.getElementById('customerNameInput');
   const contactInput = document.getElementById('customerContactInput');
   const addressInput = document.getElementById('customerAddressInput');
-  const balanceInput = document.getElementById('customerBalanceInput');
   const index = document.getElementById('customerIndex').value;
 
   if (!nameInput.value.trim()) return showAppAlert("Customer name is required.", 'Customer Required');
@@ -9094,7 +9051,7 @@ function addCustomer() {
     name: nameInput.value.trim(),
     contact: contactInput.value.trim(),
     address: addressInput.value.trim(),
-    balance: parseFloat(balanceInput.value) || 0,
+    balance: existingCustomer?.balance || 0,
     subtotalSales: existingCustomer?.subtotalSales || 0,
     totalSales: existingCustomer?.totalSales || 0,
     totalPaid: existingCustomer?.totalPaid || 0,
@@ -9123,7 +9080,6 @@ function editCustomer(index) {
   document.getElementById('customerNameInput').value = customer.name;
   document.getElementById('customerContactInput').value = customer.contact;
   document.getElementById('customerAddressInput').value = customer.address;
-  document.getElementById('customerBalanceInput').value = customer.balance || 0;
   document.getElementById('customerIndex').value = index;
   document.getElementById('saveCustomerBtn').textContent = 'Update Customer';
 }
