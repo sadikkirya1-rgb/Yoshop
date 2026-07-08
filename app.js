@@ -18,6 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
+import { buildInvoiceListItems } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -8784,67 +8785,63 @@ function createCustomerDebtInvoice(customer) {
 }
 
 function renderInvoices() {
-  // include customers with debt (negative balance) and fully-paid invoices (zero balance)
-  const customersWithDebt = (Array.isArray(customers) ? customers : []).filter(customer => {
-    const bal = parseFloat(customer.balance) || 0;
-    return bal <= 0; // include negative (owing) and zero (paid) for record keeping
-  });
   const startDate = document.getElementById('invoiceStartDate')?.value;
   const endDate = document.getElementById('invoiceEndDate')?.value;
-  const filteredCustomers = customersWithDebt.filter(customer => {
-    const txDate = customer.lastTransactionDate ? customer.lastTransactionDate.split('T')[0] : '';
+  const invoiceRows = buildInvoiceListItems({
+    customers: Array.isArray(customers) ? customers : [],
+    transactions: Array.isArray(transactions) ? transactions : []
+  });
+
+  const filteredRows = invoiceRows.filter(row => {
+    const txDate = row?.date ? row.date.split('T')[0] : '';
     if (startDate && txDate && txDate < startDate) return false;
     if (endDate && txDate && txDate > endDate) return false;
     return true;
   });
 
   const currencySymbol = getCurrencySymbol();
-  const rowsHtml = filteredCustomers.map((customer, idx) => {
-    const customerTransactions = (Array.isArray(transactions) ? transactions : []).filter(tx => {
-      const matchesCustomerId = customer?.id && tx?.customerId && tx.customerId === customer.id;
-      const matchesCustomerName = tx?.customerNameReal && customer?.name && tx.customerNameReal === customer.name;
-      return matchesCustomerId || matchesCustomerName;
-    });
-    const subtotalSales = parseFloat(customer.subtotalSales ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.subtotal) || 0), 0)) || 0;
-    const totalSales = parseFloat(customer.totalSales ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.total) || 0), 0)) || 0;
-    const totalPaid = parseFloat(customer.totalPaid ?? customerTransactions.reduce((sum, tx) => sum + (parseFloat(tx.amountPaid) || 0), 0)) || 0;
-    const balance = parseFloat(customer.balance) || 0;
-    const previewData = createCustomerDebtInvoice(customer);
-    const invoiceNumber = customer.invoiceNumber || previewData?.invoiceNumber || 'INV-UNKNOWN';
+  const rowsHtml = filteredRows.map((row, idx) => {
+    const balance = Number(row.balance || 0);
+    const total = Number(row.total || 0);
+    const amountPaid = Number(row.amountPaid || 0);
+    const customer = row.customer;
+    const previewData = row.previewData;
+    const invoiceNumber = row.invoiceNumber || 'INV-UNKNOWN';
     const previewDataJson = previewData ? JSON.stringify(previewData).replace(/'/g, "\\'") : 'null';
-    const lastDate = customer.lastTransactionDate ? new Date(customer.lastTransactionDate).toLocaleString() : new Date().toLocaleString();
-    const lastAdjustment = (Array.isArray(customer.adjustments) && customer.adjustments.length > 0) ? customer.adjustments[customer.adjustments.length - 1] : null;
+    const lastDate = row.date ? new Date(row.date).toLocaleString() : new Date().toLocaleString();
+    const lastAdjustment = (Array.isArray(customer?.adjustments) && customer.adjustments.length > 0)
+      ? customer.adjustments[customer.adjustments.length - 1]
+      : null;
     const adjAmount = lastAdjustment ? (parseFloat(lastAdjustment.amount) || 0) : 0;
     const adjMethod = lastAdjustment ? (lastAdjustment.method || '') : '';
     const adjustedHtml = lastAdjustment ? `${adjMethod ? adjMethod + ' ' : ''}${currencySymbol}${formatCurrency(adjAmount)}` : '-';
 
     const isPaid = Math.abs(balance) === 0;
-    const adjustDisabledAttr = isPaid ? 'disabled' : '';
-    const adjustStyle = isPaid ? 'opacity:0.45; pointer-events:none;' : '';
+    const adjustDisabledAttr = isPaid || !customer?.id ? 'disabled' : '';
+    const adjustStyle = isPaid || !customer?.id ? 'opacity:0.45; pointer-events:none;' : '';
     const statusBadge = isPaid ? `<span style="margin-left:8px; padding:4px 8px; background:#28a745; color:#fff; border-radius:6px; font-size:0.85em;">Paid Fully</span>` : '';
 
     return `<tr class="u-cursor-pointer">
       <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('invoiceListBody','selectAllInvoiceRows')"></td>
       <td>${idx + 1}</td>
       <td>${lastDate}</td>
-      <td>${customer.name}</td>
+      <td>${row.customerName || 'Unknown Customer'}</td>
       <td>${invoiceNumber}</td>
-      <td style="text-align: right;"><strong><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(subtotalSales)}</strong></td>
-      <td style="text-align: right;"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(totalPaid)}</td>
+      <td style="text-align: right;"><strong><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(total)}</strong></td>
+      <td style="text-align: right;"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(amountPaid)}</td>
       <td style="text-align: right; color:${balance < 0 ? '#dc3545' : '#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</td>
       <td style="text-align: right;">${adjustedHtml}</td>
       <td style="text-align: right; display:flex; gap:6px; justify-content:flex-end; align-items:center;">
-        <button class="btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(customer.id)}); event.stopPropagation();'>Adjust</button>
+        <button class="btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(customer?.id || '')}); event.stopPropagation();'>Adjust</button>
         <button class="btn" type="button" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>Preview</button>
         ${statusBadge}
       </td>
     </tr>`;
   }).join('');
 
-  const totalDebtInvoices = customersWithDebt.length;
   const invoiceCountEl = document.getElementById('invoiceCountInfo');
   if (invoiceCountEl) {
-    invoiceCountEl.textContent = `Showing ${filteredCustomers.length} of ${totalDebtInvoices} debt invoices`;
+    invoiceCountEl.textContent = `Showing ${filteredRows.length} of ${invoiceRows.length} debt invoices`;
   }
 
   const tbody = document.getElementById('invoiceListBody');
