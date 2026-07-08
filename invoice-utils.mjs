@@ -63,9 +63,23 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
 
       const transactionAdjustments = Array.isArray(transaction.adjustments) ? transaction.adjustments : [];
       const customerAdjustments = Array.isArray(customer?.adjustments) ? customer.adjustments : [];
-      const mergedAdjustments = [...transactionAdjustments, ...customerAdjustments];
+      const transactionDateTime = transaction.date ? new Date(transaction.date).getTime() : null;
+      const relevantCustomerAdjustments = customerAdjustments.filter(adj => {
+        const adjDateTime = adj?.date ? new Date(adj.date).getTime() : null;
+        return Number.isFinite(adjDateTime) && Number.isFinite(transactionDateTime) ? adjDateTime <= transactionDateTime : true;
+      });
+      const mergedAdjustments = [...transactionAdjustments, ...relevantCustomerAdjustments];
       const lastAdjustment = mergedAdjustments.length > 0 ? mergedAdjustments[mergedAdjustments.length - 1] : (transaction.lastAdjustment || null);
 
+      const effectiveBalance = (() => {
+        const txnBalance = Number(transaction.balance ?? transaction.amountPaid !== undefined ? transaction.amountPaid - total : 0);
+        const computedBalance = Number.isFinite(txnBalance) && txnBalance !== 0 ? txnBalance : (balance ?? 0);
+        if (computedBalance !== 0) return computedBalance;
+        const adjustmentTotal = mergedAdjustments.reduce((sum, adj) => sum + (Number(adj?.amount) || 0), 0);
+        return Math.min(0, amountPaid - total + adjustmentTotal);
+      })();
+
+      const normalizedBalance = Number.isFinite(effectiveBalance) ? effectiveBalance : 0;
       const previewData = {
         date: transaction.date || new Date().toISOString(),
         customerName: transaction.customerNameReal || transaction.customerName || customer?.name || 'Unknown Customer',
@@ -87,7 +101,7 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
           ? `Outstanding balance due for ${transaction.customerNameReal || transaction.customerName || customer?.name || 'customer account'}`
           : `Invoice paid in full for ${transaction.customerNameReal || transaction.customerName || customer?.name || 'customer account'}`,
         amountPaid,
-        balance,
+        balance: normalizedBalance,
         lastAdjustment,
         adjustments: mergedAdjustments,
         invoiceNumber: normalizeInvoiceNumber(transaction.invoiceNumber)
@@ -104,7 +118,7 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
         invoiceNumber: previewData.invoiceNumber,
         total,
         amountPaid,
-        balance,
+        balance: normalizedBalance,
         paymentMethod: transaction.paymentMethod || 'On Account',
         previewData,
         transaction

@@ -156,6 +156,43 @@ test('buildInvoiceListItems includes customer and transaction adjustments in pre
   assert.equal(rows[0].previewData.lastAdjustment.method, 'Cash');
 });
 
+test('buildInvoiceListItems does not leak later adjustments to earlier invoices', () => {
+  const customer = {
+    id: 'cust-5',
+    name: 'Eve',
+    adjustments: [{ amount: 2000, method: 'Cash', date: '2024-10-09T10:00:00.000Z' }],
+    balance: -2000
+  };
+
+  const transactions = [
+    {
+      id: 'tx-8',
+      date: '2024-10-08T10:00:00.000Z',
+      customerId: 'cust-5',
+      customerNameReal: 'Eve',
+      total: 10000,
+      amountPaid: 8000,
+      balance: -2000
+    },
+    {
+      id: 'tx-9',
+      date: '2024-10-10T10:00:00.000Z',
+      customerId: 'cust-5',
+      customerNameReal: 'Eve',
+      total: 10000,
+      amountPaid: 8000,
+      balance: -2000
+    }
+  ];
+
+  const rows = buildInvoiceListItems({ customers: [customer], transactions });
+
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].previewData.adjustments.length, 0);
+  assert.equal(rows[1].previewData.adjustments.length, 1);
+  assert.equal(rows[1].previewData.balance, 0);
+});
+
 test('mergeTransactionsPreservingDuplicates keeps separate transactions that share a date', () => {
   const existing = [
     {
