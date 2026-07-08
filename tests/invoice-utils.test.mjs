@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey } from '../invoice-utils.mjs';
 
 test('buildInvoiceListItems keeps separate debt transactions for the same customer', () => {
   const customer = {
@@ -284,6 +284,62 @@ test('mergeTransactionsPreservingDuplicates collapses duplicate invoices already
 
   assert.equal(merged.length, 1);
   assert.equal(merged[0].invoiceNumber, 'INV-001');
+});
+
+test('mergeTransactionsPreservingDuplicates collapses same-sale refreshes without invoice ids', () => {
+  const existing = [
+    {
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      total: 100,
+      amountPaid: 100,
+      paymentMethod: 'Cash',
+      items: [{ name: 'Coffee', qty: 1, price: 100, notes: '' }]
+    }
+  ];
+
+  const incoming = [
+    {
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      total: 100,
+      amountPaid: 100,
+      paymentMethod: 'Cash',
+      items: [{ name: 'Coffee', qty: 1, price: 100, notes: '' }]
+    }
+  ];
+
+  const merged = mergeTransactionsPreservingDuplicates(existing, incoming);
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].total, 100);
+  assert.equal(merged[0].paymentMethod, 'Cash');
+});
+
+test('getTransactionDuplicateKey keeps separate sales with different items even when the rest matches', () => {
+  const firstSale = {
+    date: '2024-10-06T10:00:00.000Z',
+    customerId: 'cust-1',
+    customerNameReal: 'Alice',
+    total: 100,
+    amountPaid: 100,
+    paymentMethod: 'Cash',
+    items: [{ name: 'Coffee', qty: 1, price: 100, notes: '' }]
+  };
+
+  const secondSale = {
+    date: '2024-10-06T10:00:00.000Z',
+    customerId: 'cust-1',
+    customerNameReal: 'Alice',
+    total: 100,
+    amountPaid: 100,
+    paymentMethod: 'Cash',
+    items: [{ name: 'Tea', qty: 1, price: 100, notes: '' }]
+  };
+
+  assert.notEqual(getTransactionDuplicateKey(firstSale), getTransactionDuplicateKey(secondSale));
 });
 
 test('deduplicateTransactions removes repeated sales while preserving the latest record', () => {

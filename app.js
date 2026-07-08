@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, isDuplicateTransactionRecord } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -908,6 +908,131 @@ const DB_VERSION = 1;
 const STORE_NAME = 'appState';
 const CART_ID = 'SHOP_CART';
 
+const APP_STORAGE_KEYS_TO_CLEAR = [
+  'lastUserUid',
+  'currentUserUid',
+  'currentUserRole',
+  'currentUserPermissions',
+  'currentLoggedInStaffName',
+  'isPinVerified',
+  'lastAdminNoticeSeen',
+  'appNotifications',
+  'pendingTransactions',
+  'lastSyncTime'
+];
+
+function clearBrowserStorageForThisOrigin() {
+  try {
+    const localKeys = Object.keys(localStorage || {});
+    localKeys.forEach((key) => {
+      if (!key || key.startsWith('firebase:')) return;
+      try { localStorage.removeItem(key); } catch (e) { }
+    });
+  } catch (e) {
+    console.warn('[CLEAR] Failed to clear localStorage:', e);
+  }
+
+  try {
+    const sessionKeys = Object.keys(sessionStorage || {});
+    sessionKeys.forEach((key) => {
+      try { sessionStorage.removeItem(key); } catch (e) { }
+    });
+  } catch (e) {
+    console.warn('[CLEAR] Failed to clear sessionStorage:', e);
+  }
+}
+
+async function deleteYoShopIndexedDatabases() {
+  const namedDatabases = [];
+  if (window.indexedDB && typeof window.indexedDB.databases === 'function') {
+    try {
+      const databases = await window.indexedDB.databases();
+      databases.filter(Boolean).forEach((database) => {
+        if (database && database.name) namedDatabases.push(database.name);
+      });
+    } catch (e) {
+      console.warn('[CLEAR] Unable to list IndexedDB databases:', e);
+    }
+  }
+
+  if (!namedDatabases.length) {
+    namedDatabases.push('posDB');
+  }
+
+  const uniqueDatabaseNames = [...new Set(namedDatabases.filter((name) => typeof name === 'string' && (name === 'posDB' || name.startsWith('posDB_'))))];
+  for (const dbName of uniqueDatabaseNames) {
+    await new Promise((resolve) => {
+      const request = window.indexedDB.deleteDatabase(dbName);
+      request.onsuccess = () => resolve();
+      request.onerror = () => resolve();
+      request.onblocked = () => resolve();
+    });
+  }
+}
+
+async function clearYoShopLocalData(options = {}) {
+  const { skipConfirm = false, reload = true } = options;
+
+  if (!skipConfirm && typeof showAppConfirm === 'function') {
+    const response = await showAppConfirm('This will remove the local sales archive, IndexedDB data, app caches, and browser storage for YoShop. Continue?', 'Clear Local App Data', 'Clear Data', 'Cancel');
+    if (!response || !response.confirmed) return false;
+  }
+
+  try {
+    if (db) {
+      db.close();
+      db = null;
+    }
+    if (localRepository) {
+      await localRepository.close();
+      localRepository = null;
+    }
+
+    repositoryService = null;
+    localRepositoryReady = false;
+
+    if ('serviceWorker' in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+    }
+
+    if ('caches' in window) {
+      const cacheNames = await caches.keys();
+      await Promise.all(cacheNames.map((cacheName) => caches.delete(cacheName)));
+    }
+
+    clearBrowserStorageForThisOrigin();
+    await deleteYoShopIndexedDatabases();
+
+    APP_STORAGE_KEYS_TO_CLEAR.forEach((key) => {
+      try { localStorage.removeItem(key); } catch (e) { }
+      try { sessionStorage.removeItem(key); } catch (e) { }
+    });
+
+    if (reload) {
+      window.location.reload();
+    }
+    return true;
+  } catch (error) {
+    console.error('[CLEAR] Failed to clear YoShop local data:', error);
+    return false;
+  }
+}
+
+async function resetLocalDatabase() {
+  return clearYoShopLocalData({ skipConfirm: false, reload: true });
+}
+
+const shouldClearLocalDataOnLoad = new URLSearchParams(window.location.search).get('clearLocalData') === '1';
+if (shouldClearLocalDataOnLoad) {
+  window.addEventListener('load', () => {
+    clearYoShopLocalData({ skipConfirm: true, reload: true }).catch((error) => {
+      console.error('[CLEAR] Startup cleanup failed:', error);
+      window.location.reload();
+    });
+  });
+}
+
 async function initDB(userId = 'guest') {
   const deviceId = new URLSearchParams(window.location.search).get('device') || '';
   const effectiveUserId = userId || 'guest';
@@ -1037,43 +1162,10 @@ async function loadState(key) {
   return repositoryService.loadState(key);
 }
 
-function isDuplicateTransactionSyncAction(action = {}) {
-  if (!action || (action.entityType !== 'sales' && action.entityType !== 'transactions')) return false;
-
-  const payload = action.payload || {};
-  const candidateInvoice = normalizeTransactionInvoiceNumber(payload.invoiceNumber || payload.invoice || '');
-  const candidateId = payload.id || action.id || payload.recordId || payload.transactionId;
-
-  if (candidateInvoice) {
-    const hasExisting = Array.isArray(transactions) && transactions.some(existing => normalizeTransactionInvoiceNumber(existing.invoiceNumber) === candidateInvoice);
-    const hasQueued = Array.isArray(pendingSyncQueue) && pendingSyncQueue.some(item => {
-      const queuedPayload = item?.payload || {};
-      return (item?.entityType === action.entityType || item?.entityType === 'sales' || item?.entityType === 'transactions') && normalizeTransactionInvoiceNumber(queuedPayload.invoiceNumber || queuedPayload.invoice || '') === candidateInvoice;
-    });
-    return hasExisting || hasQueued;
-  }
-
-  if (candidateId) {
-    const hasExisting = Array.isArray(transactions) && transactions.some(existing => String(existing.id || existing.recordId || existing.transactionId || '') === String(candidateId));
-    const hasQueued = Array.isArray(pendingSyncQueue) && pendingSyncQueue.some(item => {
-      const queuedPayload = item?.payload || {};
-      return (item?.entityType === action.entityType || item?.entityType === 'sales' || item?.entityType === 'transactions') && String(queuedPayload.id || item.id || queuedPayload.recordId || queuedPayload.transactionId || '') === String(candidateId);
-    });
-    return hasExisting || hasQueued;
-  }
-
-  return false;
-}
-
 async function enqueueLocalSyncAction(action) {
   if (!localRepositoryReady || !repositoryService) {
     await initDB(sessionStorage.getItem('currentUserUid') || 'guest');
   }
-
-  if (isDuplicateTransactionSyncAction(action)) {
-    return null;
-  }
-
   const envelope = await repositoryService.enqueueSyncAction(action);
   if (envelope) {
     pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
@@ -1696,18 +1788,7 @@ async function syncCloudAction(action) {
     const txRef = collection(dbFirestore, 'users', currentUser.uid, 'transactions');
     const payload = action.payload || {};
     const txId = payload.id || action.id;
-    let targetDocRef = doc(txRef, txId);
-
-    const invoiceNumber = normalizeTransactionInvoiceNumber(payload.invoiceNumber || payload.invoice || '');
-    if (invoiceNumber) {
-      const existingSnapshot = await getDocs(query(txRef, where('invoiceNumber', '==', invoiceNumber), limit(1)));
-      if (!existingSnapshot.empty) {
-        const existingDoc = existingSnapshot.docs[0];
-        targetDocRef = doc(txRef, existingDoc.id);
-      }
-    }
-
-    await setDoc(targetDocRef, sanitizeForFirestore({
+    await setDoc(doc(txRef, txId), sanitizeForFirestore({
       ...payload,
       synced: true,
       syncStatus: 'synced',
@@ -3211,6 +3292,7 @@ function handleFirebaseError(error, context = "Firebase Operation", path = "unkn
 async function saveData(syncToCloud = true, options = {}) {
   try {
     menu = normalizeProductCatalog(menu || []);
+    transactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
 
     // Save to local IndexedDB immediately (always, synchronous)
     // Use Promise.allSettled instead of Promise.all to handle individual errors gracefully
@@ -3395,42 +3477,43 @@ async function cleanupDuplicateTransactionsInCloud(cleanTransactions = []) {
   const effectiveUid = getEffectiveUid();
   if (!effectiveUid || !dbFirestore || !Array.isArray(cleanTransactions)) return;
 
-  const transactionGroups = new Map();
-  cleanTransactions.forEach(transaction => {
-    if (!transaction || typeof transaction !== 'object') return;
-    const invoiceNumber = normalizeTransactionInvoiceNumber(transaction.invoiceNumber);
-    const key = invoiceNumber || `${transaction.date || ''}|${transaction.customerId || transaction.customerNameReal || transaction.customerName || ''}|${Number(transaction.total || 0)}`;
-    if (!key) return;
-    const bucket = transactionGroups.get(key) || [];
-    bucket.push(transaction);
-    transactionGroups.set(key, bucket);
-  });
-
   const txRef = collection(dbFirestore, 'users', effectiveUid, 'transactions');
-  await Promise.allSettled(Array.from(transactionGroups.entries()).filter(([, group]) => group.length > 1).flatMap(([key, group]) => {
-    const canonical = group.sort((a, b) => {
-      const timeA = Number(new Date(a.updatedAt || a.date || 0).getTime());
-      const timeB = Number(new Date(b.updatedAt || b.date || 0).getTime());
-      if (timeA !== timeB) return timeA - timeB;
-      return Number(b.version || 0) - Number(a.version || 0);
-    })[group.length - 1];
+  try {
+    const snapshot = await getDocs(txRef);
+    const cloudTransactions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const transactionGroups = new Map();
 
-    if (!canonical) return [];
-    const queryInvoice = normalizeTransactionInvoiceNumber(canonical.invoiceNumber);
-    if (!queryInvoice) return [];
-
-    return getDocs(query(txRef, where('invoiceNumber', '==', queryInvoice))).then(snapshot => {
-      const docsToDelete = snapshot.docs.filter(doc => {
-        const data = doc.data() || {};
-        const docInvoice = normalizeTransactionInvoiceNumber(data.invoiceNumber);
-        return docInvoice === queryInvoice && String(data.id || data.recordId || doc.id) !== String(canonical.id || canonical.recordId || canonical.transactionId || '');
-      });
-      return Promise.allSettled(docsToDelete.map(doc => deleteDoc(doc.ref)));
-    }).catch(error => {
-      console.warn('[TX-CLEANUP] Failed to prune duplicate cloud transactions:', error);
-      return [];
+    cloudTransactions.forEach(transaction => {
+      if (!transaction || typeof transaction !== 'object') return;
+      const key = getTransactionDuplicateKey(transaction);
+      if (!key) return;
+      const bucket = transactionGroups.get(key) || [];
+      bucket.push(transaction);
+      transactionGroups.set(key, bucket);
     });
-  }));
+
+    await Promise.allSettled(Array.from(transactionGroups.entries()).filter(([, group]) => group.length > 1).map(([, group]) => {
+      const canonical = group.sort((a, b) => {
+        const timeA = Number(new Date(a.updatedAt || a.date || 0).getTime());
+        const timeB = Number(new Date(b.updatedAt || b.date || 0).getTime());
+        if (timeA !== timeB) return timeA - timeB;
+        return Number(b.version || 0) - Number(a.version || 0);
+      })[group.length - 1];
+
+      if (!canonical) return Promise.resolve();
+      return Promise.allSettled(group
+        .filter(transactionDoc => String(transactionDoc.id || transactionDoc.recordId || '') !== String(canonical.id || canonical.recordId || ''))
+        .map(transactionDoc => {
+          const ref = doc(dbFirestore, 'users', effectiveUid, 'transactions', transactionDoc.id);
+          return deleteDoc(ref);
+        }))
+        .catch(error => {
+          console.warn('[TX-CLEANUP] Failed to prune duplicate cloud transactions:', error);
+        });
+    }));
+  } catch (error) {
+    console.warn('[TX-CLEANUP] Failed to inspect cloud transactions:', error);
+  }
 }
 
 async function persistDeduplicatedTransactions(sourceTransactions = []) {
@@ -3454,22 +3537,22 @@ async function recordTransaction(transaction) {
     syncStatus: 'pending'
   }, transaction);
 
-  const duplicateIndex = transactions.findIndex(existing => isDuplicateTransactionRecord(existing, transaction));
+  const duplicateIndex = transactions.findIndex(existing => {
+    if (!existing || !existing.date) return false;
+    const sameId = Boolean(existing.id && transaction.id && existing.id === transaction.id);
+    const sameInvoiceNumber = Boolean(
+      normalizeTransactionInvoiceNumber(existing.invoiceNumber) &&
+      normalizeTransactionInvoiceNumber(transaction.invoiceNumber) &&
+      normalizeTransactionInvoiceNumber(existing.invoiceNumber) === normalizeTransactionInvoiceNumber(transaction.invoiceNumber)
+    );
+    return sameId || sameInvoiceNumber;
+  });
 
   if (duplicateIndex >= 0) {
-    transactions[duplicateIndex] = {
-      ...transactions[duplicateIndex],
-      ...transaction,
-      updatedAt: transaction.updatedAt || transactions[duplicateIndex].updatedAt || new Date().toISOString()
-    };
-    transactions = deduplicateTransactions(transactions);
-    await saveState('transactions', transactions, { enqueueSync: false });
-    renderTransactions();
-    updateDashboard();
-    return;
+    transactions[duplicateIndex] = { ...transactions[duplicateIndex], ...transaction };
+  } else {
+    transactions.unshift(transaction);
   }
-
-  transactions.unshift(transaction);
 
   transactions = deduplicateTransactions(transactions);
   appendAuditEvent('sale_completed', {
@@ -7507,7 +7590,7 @@ function getDashboardDateRange() {
 
 function getFilteredDashboardTransactions() {
   const { startDate, endDate } = getDashboardDateRange();
-  const allTx = Array.isArray(transactions) ? transactions : [];
+  const allTx = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
   return allTx.filter(tx => {
     const txDate = new Date(tx.date);
     if (Number.isNaN(txDate.getTime())) return false;
@@ -7528,6 +7611,7 @@ function updateDashboard() {
   if (!transactions) transactions = [];
 
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
+  transactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
   const filteredTransactions = getFilteredDashboardTransactions();
   const allProducts = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
   const categoriesForDashboard = new Set([
@@ -8416,37 +8500,14 @@ async function deleteStaff(index) {
 }
 
 async function resetApp() {
-  const confirmed = await showAppConfirm("WARNING: This will permanently delete ALL application data, including your menu, transactions, and settings. This action cannot be undone. Are you sure?", "Reset Application", "Reset", "Cancel");
+  const confirmed = await showAppConfirm("WARNING: This will permanently delete ALL application data, including your menu, transactions, settings, IndexedDB, and browser caches. This action cannot be undone. Are you sure?", "Reset Application", "Reset", "Cancel");
   if (!confirmed) return;
 
-  try {
-    const dbNameToDelete = localRepository?.getDbName?.() || DB_NAME;
-    // If the database connection is open, we must close it before deleting.
-    if (db) {
-      db.close();
-      db = null;
+  const cleared = await clearYoShopLocalData({ skipConfirm: true, reload: true });
+  if (!cleared) {
+    if (typeof showAppAlert === 'function') {
+      showAppAlert('Could not reset application data. Please close other tabs of this app and try again.', 'Reset Failed');
     }
-    if (localRepository) {
-      await localRepository.close();
-      localRepository = null;
-    }
-    repositoryService = null;
-    localRepositoryReady = false;
-    const deleteRequest = indexedDB.deleteDatabase(dbNameToDelete);
-
-    deleteRequest.onsuccess = () => {
-      alert("Application data has been reset. The application will now reload.");
-      location.reload();
-    };
-    deleteRequest.onerror = (e) => {
-      console.error("Error deleting database:", e);
-      alert("Could not reset application data. Please try clearing your browser's site data manually for this website.");
-    };
-    deleteRequest.onblocked = () => {
-      alert("Could not reset application data because the database is in use. Please close all other tabs of this app and try again.");
-    };
-  } catch (error) {
-    console.error("Error during app reset:", error);
   }
 }
 
@@ -12774,7 +12835,7 @@ Object.assign(window, {
   showLoginOverlay, testLocalNotification, toggleNotifications, dismissNotification, selectLoginRole, resetLoginStage,
   renderShopNoticesInSettings, showNoticesPage, closeNoticesPage, addOrUpdateAdminNoticeNotification, removeAdminNoticeNotification, openAdminNoticeFromNotification, checkForAdminNoticeForCurrentShop,
   clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage,
-  toggleAdminAccessForm, saveAdminAccessEntry, editAdminAccessEntry, deleteAdminAccessEntry, toggleAdminAccessStatus,
+  toggleAdminAccessForm, saveAdminAccessEntry, editAdminAccessEntry, deleteAdminAccessEntry, toggleAdminAccessStatus, clearYoShopLocalData, resetLocalDatabase,
   refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus,
   switchAppAdminView, updateTargetUserStatus, updateTargetSubscription, updateTargetSubscriptionDate, setFreePlan, updateTargetShopSubscriptionState, generateAutoBarcode, toggleReportCategoryDropdown
   , toggleReportOptionsDropdown, changeReportZoom,

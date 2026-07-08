@@ -32,7 +32,24 @@ function getRelevantAdjustments(transaction = {}, customer = null) {
   return fallbackAdjustment;
 }
 
-function getTransactionDuplicateKey(transaction = {}) {
+function getTransactionItemsSignature(transaction = {}) {
+  const items = Array.isArray(transaction?.items) ? transaction.items : [];
+  const normalizedItems = items
+    .filter(Boolean)
+    .map(item => {
+      const name = typeof item?.name === 'string' ? item.name.trim().toLowerCase() : '';
+      const qty = Number(item?.qty || 0);
+      const price = Number(item?.price || item?.unitPrice || 0);
+      const notes = typeof item?.notes === 'string' ? item.notes.trim().toLowerCase() : '';
+      return `${name}|${qty}|${price}|${notes}`;
+    })
+    .sort()
+    .join('~');
+
+  return normalizedItems;
+}
+
+export function getTransactionDuplicateKey(transaction = {}) {
   if (!transaction || typeof transaction !== 'object') return '';
 
   const invoiceKey = normalizeInvoiceNumber(transaction.invoiceNumber);
@@ -44,31 +61,16 @@ function getTransactionDuplicateKey(transaction = {}) {
   const date = transaction.date;
   const total = Number(transaction.total || 0);
   const customer = transaction.customerId || transaction.customerNameReal || transaction.customerName || '';
+  const amountPaid = Number(transaction.amountPaid || transaction.amount || 0);
+  const paymentMethod = typeof transaction.paymentMethod === 'string' ? transaction.paymentMethod.trim().toLowerCase() : '';
+  const tableNo = typeof transaction.tableNo === 'string' ? transaction.tableNo.trim().toLowerCase() : '';
+  const itemsSignature = getTransactionItemsSignature(transaction);
+
   if (date && customer && Number.isFinite(total)) {
-    return `fallback:${String(date)}|${String(customer)}|${String(total)}`;
+    return `fallback:${String(date)}|${String(customer)}|${String(total)}|${String(amountPaid)}|${paymentMethod}|${tableNo}|${itemsSignature}`;
   }
 
   return '';
-}
-
-export function isDuplicateTransactionRecord(existingTransaction = {}, candidateTransaction = {}) {
-  if (!existingTransaction || !candidateTransaction || typeof existingTransaction !== 'object' || typeof candidateTransaction !== 'object') {
-    return false;
-  }
-
-  const existingInvoice = normalizeInvoiceNumber(existingTransaction.invoiceNumber);
-  const candidateInvoice = normalizeInvoiceNumber(candidateTransaction.invoiceNumber);
-  if (existingInvoice && candidateInvoice && existingInvoice === candidateInvoice) {
-    return true;
-  }
-
-  const existingId = existingTransaction.id || existingTransaction.recordId || existingTransaction.transactionId;
-  const candidateId = candidateTransaction.id || candidateTransaction.recordId || candidateTransaction.transactionId;
-  if (existingId && candidateId && String(existingId) === String(candidateId)) {
-    return true;
-  }
-
-  return false;
 }
 
 export function deduplicateTransactions(transactions = []) {
@@ -85,8 +87,8 @@ export function deduplicateTransactions(transactions = []) {
       return;
     }
 
-    const existingIndex = deduped.findIndex(item => isDuplicateTransactionRecord(item, transaction));
-    if (existingIndex < 0) {
+    const existingIndex = seen.get(key);
+    if (existingIndex === undefined) {
       seen.set(key, deduped.length);
       deduped.push({ ...transaction, duplicateCount: 0 });
       return;
@@ -116,8 +118,15 @@ export function mergeTransactionsPreservingDuplicates(existingTransactions = [],
   allTransactions.forEach(transaction => {
     if (!transaction || !transaction.date) return;
 
+    const transactionKey = getTransactionDuplicateKey(transaction);
     const existingIndex = merged.findIndex(existing => {
       if (!existing || !existing.date) return false;
+
+      const existingKey = getTransactionDuplicateKey(existing);
+      if (transactionKey && existingKey && transactionKey === existingKey) {
+        return true;
+      }
+
       const sameId = Boolean(existing.id && transaction.id && existing.id === transaction.id);
       const sameInvoiceNumber = Boolean(
         normalizeInvoiceNumber(existing.invoiceNumber) &&
@@ -128,7 +137,16 @@ export function mergeTransactionsPreservingDuplicates(existingTransactions = [],
     });
 
     if (existingIndex >= 0) {
-      merged[existingIndex] = { ...merged[existingIndex], ...transaction };
+      const existingRecord = merged[existingIndex];
+      const currentVersion = Number(transaction.version || 0);
+      const existingVersion = Number(existingRecord.version || 0);
+      const currentTime = Number(new Date(transaction.updatedAt || transaction.date || 0).getTime());
+      const existingTime = Number(new Date(existingRecord.updatedAt || existingRecord.date || 0).getTime());
+      const shouldReplace = currentVersion > existingVersion || (currentVersion === existingVersion && currentTime >= existingTime);
+
+      merged[existingIndex] = shouldReplace
+        ? { ...existingRecord, ...transaction }
+        : { ...transaction, ...existingRecord };
     } else {
       merged.push(transaction);
     }

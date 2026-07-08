@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v44';
+const CACHE_NAME = 'yoshop-v47';
 
 const APP_SHELL_URLS = [
   '/',
@@ -7,9 +7,10 @@ const APP_SHELL_URLS = [
   '/assetlinks.json',
 
   '/style.css',
-  '/style.css?v=20260706-v1',
+  '/style.css?v=20260708-v1',
   '/app.js',
-  '/app.js?v=20260706-v1',
+  '/app.js?v=20260708-v1',
+  '/invoice-utils.mjs',
 
   '/offline-architecture.mjs',
   '/auth-utils.mjs',
@@ -50,6 +51,7 @@ const QUERYLESS_APP_PATHS = new Set([
   '/manifest.json',
   '/assetlinks.json',
   '/app.js',
+  '/invoice-utils.mjs',
   '/style.css',
   '/offline-architecture.mjs',
   '/auth-utils.mjs',
