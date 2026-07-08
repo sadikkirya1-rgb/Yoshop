@@ -259,3 +259,14 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
     .filter(Boolean)
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
+
+export function summarizeDebtInvoices({ customers = [], transactions = [] } = {}) {
+  const invoiceRows = buildInvoiceListItems({ customers, transactions });
+  const outstandingDebt = invoiceRows.reduce((sum, row) => {
+    const balance = Number(row?.balance || 0);
+    return sum + (balance < 0 ? Math.abs(balance) : 0);
+  }, 0);
+  const pendingInvoices = invoiceRows.filter(row => (Number(row?.balance || 0)) < 0).length;
+
+  return { invoiceRows, outstandingDebt, pendingInvoices };
+}

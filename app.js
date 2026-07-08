@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -7640,11 +7640,12 @@ function updateDashboard() {
   const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
   const netProfit = totalRevenue - totalCost;
   const totalBills = filteredTransactions.length;
-  const outstandingDebt = (Array.isArray(customers) ? customers : []).reduce((sum, customer) => {
-    const balance = parseFloat(customer.balance) || 0;
-    return sum + (balance < 0 ? Math.abs(balance) : 0);
-  }, 0);
-  const pendingInvoices = (Array.isArray(customers) ? customers : []).filter(customer => (parseFloat(customer.balance) || 0) < 0).length;
+  const debtSummary = summarizeDebtInvoices({
+    customers: Array.isArray(customers) ? customers : [],
+    transactions: Array.isArray(transactions) ? transactions : []
+  });
+  const outstandingDebt = debtSummary.outstandingDebt;
+  const pendingInvoices = debtSummary.pendingInvoices;
 
   // Always update dashboard cards (even with 0 values)
   document.getElementById('stockValue').textContent = formatCurrency(totalStockValue);

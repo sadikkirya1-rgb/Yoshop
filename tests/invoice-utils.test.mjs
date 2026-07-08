@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices } from '../invoice-utils.mjs';
 
 test('buildInvoiceListItems keeps separate debt transactions for the same customer', () => {
   const customer = {
@@ -64,6 +64,41 @@ test('buildInvoiceListItems includes fully paid account invoices even without an
   assert.equal(rows.length, 1);
   assert.equal(rows[0].invoiceNumber, 'INV-UNKNOWN');
   assert.equal(rows[0].balance, 0);
+});
+
+test('summarizeDebtInvoices matches pending invoice totals from transaction balances', () => {
+  const customer = {
+    id: 'cust-3',
+    name: 'Carol',
+    balance: 0,
+    lastTransactionDate: '2024-10-05T10:00:00.000Z'
+  };
+
+  const transactions = [
+    {
+      id: 'tx-5',
+      date: '2024-10-05T10:00:00.000Z',
+      customerId: 'cust-3',
+      customerNameReal: 'Carol',
+      total: 120,
+      amountPaid: 20,
+      paymentMethod: 'On Account'
+    },
+    {
+      id: 'tx-6',
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-3',
+      customerNameReal: 'Carol',
+      total: 80,
+      amountPaid: 0,
+      paymentMethod: 'On Account'
+    }
+  ];
+
+  const summary = summarizeDebtInvoices({ customers: [customer], transactions });
+
+  assert.equal(summary.pendingInvoices, 2);
+  assert.equal(summary.outstandingDebt, 180);
 });
 
 test('buildInvoiceListItems excludes walk-in customer invoices', () => {
