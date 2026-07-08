@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -3341,6 +3341,64 @@ async function mirrorSaleDetailsLocally(transaction = {}) {
 /**
  * Records a single transaction to local storage and Firestore sub-collection
  */
+function normalizeTransactionInvoiceNumber(invoiceNumber = '') {
+  if (!invoiceNumber || typeof invoiceNumber !== 'string') return '';
+  const trimmed = invoiceNumber.trim();
+  return trimmed || '';
+}
+
+async function cleanupDuplicateTransactionsInCloud(cleanTransactions = []) {
+  const effectiveUid = getEffectiveUid();
+  if (!effectiveUid || !dbFirestore || !Array.isArray(cleanTransactions)) return;
+
+  const transactionGroups = new Map();
+  cleanTransactions.forEach(transaction => {
+    if (!transaction || typeof transaction !== 'object') return;
+    const invoiceNumber = normalizeTransactionInvoiceNumber(transaction.invoiceNumber);
+    const key = invoiceNumber || `${transaction.date || ''}|${transaction.customerId || transaction.customerNameReal || transaction.customerName || ''}|${Number(transaction.total || 0)}`;
+    if (!key) return;
+    const bucket = transactionGroups.get(key) || [];
+    bucket.push(transaction);
+    transactionGroups.set(key, bucket);
+  });
+
+  const txRef = collection(dbFirestore, 'users', effectiveUid, 'transactions');
+  await Promise.allSettled(Array.from(transactionGroups.entries()).filter(([, group]) => group.length > 1).flatMap(([key, group]) => {
+    const canonical = group.sort((a, b) => {
+      const timeA = Number(new Date(a.updatedAt || a.date || 0).getTime());
+      const timeB = Number(new Date(b.updatedAt || b.date || 0).getTime());
+      if (timeA !== timeB) return timeA - timeB;
+      return Number(b.version || 0) - Number(a.version || 0);
+    })[group.length - 1];
+
+    if (!canonical) return [];
+    const queryInvoice = normalizeTransactionInvoiceNumber(canonical.invoiceNumber);
+    if (!queryInvoice) return [];
+
+    return getDocs(query(txRef, where('invoiceNumber', '==', queryInvoice))).then(snapshot => {
+      const docsToDelete = snapshot.docs.filter(doc => {
+        const data = doc.data() || {};
+        const docInvoice = normalizeTransactionInvoiceNumber(data.invoiceNumber);
+        return docInvoice === queryInvoice && String(data.id || data.recordId || doc.id) !== String(canonical.id || canonical.recordId || canonical.transactionId || '');
+      });
+      return Promise.allSettled(docsToDelete.map(doc => deleteDoc(doc.ref)));
+    }).catch(error => {
+      console.warn('[TX-CLEANUP] Failed to prune duplicate cloud transactions:', error);
+      return [];
+    });
+  }));
+}
+
+async function persistDeduplicatedTransactions(sourceTransactions = []) {
+  const dedupedTransactions = deduplicateTransactions(Array.isArray(sourceTransactions) ? sourceTransactions : []);
+  transactions = dedupedTransactions;
+  await saveState('transactions', transactions, { enqueueSync: false });
+  await cleanupDuplicateTransactionsInCloud(transactions);
+  updateDashboard();
+  renderTransactions();
+  return dedupedTransactions;
+}
+
 async function recordTransaction(transaction) {
   if (!transaction.invoiceNumber) {
     transaction.invoiceNumber = getInvoiceNumber(transaction);
@@ -3352,7 +3410,24 @@ async function recordTransaction(transaction) {
     syncStatus: 'pending'
   }, transaction);
 
-  transactions.unshift(transaction);
+  const duplicateIndex = transactions.findIndex(existing => {
+    if (!existing || !existing.date) return false;
+    const sameId = Boolean(existing.id && transaction.id && existing.id === transaction.id);
+    const sameInvoiceNumber = Boolean(
+      normalizeTransactionInvoiceNumber(existing.invoiceNumber) &&
+      normalizeTransactionInvoiceNumber(transaction.invoiceNumber) &&
+      normalizeTransactionInvoiceNumber(existing.invoiceNumber) === normalizeTransactionInvoiceNumber(transaction.invoiceNumber)
+    );
+    return sameId || sameInvoiceNumber;
+  });
+
+  if (duplicateIndex >= 0) {
+    transactions[duplicateIndex] = { ...transactions[duplicateIndex], ...transaction };
+  } else {
+    transactions.unshift(transaction);
+  }
+
+  transactions = deduplicateTransactions(transactions);
   appendAuditEvent('sale_completed', {
     total: transaction.total || 0,
     paymentMethod: transaction.paymentMethod || 'Cash',
@@ -3390,6 +3465,9 @@ async function recordTransaction(transaction) {
   if (navigator.onLine) {
     scheduleBackgroundSync();
   }
+
+  renderTransactions();
+  updateDashboard();
 
   // 4. Show notification for this transaction on current device immediately (offline & online support)
   if (transaction.date && !notifiedTransactions.has(transaction.date)) {
@@ -3444,7 +3522,7 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null) 
       const mergedTransactions = mergeTransactionsPreservingDuplicates(transactions, cloudTransactions.map(t => ({ ...t, synced: true })));
 
       // 2. Keep a healthy local archive for offline reports
-      transactions = mergedTransactions.slice(0, 1000);
+      transactions = deduplicateTransactions(mergedTransactions.slice(0, 1000));
 
       await saveState('transactions', transactions, { enqueueSync: false });
       renderTransactions();
@@ -6290,10 +6368,16 @@ function renderTransactions() {
   const startDate = document.getElementById('transactionStartDate')?.value;
   const endDate = document.getElementById('transactionEndDate')?.value;
 
-  let filteredTransactions = transactions;
+  const normalizedTransactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
+  if (Array.isArray(transactions) && normalizedTransactions.length !== transactions.length) {
+    transactions = normalizedTransactions;
+    saveState('transactions', transactions, { enqueueSync: false }).catch(() => {});
+  }
+
+  let filteredTransactions = normalizedTransactions;
 
   if (startDate || endDate) {
-    filteredTransactions = transactions.filter(t => {
+    filteredTransactions = normalizedTransactions.filter(t => {
       const tDate = t.date.split('T')[0];
       if (startDate && tDate < startDate) return false;
       if (endDate && tDate > endDate) return false;
@@ -6301,13 +6385,13 @@ function renderTransactions() {
     });
   }
 
-  const sourceArray = (startDate || endDate) ? filteredTransactions : transactions;
-  console.log('renderTransactions called — transactions length:', Array.isArray(transactions) ? transactions.length : typeof transactions, 'sourceArray length:', Array.isArray(sourceArray) ? sourceArray.length : typeof sourceArray, 'startDate:', startDate, 'endDate:', endDate);
+  const sourceArray = (startDate || endDate) ? filteredTransactions : normalizedTransactions;
+  console.log('renderTransactions called — transactions length:', Array.isArray(normalizedTransactions) ? normalizedTransactions.length : typeof normalizedTransactions, 'sourceArray length:', Array.isArray(sourceArray) ? sourceArray.length : typeof sourceArray, 'startDate:', startDate, 'endDate:', endDate);
 
   const tableRows = sourceArray.map((t, i) => {
-    const txIndex = transactions.indexOf(t);
+    const txIndex = normalizedTransactions.indexOf(t);
     const tr = document.createElement('tr');
-    tr.className = 'u-cursor-pointer';
+    tr.className = `u-cursor-pointer${(t.duplicateCount || 0) > 0 ? ' duplicate-sale-row' : ''}`;
 
     // "Click anywhere" preview logic for the entire row
     tr.onclick = (e) => {
@@ -6323,7 +6407,7 @@ function renderTransactions() {
     tr.innerHTML = `
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('transactionHistoryBody','selectAllSales')"></td>
         <td>${i + 1}</td>
-        <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}</td>
+        <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}${(t.duplicateCount || 0) > 0 ? ' <span class="duplicate-sale-badge">Duplicate</span>' : ''}</td>
         <td class="u-text-right u-fs-08 u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
         <td class="u-text-right">
           <button class="btn u-fs-08 row-preview-btn" data-tx-index="${txIndex}" style="display: inline-block; padding: 6px 8px; margin: 0 2px; background: #17a2b8;"> 
@@ -10260,7 +10344,7 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
   settings = normalizeSettings(localData[3], defaultSettings);
   menu = hydrateEnterpriseRecords('products', localData[0] || []);
   activeOrders = localData[1] || {};
-  transactions = hydrateEnterpriseRecords('sales', localData[2] || []);
+  transactions = deduplicateTransactions(hydrateEnterpriseRecords('sales', localData[2] || []));
   staff = hydrateEnterpriseRecords('staff', localData[4] || []);
   dishCategories = localData[5] || [];
   customers = hydrateEnterpriseRecords('customers', localData[6] || []);
@@ -10294,6 +10378,8 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
 
   if (options.refresh !== false) {
     populateCurrencies();
+    transactions = deduplicateTransactions(transactions);
+    saveState('transactions', transactions, { enqueueSync: false }).catch(() => {});
     updateDashboard();
     renderDishesTable();
     renderMenu();
@@ -10377,7 +10463,7 @@ async function mainInit() {
     // Populate state from local storage immediately
     menu = hydrateEnterpriseRecords('products', localData[0] || defaultMenu);
     activeOrders = localData[1] || {};
-    transactions = hydrateEnterpriseRecords('sales', localData[2] || []);
+    transactions = deduplicateTransactions(hydrateEnterpriseRecords('sales', localData[2] || []));
     staff = hydrateEnterpriseRecords('staff', localData[4] || defaultStaff);
     dishCategories = localData[5] || defaultDishCategories;
     customers = hydrateEnterpriseRecords('customers', localData[6] || []);

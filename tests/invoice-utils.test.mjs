@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions } from '../invoice-utils.mjs';
 
 test('buildInvoiceListItems keeps separate debt transactions for the same customer', () => {
   const customer = {
@@ -256,4 +256,75 @@ test('mergeTransactionsPreservingDuplicates keeps separate transactions that sha
 
   assert.equal(merged.length, 2);
   assert.deepEqual(merged.map(tx => tx.invoiceNumber), ['INV-001', 'INV-002']);
+});
+
+test('mergeTransactionsPreservingDuplicates collapses duplicate invoices already present in the archive', () => {
+  const existing = [
+    {
+      id: 'tx-existing',
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      invoiceNumber: 'INV-001',
+      total: 100,
+      amountPaid: 0
+    },
+    {
+      id: 'tx-duplicate',
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      invoiceNumber: 'INV-001',
+      total: 100,
+      amountPaid: 0
+    }
+  ];
+
+  const merged = mergeTransactionsPreservingDuplicates(existing, []);
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0].invoiceNumber, 'INV-001');
+});
+
+test('deduplicateTransactions removes repeated sales while preserving the latest record', () => {
+  const transactions = [
+    {
+      id: 'tx-a',
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      invoiceNumber: 'INV-001',
+      total: 100,
+      amountPaid: 0,
+      synced: false
+    },
+    {
+      id: 'tx-b',
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      invoiceNumber: 'INV-001',
+      total: 100,
+      amountPaid: 0,
+      synced: true
+    },
+    {
+      id: 'tx-c',
+      date: '2024-10-07T10:00:00.000Z',
+      customerId: 'cust-2',
+      customerNameReal: 'Bob',
+      invoiceNumber: 'INV-002',
+      total: 80,
+      amountPaid: 80,
+      synced: true
+    }
+  ];
+
+  const deduped = deduplicateTransactions(transactions);
+
+  assert.equal(deduped.length, 2);
+  assert.equal(deduped[0].invoiceNumber, 'INV-002');
+  assert.equal(deduped[0].duplicateCount, 0);
+  assert.equal(deduped[1].invoiceNumber, 'INV-001');
+  assert.equal(deduped[1].duplicateCount, 1);
 });

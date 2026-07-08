@@ -2104,6 +2104,24 @@ body.dark-mode #reportOutput table tfoot tr {
   margin: 20px 0;
 }
 
+.duplicate-sale-row {
+  background: rgba(220, 53, 69, 0.10) !important;
+  border-left: 3px solid #dc3545;
+}
+
+.duplicate-sale-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #dc3545;
+  color: white;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 /* ===== Premium Custom Modal Cards & Success Animations ===== */
 .custom-modal-card {
   background: var(--card);
