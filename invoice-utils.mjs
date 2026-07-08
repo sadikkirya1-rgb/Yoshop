@@ -49,15 +49,7 @@ function getTransactionItemsSignature(transaction = {}) {
   return normalizedItems;
 }
 
-export function getTransactionDuplicateKey(transaction = {}) {
-  if (!transaction || typeof transaction !== 'object') return '';
-
-  const invoiceKey = normalizeInvoiceNumber(transaction.invoiceNumber);
-  if (invoiceKey) return `invoice:${invoiceKey}`;
-
-  const id = transaction.id || transaction.recordId || transaction.transactionId;
-  if (id) return `id:${String(id)}`;
-
+function getTransactionFallbackKey(transaction = {}) {
   const date = transaction.date;
   const total = Number(transaction.total || 0);
   const customer = transaction.customerId || transaction.customerNameReal || transaction.customerName || '';
@@ -73,23 +65,51 @@ export function getTransactionDuplicateKey(transaction = {}) {
   return '';
 }
 
+export function getTransactionDuplicateKey(transaction = {}) {
+  if (!transaction || typeof transaction !== 'object') return '';
+
+  const invoiceKey = normalizeInvoiceNumber(transaction.invoiceNumber);
+  if (invoiceKey) return `invoice:${invoiceKey}`;
+
+  const id = transaction.id || transaction.recordId || transaction.transactionId;
+  if (id) return `id:${String(id)}`;
+
+  return getTransactionFallbackKey(transaction);
+}
+
+function getTransactionMatchKeys(transaction = {}) {
+  if (!transaction || typeof transaction !== 'object') return [];
+
+  const keys = [];
+  const invoiceKey = normalizeInvoiceNumber(transaction.invoiceNumber);
+  if (invoiceKey) keys.push(`invoice:${invoiceKey}`);
+
+  const id = transaction.id || transaction.recordId || transaction.transactionId;
+  if (id) keys.push(`id:${String(id)}`);
+
+  const fallbackKey = getTransactionFallbackKey(transaction);
+  if (fallbackKey) keys.push(fallbackKey);
+
+  return keys;
+}
+
 export function deduplicateTransactions(transactions = []) {
   const source = Array.isArray(transactions) ? transactions : [];
   const deduped = [];
-  const seen = new Map();
 
   source.forEach(transaction => {
     if (!transaction || typeof transaction !== 'object') return;
 
-    const key = getTransactionDuplicateKey(transaction);
-    if (!key) {
-      deduped.push(transaction);
-      return;
-    }
+    const matchKeys = getTransactionMatchKeys(transaction);
+    const existingIndex = matchKeys.length > 0
+      ? deduped.findIndex(existing => {
+          if (!existing || typeof existing !== 'object') return false;
+          const existingKeys = getTransactionMatchKeys(existing);
+          return matchKeys.some(key => existingKeys.includes(key));
+        })
+      : -1;
 
-    const existingIndex = seen.get(key);
-    if (existingIndex === undefined) {
-      seen.set(key, deduped.length);
+    if (existingIndex < 0) {
       deduped.push({ ...transaction, duplicateCount: 0 });
       return;
     }
@@ -118,12 +138,13 @@ export function mergeTransactionsPreservingDuplicates(existingTransactions = [],
   allTransactions.forEach(transaction => {
     if (!transaction || !transaction.date) return;
 
-    const transactionKey = getTransactionDuplicateKey(transaction);
+    const transactionMatchKeys = getTransactionMatchKeys(transaction);
     const existingIndex = merged.findIndex(existing => {
       if (!existing || !existing.date) return false;
 
-      const existingKey = getTransactionDuplicateKey(existing);
-      if (transactionKey && existingKey && transactionKey === existingKey) {
+      const existingMatchKeys = getTransactionMatchKeys(existing);
+      const hasSharedKey = transactionMatchKeys.some(key => existingMatchKeys.includes(key));
+      if (hasSharedKey) {
         return true;
       }
 

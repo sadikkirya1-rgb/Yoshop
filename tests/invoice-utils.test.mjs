@@ -289,6 +289,7 @@ test('mergeTransactionsPreservingDuplicates collapses duplicate invoices already
 test('mergeTransactionsPreservingDuplicates collapses same-sale refreshes without invoice ids', () => {
   const existing = [
     {
+      id: 'tx-local',
       date: '2024-10-06T10:00:00.000Z',
       customerId: 'cust-1',
       customerNameReal: 'Alice',
@@ -316,6 +317,35 @@ test('mergeTransactionsPreservingDuplicates collapses same-sale refreshes withou
   assert.equal(merged.length, 1);
   assert.equal(merged[0].total, 100);
   assert.equal(merged[0].paymentMethod, 'Cash');
+});
+
+test('deduplicateTransactions collapses same-sale refreshes without invoice ids', () => {
+  const transactions = [
+    {
+      id: 'tx-local',
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      total: 100,
+      amountPaid: 100,
+      paymentMethod: 'Cash',
+      items: [{ name: 'Coffee', qty: 1, price: 100, notes: '' }]
+    },
+    {
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      total: 100,
+      amountPaid: 100,
+      paymentMethod: 'Cash',
+      items: [{ name: 'Coffee', qty: 1, price: 100, notes: '' }]
+    }
+  ];
+
+  const deduped = deduplicateTransactions(transactions);
+
+  assert.equal(deduped.length, 1);
+  assert.equal(deduped[0].total, 100);
 });
 
 test('getTransactionDuplicateKey keeps separate sales with different items even when the rest matches', () => {
