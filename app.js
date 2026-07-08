@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -3440,26 +3440,11 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null) 
     if (cloudTransactions.length > 0) {
       // Merge cloud results with existing local transactions to build a complete local archive
       // We use the date ISO string as a unique identifier for deduplication
-      const existingTxMap = new Map();
-
       // 1. Add current local transactions (preserving unsynced ones)
-      if (Array.isArray(transactions)) {
-        transactions.forEach(t => {
-          if (t && t.date) existingTxMap.set(t.date, t);
-        });
-      }
+      const mergedTransactions = mergeTransactionsPreservingDuplicates(transactions, cloudTransactions.map(t => ({ ...t, synced: true })));
 
-      // 2. Overwrite/add with cloud transactions (marking them as synced)
-      cloudTransactions.forEach(t => {
-        if (t && t.date) {
-          existingTxMap.set(t.date, { ...t, synced: true });
-        }
-      });
-
-      // 3. Convert back to array and sort by date descending
-      transactions = Array.from(existingTxMap.values())
-        .sort((a, b) => new Date(b.date) - new Date(a.date))
-        .slice(0, 1000); // Keep a healthy local archive for offline reports
+      // 2. Keep a healthy local archive for offline reports
+      transactions = mergedTransactions.slice(0, 1000);
 
       await saveState('transactions', transactions, { enqueueSync: false });
       renderTransactions();
@@ -8809,9 +8794,10 @@ function renderInvoices() {
     const invoiceNumber = row.invoiceNumber || 'INV-UNKNOWN';
     const previewDataJson = previewData ? JSON.stringify(previewData).replace(/'/g, "\\'") : 'null';
     const lastDate = row.date ? new Date(row.date).toLocaleString() : new Date().toLocaleString();
-    const lastAdjustment = (Array.isArray(customer?.adjustments) && customer.adjustments.length > 0)
-      ? customer.adjustments[customer.adjustments.length - 1]
-      : null;
+    const transactionAdjustments = Array.isArray(row.transaction?.adjustments) ? row.transaction.adjustments : [];
+    const customerAdjustments = Array.isArray(customer?.adjustments) ? customer.adjustments : [];
+    const allAdjustments = [...transactionAdjustments, ...customerAdjustments];
+    const lastAdjustment = allAdjustments.length > 0 ? allAdjustments[allAdjustments.length - 1] : null;
     const adjAmount = lastAdjustment ? (parseFloat(lastAdjustment.amount) || 0) : 0;
     const adjMethod = lastAdjustment ? (lastAdjustment.method || '') : '';
     const adjustedHtml = lastAdjustment ? `${adjMethod ? adjMethod + ' ' : ''}${currencySymbol}${formatCurrency(adjAmount)}` : '-';

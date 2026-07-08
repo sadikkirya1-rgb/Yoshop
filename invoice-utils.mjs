@@ -12,12 +12,41 @@ function findMatchingCustomer(customer, transaction) {
   return matchesCustomerId || matchesCustomerName || matchesLegacyCustomerName ? customer : null;
 }
 
+export function mergeTransactionsPreservingDuplicates(existingTransactions = [], incomingTransactions = []) {
+  const merged = [...(Array.isArray(existingTransactions) ? existingTransactions : [])];
+  const incoming = Array.isArray(incomingTransactions) ? incomingTransactions : [];
+
+  incoming.forEach(transaction => {
+    if (!transaction || !transaction.date) return;
+
+    const existingIndex = merged.findIndex(existing => {
+      if (!existing || !existing.date) return false;
+      const sameId = Boolean(existing.id && transaction.id && existing.id === transaction.id);
+      const sameInvoiceNumber = Boolean(
+        existing.invoiceNumber && transaction.invoiceNumber &&
+        normalizeInvoiceNumber(existing.invoiceNumber) &&
+        normalizeInvoiceNumber(transaction.invoiceNumber) &&
+        normalizeInvoiceNumber(existing.invoiceNumber) === normalizeInvoiceNumber(transaction.invoiceNumber)
+      );
+      return sameId || sameInvoiceNumber;
+    });
+
+    if (existingIndex >= 0) {
+      merged[existingIndex] = { ...merged[existingIndex], ...transaction };
+    } else {
+      merged.push(transaction);
+    }
+  });
+
+  return merged.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+}
+
 export function buildInvoiceListItems({ customers = [], transactions = [] } = {}) {
   const customerList = Array.isArray(customers) ? customers : [];
   const txList = Array.isArray(transactions) ? transactions : [];
 
   return txList
-    .filter(tx => tx && tx.invoiceNumber)
+    .filter(tx => tx && (tx.invoiceNumber || tx.customerId || tx.customerNameReal || tx.customerName || tx.amountPaid !== undefined || tx.balance !== undefined))
     .map(transaction => {
       const customer = customerList.find(customer => findMatchingCustomer(customer, transaction)) || null;
       const total = Number(transaction.total || 0);
@@ -26,9 +55,16 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
         : total;
       const balance = transaction.balance !== undefined
         ? Number(transaction.balance)
-        : (amountPaid - total);
+        : Math.min(0, amountPaid - total);
 
-      if (balance > 0) return null;
+      const hasRealCustomer = Boolean(customer?.id || transaction.customerId);
+      const shouldIncludeInvoice = hasRealCustomer && (balance <= 0 || transaction.amountPaid !== undefined);
+      if (!shouldIncludeInvoice) return null;
+
+      const transactionAdjustments = Array.isArray(transaction.adjustments) ? transaction.adjustments : [];
+      const customerAdjustments = Array.isArray(customer?.adjustments) ? customer.adjustments : [];
+      const mergedAdjustments = [...transactionAdjustments, ...customerAdjustments];
+      const lastAdjustment = mergedAdjustments.length > 0 ? mergedAdjustments[mergedAdjustments.length - 1] : (transaction.lastAdjustment || null);
 
       const previewData = {
         date: transaction.date || new Date().toISOString(),
@@ -52,9 +88,12 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
           : `Invoice paid in full for ${transaction.customerNameReal || transaction.customerName || customer?.name || 'customer account'}`,
         amountPaid,
         balance,
-        lastAdjustment: transaction.lastAdjustment || null,
-        adjustments: Array.isArray(transaction.adjustments) ? transaction.adjustments : [],
+        lastAdjustment,
+        adjustments: mergedAdjustments,
         invoiceNumber: normalizeInvoiceNumber(transaction.invoiceNumber)
+          || normalizeInvoiceNumber(customer?.invoiceNumber)
+          || normalizeInvoiceNumber(customer?.lastInvoiceNumber)
+          || 'INV-UNKNOWN'
       };
 
       return {

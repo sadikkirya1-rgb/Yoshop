@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates } from '../invoice-utils.mjs';
 
 test('buildInvoiceListItems keeps separate debt transactions for the same customer', () => {
   const customer = {
@@ -37,4 +37,152 @@ test('buildInvoiceListItems keeps separate debt transactions for the same custom
   assert.deepEqual(rows.map(row => row.invoiceNumber).sort(), ['INV-001', 'INV-002']);
   assert.equal(rows[0].customer.id, 'cust-1');
   assert.deepEqual(rows.map(row => row.balance).sort((a, b) => a - b), [-80, -50]);
+});
+
+test('buildInvoiceListItems includes fully paid account invoices even without an invoice number', () => {
+  const customer = {
+    id: 'cust-2',
+    name: 'Bob',
+    balance: 0,
+    lastTransactionDate: '2024-10-03T10:00:00.000Z'
+  };
+
+  const transactions = [
+    {
+      id: 'tx-3',
+      date: '2024-10-03T10:00:00.000Z',
+      customerId: 'cust-2',
+      customerNameReal: 'Bob',
+      total: 120,
+      amountPaid: 120,
+      paymentMethod: 'On Account'
+    }
+  ];
+
+  const rows = buildInvoiceListItems({ customers: [customer], transactions });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].invoiceNumber, 'INV-UNKNOWN');
+  assert.equal(rows[0].balance, 0);
+});
+
+test('buildInvoiceListItems excludes walk-in customer invoices', () => {
+  const transactions = [
+    {
+      id: 'tx-4',
+      date: '2024-10-04T10:00:00.000Z',
+      customerNameReal: 'Walk-in Customer',
+      total: 90,
+      amountPaid: 0,
+      paymentMethod: 'On Account'
+    }
+  ];
+
+  const rows = buildInvoiceListItems({ customers: [], transactions });
+
+  assert.equal(rows.length, 0);
+});
+
+test('buildInvoiceListItems excludes manually entered customer names without a system customer link', () => {
+  const transactions = [
+    {
+      id: 'tx-5',
+      date: '2024-10-05T10:00:00.000Z',
+      customerNameReal: 'Jane',
+      total: 60,
+      amountPaid: 60,
+      paymentMethod: 'On Account'
+    }
+  ];
+
+  const rows = buildInvoiceListItems({ customers: [], transactions });
+
+  assert.equal(rows.length, 0);
+});
+
+test('buildInvoiceListItems keeps a paid invoice number from the linked customer record', () => {
+  const customer = {
+    id: 'cust-3',
+    name: 'Charlie',
+    invoiceNumber: 'INV-0999',
+    lastInvoiceNumber: 'INV-0999',
+    balance: 0
+  };
+
+  const transactions = [
+    {
+      id: 'tx-6',
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-3',
+      customerNameReal: 'Charlie',
+      total: 80,
+      amountPaid: 120,
+      paymentMethod: 'Cash'
+    }
+  ];
+
+  const rows = buildInvoiceListItems({ customers: [customer], transactions });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].invoiceNumber, 'INV-0999');
+  assert.equal(rows[0].balance, 0);
+});
+
+test('buildInvoiceListItems includes customer and transaction adjustments in preview data', () => {
+  const customer = {
+    id: 'cust-4',
+    name: 'Dana',
+    adjustments: [{ amount: 20, method: 'Cash', date: '2024-10-07T10:00:00.000Z' }],
+    balance: -20
+  };
+
+  const transactions = [
+    {
+      id: 'tx-7',
+      date: '2024-10-08T10:00:00.000Z',
+      customerId: 'cust-4',
+      customerNameReal: 'Dana',
+      total: 100,
+      amountPaid: 80,
+      adjustments: [{ amount: 10, method: 'Mobile Money', date: '2024-10-08T10:00:00.000Z' }]
+    }
+  ];
+
+  const rows = buildInvoiceListItems({ customers: [customer], transactions });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].previewData.adjustments.length, 2);
+  assert.equal(rows[0].previewData.lastAdjustment.amount, 20);
+  assert.equal(rows[0].previewData.lastAdjustment.method, 'Cash');
+});
+
+test('mergeTransactionsPreservingDuplicates keeps separate transactions that share a date', () => {
+  const existing = [
+    {
+      id: 'tx-existing',
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      invoiceNumber: 'INV-001',
+      total: 100,
+      amountPaid: 0
+    }
+  ];
+
+  const incoming = [
+    {
+      id: 'tx-new',
+      date: '2024-10-06T10:00:00.000Z',
+      customerId: 'cust-1',
+      customerNameReal: 'Alice',
+      invoiceNumber: 'INV-002',
+      total: 80,
+      amountPaid: 80
+    }
+  ];
+
+  const merged = mergeTransactionsPreservingDuplicates(existing, incoming);
+
+  assert.equal(merged.length, 2);
+  assert.deepEqual(merged.map(tx => tx.invoiceNumber), ['INV-001', 'INV-002']);
 });
