@@ -8965,7 +8965,7 @@ function renderInvoices() {
       <td style="text-align: right; color:${balance < 0 ? '#dc3545' : '#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</td>
       <td style="text-align: right;">${adjustedHtml}</td>
       <td style="text-align: right; display:flex; gap:6px; justify-content:flex-end; align-items:center;">
-        <button class="btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(row.transaction || null)}); event.stopPropagation();'>Adjust</button>
+        <button class="btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(String(row.transaction?.id || row.transaction?.invoiceNumber || ''))}); event.stopPropagation();'>Adjust</button>
         <button class="btn" type="button" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>Preview</button>
         ${statusBadge}
       </td>
@@ -8984,16 +8984,28 @@ function renderInvoices() {
 }
 
 async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
-  const transaction = transactionOrCustomer && typeof transactionOrCustomer === 'object'
-    ? transactionOrCustomer
-    : (Array.isArray(transactions)
-      ? transactions.find(tx => tx && (tx.id === transactionOrCustomer || tx.invoiceNumber === transactionOrCustomer || String(tx.customerId) === String(transactionOrCustomer)))
-      : null);
+  const transactionIdOrKey = (typeof transactionOrCustomer === 'string' || typeof transactionOrCustomer === 'number')
+    ? String(transactionOrCustomer)
+    : null;
 
-  if (!transaction) return;
+  const transaction = Array.isArray(transactions)
+    ? transactions.find(tx => tx && (
+        (transactionIdOrKey && (String(tx.id) === transactionIdOrKey || String(tx.invoiceNumber) === transactionIdOrKey || String(tx.customerId) === transactionIdOrKey)) ||
+        (typeof transactionOrCustomer === 'object' && transactionOrCustomer && (
+          (tx.id && tx.id === transactionOrCustomer.id) ||
+          (tx.invoiceNumber && tx.invoiceNumber === transactionOrCustomer.invoiceNumber) ||
+          (tx.customerId && transactionOrCustomer.customerId && String(tx.customerId) === String(transactionOrCustomer.customerId))
+        ))
+      ))
+    : null;
 
-  const customer = transaction.customerId
-    ? customers.find(c => c && (c.id === transaction.customerId || String(c.id) === String(transaction.customerId))) || null
+  const resolvedTransaction = transaction || (typeof transactionOrCustomer === 'object' ? transactionOrCustomer : null);
+  if (!resolvedTransaction) return;
+
+  const activeTransaction = transaction || resolvedTransaction;
+
+  const customer = activeTransaction.customerId
+    ? customers.find(c => c && (c.id === activeTransaction.customerId || String(c.id) === String(activeTransaction.customerId))) || null
     : null;
 
   const modal = document.getElementById('appPopupModal');
@@ -9076,20 +9088,31 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
       note: ''
     };
 
-    transaction.adjustments = Array.isArray(transaction.adjustments) ? transaction.adjustments : [];
-    transaction.adjustments.push(adjustment);
-    transaction.lastAdjustment = adjustment;
-    transaction.lastTransactionDate = adjustment.date;
-    const adjustmentTotal = transaction.adjustments.reduce((sum, entry) => sum + (parseFloat(entry?.amount) || 0), 0);
-    const updatedAmountPaid = (parseFloat(transaction.amountPaid) || 0) + amount;
-    transaction.amountPaid = updatedAmountPaid;
-    transaction.balance = Math.min(0, updatedAmountPaid - (parseFloat(transaction.total) || 0) + adjustmentTotal);
+    activeTransaction.adjustments = Array.isArray(activeTransaction.adjustments) ? activeTransaction.adjustments : [];
+    activeTransaction.adjustments.push(adjustment);
+    activeTransaction.lastAdjustment = adjustment;
+    activeTransaction.lastTransactionDate = adjustment.date;
+    const adjustmentTotal = activeTransaction.adjustments.reduce((sum, entry) => sum + (parseFloat(entry?.amount) || 0), 0);
+    const updatedAmountPaid = (parseFloat(activeTransaction.amountPaid) || 0) + amount;
+    activeTransaction.amountPaid = updatedAmountPaid;
+    activeTransaction.balance = Math.min(0, updatedAmountPaid - (parseFloat(activeTransaction.total) || 0) + adjustmentTotal);
 
-    enqueueEnterpriseRecordChange('transactions', transaction, 'upsert').catch(console.warn);
+    if (typeof enqueueLocalSyncAction === 'function') {
+      enqueueLocalSyncAction({
+        entityType: 'sales',
+        payload: activeTransaction,
+        businessId: getEffectiveUid(),
+        userId: currentUser?.uid || getEffectiveUid(),
+        staffId: getCurrentStaffId(),
+        updatedBy: currentUser?.uid || getEffectiveUid(),
+        deviceId: getCurrentDeviceId()
+      }).catch(console.warn);
+    }
+
     saveData();
     renderInvoices();
     renderTransactions();
-    previewOrder(transaction);
+    previewOrder(activeTransaction);
 
     modal.style.display = 'none';
     document.body.style.overflow = '';
