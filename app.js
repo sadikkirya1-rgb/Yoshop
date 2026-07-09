@@ -3617,7 +3617,10 @@ async function syncOfflineTransactions() {
  * Loads the latest transactions from the cloud collection
  */
 async function loadTransactionsFromCloud(uid, startDate = null, endDate = null) {
-  if (!dbFirestore) return;
+  if (!dbFirestore) {
+    console.warn("[TX_LOAD] Firestore not initialized, skipping cloud transaction load");
+    return;
+  }
   try {
     let txRef = collection(dbFirestore, "users", uid, "transactions");
     let q;
@@ -3642,20 +3645,37 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null) 
       cloudTransactions.push(data);
     });
 
-    if (cloudTransactions.length > 0) {
+    console.log("[TX_LOAD] Cloud query returned:", cloudTransactions.length, "transactions. Local had:", Array.isArray(transactions) ? transactions.length : 0);
+
+    // Always process the result, even if empty, to ensure UI stays consistent
+    if (cloudTransactions.length > 0 || (Array.isArray(transactions) && transactions.length > 0)) {
       // Merge cloud results with existing local transactions to build a complete local archive
       // We use the date ISO string as a unique identifier for deduplication
       // 1. Add current local transactions (preserving unsynced ones)
-      const mergedTransactions = mergeTransactionsPreservingDuplicates(transactions, cloudTransactions.map(t => ({ ...t, synced: true })));
+      const mergedTransactions = cloudTransactions.length > 0
+        ? mergeTransactionsPreservingDuplicates(transactions, cloudTransactions.map(t => ({ ...t, synced: true })))
+        : transactions;
 
       // 2. Keep a healthy local archive for offline reports
       transactions = deduplicateTransactions(mergedTransactions.slice(0, 1000));
 
+      console.log("[TX_LOAD] After merge/dedup:", transactions.length, "transactions in memory");
+
       await saveState('transactions', transactions, { enqueueSync: false });
       renderTransactions();
       updateDashboard();
+    } else {
+      console.warn("[TX_LOAD] ⚠️ No transactions found in cloud or local storage");
+      // Still render empty state to show dashboard
+      if (typeof renderTransactions === 'function') renderTransactions();
+      if (typeof updateDashboard === 'function') updateDashboard();
     }
-  } catch (e) { console.warn("Could not load transactions from collection:", e); }
+  } catch (e) {
+    console.error("[TX_LOAD] Error loading transactions from cloud:", e.code, e.message);
+    // Still attempt to render what we have locally
+    if (typeof renderTransactions === 'function') renderTransactions();
+    if (typeof updateDashboard === 'function') updateDashboard();
+  }
 }
 
 async function getPendingSyncSummary() {
@@ -8930,7 +8950,9 @@ function renderInvoices() {
     const isPaid = Math.abs(balance) === 0;
     const adjustDisabledAttr = isPaid || !customer?.id ? 'disabled' : '';
     const adjustStyle = isPaid || !customer?.id ? 'opacity:0.45; pointer-events:none;' : '';
-    const statusBadge = isPaid ? `<span style="margin-left:8px; padding:4px 8px; background:#28a745; color:#fff; border-radius:6px; font-size:0.85em;">Paid Fully</span>` : '';
+    const statusBadge = isPaid
+      ? `<span style="margin-left:8px; padding:4px 8px; background:#28a745; color:#fff; border-radius:6px; font-size:0.85em;">Paid${Math.abs(balance) === 0 ? ' (0 balance)' : ''}</span>`
+      : `<span style="margin-left:8px; padding:4px 8px; background:#ffc107; color:#212529; border-radius:6px; font-size:0.85em;">Pending</span>`;
 
     return `<tr class="u-cursor-pointer">
       <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('invoiceListBody','selectAllInvoiceRows')"></td>
@@ -10198,7 +10220,7 @@ function setupRealTimeSync(uid) {
           // hasPendingWrites = false means this is an update from another device
           if (!docSnap.metadata.hasPendingWrites) {
             const isNewRemoteData = cloudHash !== lastRemoteDataHash;
-            const shouldApplyRemoteRefresh = isNewRemoteData && cloudHash && lastRemoteDataHash !== '';
+            const shouldApplyRemoteRefresh = isNewRemoteData && cloudHash;
 
             if (shouldApplyRemoteRefresh) {
               console.log('🔄 [SYNC] ✅ Immediate refresh triggered by new cloud data');
@@ -10330,6 +10352,11 @@ function setupRealTimeSync(uid) {
 
                   // Fetch transactions separately from sub-collection
                   await loadTransactionsFromCloud(uid);
+
+                  // Ensure settings UI is refreshed when cloud settings arrive
+                  if (typeof loadSettings === 'function') {
+                    loadSettings();
+                  }
 
                   // Mark initial load as complete
                   isInitialLoadComplete = true;
@@ -10770,6 +10797,21 @@ async function mainInit() {
             await setupRealTimeSync(user.uid);
             await scheduleBackgroundSync();
           }
+
+          // IMPORTANT: Ensure transactions are loaded from cloud
+          // This is a fallback in case the real-time listener hasn't triggered yet
+          // Especially important for Codespace where network/timing may be different
+          setTimeout(async () => {
+            try {
+              if (Array.isArray(transactions) && transactions.length === 0 && dbFirestore) {
+                console.log("[LOGIN_INIT] Fallback: Transactions still empty after sync init, forcing reload from cloud");
+                await loadTransactionsFromCloud(user.uid);
+              }
+            } catch (fallbackError) {
+              console.warn("[LOGIN_INIT] Fallback transaction load failed:", fallbackError);
+            }
+          }, 2000); // 2 second delay to allow real-time listener to populate first
+
         } catch (e) {
           console.warn('Error during tenant initialization:', e);
         }
@@ -12589,6 +12631,13 @@ function setupRealTimeTransactionsSync(uid) {
   try {
     console.log('🟢 [SYNC] Setting up real-time listener for transaction notifications...');
     const txRef = collection(dbFirestore, "users", uid, "transactions");
+    
+    // Initially load ALL transactions (not just last 10) on first setup
+    loadTransactionsFromCloud(uid).catch(e => {
+      console.warn('[SYNC] Initial transaction cloud load failed:', e);
+    });
+
+    // Then set up listener for new transactions only (for notifications and real-time updates)
     const q = query(txRef, orderBy("date", "desc"), limit(10));
 
     unsubscribeTransactionsSync = onSnapshot(
@@ -12615,7 +12664,7 @@ function setupRealTimeTransactionsSync(uid) {
         });
 
         if (hasNewChanges) {
-          // Load and update state
+          // Load and update state - loads recent transactions to keep dashboard current
           await loadTransactionsFromCloud(uid);
           renderTransactions();
           updateDashboard();
@@ -12623,10 +12672,12 @@ function setupRealTimeTransactionsSync(uid) {
       },
       (error) => {
         captureError('TX_SYNC_LISTENER', error, { uid });
+        console.warn('[SYNC] Transaction listener error:', error.code, error.message);
       }
     );
   } catch (error) {
     captureError('TX_SYNC_SETUP', error, { uid });
+    console.error('[SYNC] Transaction sync setup failed:', error);
   }
 }
 
