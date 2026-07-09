@@ -645,8 +645,8 @@
       <section id="invoicesTab">
         <h3>🧾 Invoices</h3>
         <div class="input-row u-mb-15" style="gap: 10px; flex-wrap: wrap;">
-          <input type="date" id="invoiceStartDate" onchange="renderInvoices()">
-          <input type="date" id="invoiceEndDate" onchange="renderInvoices()">
+          <input type="date" id="invoiceStartDate" onchange="renderInvoices()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
+          <input type="date" id="invoiceEndDate" onchange="renderInvoices()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
         </div>
         <div class="u-mb-10" id="invoiceCountInfo">Showing 0 of 0 invoices</div>
         <div class="u-overflow-x-auto">
@@ -683,11 +683,11 @@
           </div>
           <div class="input-row">
             <label for="dashboardFromDate">From</label>
-            <input type="date" id="dashboardFromDate" onchange="applyDashboardDateFilter()">
+            <input type="date" id="dashboardFromDate" onchange="applyDashboardDateFilter()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
           </div>
           <div class="input-row">
             <label for="dashboardToDate">To</label>
-            <input type="date" id="dashboardToDate" onchange="applyDashboardDateFilter()">
+            <input type="date" id="dashboardToDate" onchange="applyDashboardDateFilter()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
           </div>
         </div>
         <div class="dashboard-grid">
@@ -834,7 +834,7 @@
       <section id="transactionsTab">
         <h3>🧾 Sales History</h3>
         <div class="input-row u-mb-15">
-          <input type="date" id="transactionFilterDate" onchange="renderTransactions()">
+          <input type="date" id="transactionFilterDate" onchange="renderTransactions()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
         </div>
         <div class="u-mb-10" id="transactionCountInfo">Showing 0 of 0 bills</div>
         <div class="u-overflow-x-auto" id="transactionListContainer">
@@ -864,7 +864,7 @@
               <option value="categorySales">Category Report</option>
               <option value="customerBalances">Customer Balances</option>
             </select>
-            <input type="date" id="reportDate" onchange="renderReport()" class="u-flex-basis-150">
+            <input type="date" id="reportDate" onchange="renderReport()" class="u-flex-basis-150" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
             <div id="reportOptionsFilterContainer" class="u-flex-basis-150" style="position:relative;">
               <button class="btn u-w-full u-m-0" onclick="toggleReportOptionsDropdown()"
                 style="font-size:0.8em; padding:8px; background:var(--card); color:var(--text); border:1px solid var(--border-color);">Options</button>
