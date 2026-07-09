@@ -805,8 +805,8 @@
     letter-spacing: -0.01em;
   }
   .app-popup-card p {
-    margin: 0 0 22px;
-    line-height: 1.65;
+    margin: 0 0 14px;
+    line-height: 1.5;
     color: var(--text-muted, #666);
     font-size: 0.97rem;
     white-space: pre-wrap;

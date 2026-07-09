@@ -5508,8 +5508,8 @@ async function clearCurrentOrder() {
   const result = await showAppPopup({
     title: 'Clear Order?',
     message: `You have ${itemCount} item${itemCount !== 1 ? 's' : ''} in your current order.\n\nThis action cannot be undone.`,
-    confirmText: 'Yes, Clear It',
-    cancelText: 'Keep Order',
+    confirmText: 'Confirm',
+    cancelText: 'Cancel',
     showCancel: true,
     allowOutsideClose: true,
     icon: '🗑️',
@@ -9005,14 +9005,19 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
   const cancelBtn = document.getElementById('appPopupCancel');
 
   titleEl.textContent = 'Record Adjustment';
+  titleEl.style.marginBottom = '4px';
+  messageEl.style.marginBottom = '0';
   messageEl.innerHTML = `
-    <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:12px;">
+    <p class="adjHelperText" style="margin:0 0 10px; color:var(--text-muted,#666); font-size:0.96rem; line-height:1.5;">
+      Choose a payment method below, then enter the adjustment amount.
+    </p>
+    <div id="adjMethodSelector" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
       <button id="adjModeCash" class="btn">Cash</button>
       <button id="adjModeMobile" class="btn">Mobile Money</button>
       <button id="adjModeCard" class="btn">Credit/Debit Card</button>
     </div>
-    <div id="adjAmountWrapper" style="display:none; margin-top:8px;">
-      <label style="display:block; margin-bottom:6px;">Enter amount to adjust</label>
+    <div id="adjAmountWrapper" style="display:none; margin-top:0;">
+      <label style="display:block; margin-bottom:2px;">Enter amount to adjust</label>
     </div>
   `;
 
@@ -9021,16 +9026,25 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
   inputEl.placeholder = '0.00';
   inputEl.value = '';
 
+  confirmBtn.style.display = 'none';
+  cancelBtn.style.display = 'none';
+
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 
   let selectedMethod = null;
 
   const showAmountField = () => {
-    selectedMethod = selectedMethod || 'On Account';
     inputWrapper.style.display = 'block';
     const amtWrapper = document.getElementById('adjAmountWrapper');
     if (amtWrapper) amtWrapper.style.display = 'block';
+    confirmBtn.style.display = 'inline-flex';
+    cancelBtn.style.display = 'inline-flex';
+    titleEl.textContent = `Record Adjustment — ${selectedMethod}`;
+    const helperText = messageEl.querySelector('.adjHelperText');
+    const selector = document.getElementById('adjMethodSelector');
+    if (helperText) helperText.style.display = 'none';
+    if (selector) selector.style.display = 'none';
     setTimeout(() => inputEl.focus(), 50);
   };
 
