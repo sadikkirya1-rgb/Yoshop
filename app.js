@@ -7102,6 +7102,20 @@ async function downloadBillAsPDF(transactionIndex) {
   receiptModal.style.left = '0';
 }
 
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function getReceiptPromoMessage() {
+  const promoMessage = (settings?.promoMessage || '').toString().trim();
+  return promoMessage || 'Get 10% off on your next visit!';
+}
+
 /**
  * Populates the content of the receipt modal without displaying it.
  * This is a helper for PDF generation.
@@ -7177,6 +7191,7 @@ function populateReceiptContent(transaction) {
   const balanceLine = (isAdjustmentReceipt || isDebtReceipt) && transaction.balance !== undefined
     ? `<div class="summary-line"><span>Balance</span> <span style="color:#dc3545; font-weight:bold;"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(transaction.balance)}</span></div>`
     : '';
+  const promoMessage = escapeHtml(getReceiptPromoMessage());
   const receiptHtml = `
         <div>
           <div class="receipt-header">
@@ -7220,7 +7235,7 @@ function populateReceiptContent(transaction) {
             <span>${invoiceNumber} • ${new Date(date).toLocaleDateString()}</span>
           </div>
         </div>
-        <div class="receipt-footer"><p style="font-weight: bold; margin: 0 0 10px;">${titleText}</p>${barcodeHtml}<div class="promo" style="display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; max-width:100%;">Get 10% off on your next visit!</div><p style="font-size:0.75em; margin: 12px 0 0; opacity:0.5;">Power by YoShop POS</p></div>
+        <div class="receipt-footer"><p style="font-weight: bold; margin: 0 0 10px;">${titleText}</p>${barcodeHtml}<div class="promo" style="display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; max-width:100%;">${promoMessage}</div><p style="font-size:0.75em; margin: 12px 0 0; opacity:0.5;">Power by YoShop POS</p></div>
         </div>`;
   document.getElementById('receiptContent').innerHTML = receiptHtml;
 }
@@ -8551,6 +8566,7 @@ async function saveSettings() {
   settings.lowStockThreshold = isNaN(lowStockThresholdVal) ? 10 : lowStockThresholdVal;
   settings.defaultMarkup = parseFloat(document.getElementById('defaultMarkup').value) || 200;
   settings.taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
+  settings.promoMessage = document.getElementById('promoMessage').value.trim();
   settings.ShopAdminPIN = pin;
 
   const logoFile = document.getElementById('companyLogo').files[0];
@@ -8774,6 +8790,7 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('currency', settings.currency || '$');
   setVal('lowStockThreshold', (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10);
   setVal('taxRate', settings.taxRate || 0);
+  setVal('promoMessage', settings.promoMessage || '');
   setVal('ShopAdminPIN', settings.ShopAdminPIN || "");
   setVal('confirmShopAdminPIN', settings.ShopAdminPIN || "");
 
