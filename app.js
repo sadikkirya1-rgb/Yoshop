@@ -7220,7 +7220,7 @@ function populateReceiptContent(transaction) {
             <span>${invoiceNumber} • ${new Date(date).toLocaleDateString()}</span>
           </div>
         </div>
-        <div class="receipt-footer"><p style="font-weight: bold; margin-bottom: 10px;">${titleText}</p>${barcodeHtml}<p class="promo">Get 10% off on your next visit!</p><p style="font-size:0.75em; margin-top:15px; opacity:0.5;">Power by YoShop POS</p></div>
+        <div class="receipt-footer"><p style="font-weight: bold; margin: 0 0 10px;">${titleText}</p>${barcodeHtml}<div class="promo" style="display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; max-width:100%;">Get 10% off on your next visit!</div><p style="font-size:0.75em; margin: 12px 0 0; opacity:0.5;">Power by YoShop POS</p></div>
         </div>`;
   document.getElementById('receiptContent').innerHTML = receiptHtml;
 }
