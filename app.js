@@ -6167,6 +6167,15 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
       window.matchMedia('print').addListener(function(mql) { if (mql.matches) fitA4ToPage(); });
     }
     window.addEventListener('beforeprint', function() { try { fitA4ToPage(); } catch(e){} });
+    // Keyboard shortcuts inside the A4 preview popup
+    document.addEventListener('keydown', function(e) {
+      try {
+        if (e.ctrlKey && (e.key === '+' || e.key === '=')) { e.preventDefault(); changeA4Zoom(0.1); }
+        if (e.ctrlKey && e.key === '-') { e.preventDefault(); changeA4Zoom(-0.1); }
+        if (e.ctrlKey && e.key === '0') { e.preventDefault(); changeA4Zoom(1 - (window.a4ZoomLevel||1)); }
+        if (e.key === 'Escape') { window.close(); }
+      } catch (err) { }
+    });
   </script>
 </head>
 <body>
@@ -7590,16 +7599,29 @@ function openReportPreview() {
   setTimeout(function() {
     try { fitReportToA4Page(); } catch (e) { console.warn('fitReportToA4Page error', e); }
   }, 80);
-  // Add keyboard handlers for report preview zoom when modal is open
-  (function attachReportPreviewKeyboard() {
-    const onKey = (e) => {
-      try {
-        if (e.ctrlKey && (e.key === '+' || e.key === '=')) { e.preventDefault(); changeReportZoom(0.1); }
-        if (e.ctrlKey && e.key === '-') { e.preventDefault(); changeReportZoom(-0.1); }
-      } catch (err) { }
-    };
-    document.addEventListener('keydown', onKey);
-  })();
+  // Attach a reusable keyboard handler for report preview (ensures no duplicates)
+  if (window._reportPreviewKeyHandler) {
+    try { document.removeEventListener('keydown', window._reportPreviewKeyHandler); } catch (e) {}
+    window._reportPreviewKeyHandler = null;
+  }
+  window._reportPreviewKeyHandler = function (e) {
+    try {
+      if (e.ctrlKey && (e.key === '+' || e.key === '=')) { e.preventDefault(); changeReportZoom(0.1); }
+      if (e.ctrlKey && e.key === '-') { e.preventDefault(); changeReportZoom(-0.1); }
+      if (e.ctrlKey && e.key === '0') { e.preventDefault(); changeReportZoom(1 - (window.reportZoomLevel || 1)); }
+      if (e.key === 'Escape') { closeReportPreview(); }
+    } catch (err) { }
+  };
+  document.addEventListener('keydown', window._reportPreviewKeyHandler);
+}
+
+function closeReportPreview() {
+  const modal = document.getElementById('reportPreviewModal');
+  if (modal) modal.style.display = 'none';
+  if (window._reportPreviewKeyHandler) {
+    try { document.removeEventListener('keydown', window._reportPreviewKeyHandler); } catch (e) {}
+    window._reportPreviewKeyHandler = null;
+  }
 }
 
 function changeReportZoom(delta) {
