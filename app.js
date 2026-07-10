@@ -5464,6 +5464,34 @@ function decreaseQty(cartId, name, id = null) {
 }
 
 // ===== Tables =====
+function schedulePaymentEditorRender() {
+  const paymentModal = document.getElementById('paymentModal');
+  if (!paymentModal || paymentModal.style.display !== 'flex') return;
+
+  const editor = document.getElementById('paymentItemsEditor');
+  if (!editor || !editor.isConnected) return;
+
+  const activeEl = document.activeElement;
+  const isEditing = activeEl && activeEl.closest && activeEl.closest('#paymentItemsEditor');
+
+  if (isEditing) {
+    window.setTimeout(() => {
+      if (document.getElementById('paymentModal')?.style.display !== 'flex') return;
+      const stillEditing = document.activeElement && document.activeElement.closest && document.activeElement.closest('#paymentItemsEditor');
+      if (!stillEditing) {
+        renderPaymentItemEditor();
+        updatePaymentTotals();
+      } else {
+        updatePaymentTotals();
+      }
+    }, 0);
+    return;
+  }
+
+  renderPaymentItemEditor();
+  updatePaymentTotals();
+}
+
 function updateOrders(cartId, shouldSave = true) {
   const currentOrder = activeOrders[cartId] || { items: [] };
 
@@ -5504,8 +5532,7 @@ function updateOrders(cartId, shouldSave = true) {
   }
 
   if (document.getElementById('paymentModal')?.style.display === 'flex') {
-    renderPaymentItemEditor();
-    updatePaymentTotals();
+    schedulePaymentEditorRender();
   }
 }
 
@@ -5600,15 +5627,13 @@ function renderPaymentItemEditor() {
     const discountAmount = Math.max(0, Number(item.discountAmount || 0) || 0);
     const lineTotal = Math.max(0, (normalizedQty * unitPrice) - discountAmount);
     const stockInfo = getPaymentItemStockInfo(item);
-    const stockLabel = stockInfo.availableStock !== null ? `Available stock: ${stockInfo.availableStock}` : 'Available stock: n/a';
+    const stockLabel = stockInfo.availableStock !== null ? `${stockInfo.availableStock}` : 'n/a';
     const canIncrease = stockInfo.maxAllowedQty === null || stockInfo.availableStock === null || stockInfo.availableStock > 0;
     const maxAttr = Number.isFinite(stockInfo.maxAllowedQty) ? `max="${stockInfo.maxAllowedQty}"` : '';
 
-    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(0, 1.5fr) 70px 56px 46px 62px 24px; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
-      <div style="min-width:0;">
-        <div style="font-weight:600; overflow-wrap:anywhere;">${item.name}</div>
-        <div style="font-size:0.74rem; color:#64748b;">${stockLabel}</div>
-      </div>
+    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(0, 1.4fr) 60px 70px 56px 46px 62px 24px; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
+      <div style="min-width:0; overflow-wrap:anywhere; font-weight:600;">${item.name}</div>
+      <div style="text-align:right; color:#475569; font-size:0.78rem;">${stockLabel}</div>
       <div style="display:flex; gap:4px; align-items:center;">
         <button type="button" onclick="adjustPaymentItemQuantity('${item.id}', -1)" style="border:1px solid #cbd5e1; background:#fff; border-radius:4px; width:20px; height:20px; cursor:pointer; padding:0;">−</button>
         <input type="number" min="0" step="1" ${maxAttr} value="${normalizedQty}" oninput="updatePaymentItemQuantity('${item.id}', this.value)" onchange="updatePaymentItemQuantity('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px; width:100%;" />
@@ -5622,8 +5647,9 @@ function renderPaymentItemEditor() {
   }).join('');
 
   container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc;">
-    <div style="display:grid; grid-template-columns: minmax(0, 1.5fr) 70px 56px 46px 62px 24px; gap:6px; font-size:0.72rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:4px;">
+    <div style="display:grid; grid-template-columns: minmax(0, 1.4fr) 60px 70px 56px 46px 62px 24px; gap:6px; font-size:0.72rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:4px;">
       <div>Item</div>
+      <div>Stock</div>
       <div>Qty</div>
       <div>Unit</div>
       <div>Disc</div>
@@ -5646,7 +5672,6 @@ function updatePaymentItemQuantity(itemId, value) {
   if (!Number.isFinite(parsedQty)) {
     item.qty = 0;
     updateOrders(CART_ID, false);
-    renderPaymentItemEditor();
     updatePaymentTotals();
     return;
   }
@@ -5680,7 +5705,6 @@ function adjustPaymentItemQuantity(itemId, delta = 1) {
   }
 
   updateOrders(CART_ID, false);
-  renderPaymentItemEditor();
   updatePaymentTotals();
 }
 
@@ -5694,7 +5718,6 @@ function updatePaymentItemDiscount(itemId, value) {
   const parsedDiscount = parseFloat(value);
   item.discountAmount = Number.isFinite(parsedDiscount) && parsedDiscount >= 0 ? parsedDiscount : 0;
   updateOrders(CART_ID, false);
-  renderPaymentItemEditor();
   updatePaymentTotals();
 }
 
@@ -5707,7 +5730,6 @@ function removePaymentItem(itemId) {
 
   currentOrder.items.splice(itemIndex, 1);
   updateOrders(CART_ID, false);
-  renderPaymentItemEditor();
   updatePaymentTotals();
 }
 
