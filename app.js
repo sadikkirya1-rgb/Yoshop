@@ -4485,6 +4485,7 @@ window.showInvoiceAdjustmentPrompt = showInvoiceAdjustmentPrompt;
 window.editCustomer = editCustomer;
 window.deleteCustomer = deleteCustomer;
 window.downloadCurrentReceiptAsPDF = downloadCurrentReceiptAsPDF;
+window.downloadCurrentReceiptAsJPG = downloadCurrentReceiptAsJPG;
 window.shareReceipt = shareReceipt;
 window.printReceipt = printReceipt;
 window.directPrint = directPrint;
@@ -6391,36 +6392,94 @@ async function prepareReceiptShareImage() {
   }
 }
 
+async function exportCurrentReceiptAsImage(format = 'png') {
+  if (typeof html2canvas === 'undefined') {
+    if (typeof showAppAlert === 'function') showAppAlert("Image export library not loaded. Please check your internet connection.");
+    else alert("Image export library not loaded. Please check your internet connection.");
+    return null;
+  }
+
+  const receiptContentEl = document.getElementById('receiptContent');
+  if (!receiptContentEl) return null;
+
+  try {
+    const canvas = await html2canvas(receiptContentEl, {
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      backgroundColor: '#ffffff',
+      width: receiptContentEl.scrollWidth,
+      height: receiptContentEl.scrollHeight,
+      windowWidth: receiptContentEl.scrollWidth,
+      windowHeight: receiptContentEl.scrollHeight,
+      willReadFrequently: true
+    });
+
+    const mimeType = format === 'jpg' ? 'image/jpeg' : 'image/png';
+    const imageDataUrl = canvas.toDataURL(mimeType, format === 'jpg' ? 0.95 : 1);
+    return { canvas, imageDataUrl, mimeType };
+  } catch (error) {
+    console.error('Error generating receipt image:', error);
+    if (typeof showAppAlert === 'function') showAppAlert('Could not generate the receipt image. Please try again.');
+    else alert('Could not generate the receipt image. Please try again.');
+    return null;
+  }
+}
+
 async function downloadCurrentReceiptAsPDF() {
-  if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {
-    if (typeof showAppAlert === 'function') showAppAlert("PDF generation libraries are not loaded. Please check your internet connection.");
-    else alert("PDF generation libraries are not loaded. Please check your internet connection.");
+  if (typeof window.jspdf === 'undefined') {
+    if (typeof showAppAlert === 'function') showAppAlert("PDF generation library not loaded. Please check your internet connection.");
+    else alert("PDF generation library not loaded. Please check your internet connection.");
     return;
   }
+
   const receiptContentEl = document.getElementById('receiptContent');
   const { jsPDF } = window.jspdf;
 
   try {
-    const canvas = await html2canvas(receiptContentEl, {
-      scale: 2, // Increase scale for better quality
-      useCORS: true, // Important for external images
-      logging: false,
-      willReadFrequently: true
-    });
+    const exportResult = await exportCurrentReceiptAsImage('png');
+    if (!exportResult) return;
 
-    const imgData = canvas.toDataURL('image/png');
+    const { canvas, imageDataUrl } = exportResult;
     const pdf = new jsPDF('p', 'mm', 'a4');
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
 
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    pdf.save(`invoice-${Date.now()}.pdf`);
+    const pageHeight = pdf.internal.pageSize.getHeight();
+    const imgHeight = pdfHeight;
+    let position = 0;
 
+    if (imgHeight > pageHeight) {
+      let remainingHeight = imgHeight;
+      while (remainingHeight > 0) {
+        if (position > 0) pdf.addPage();
+        pdf.addImage(imageDataUrl, 'PNG', 0, -position, pdfWidth, imgHeight);
+        remainingHeight -= pageHeight;
+        position += pageHeight;
+      }
+    } else {
+      pdf.addImage(imageDataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
+    }
+
+    pdf.save(`invoice-${Date.now()}.pdf`);
   } catch (error) {
-    console.error("Error generating PDF:", error);
-    if (typeof showAppAlert === 'function') showAppAlert("Could not generate PDF. There might be an issue with the receipt content.");
-    else alert("Could not generate PDF. There might be an issue with the receipt content.");
+    console.error('Error generating PDF:', error);
+    if (typeof showAppAlert === 'function') showAppAlert('Could not generate PDF. There might be an issue with the receipt content.');
+    else alert('Could not generate PDF. There might be an issue with the receipt content.');
   }
+}
+
+async function downloadCurrentReceiptAsJPG() {
+  const exportResult = await exportCurrentReceiptAsImage('jpg');
+  if (!exportResult) return;
+
+  const { imageDataUrl } = exportResult;
+  const link = document.createElement('a');
+  link.href = imageDataUrl;
+  link.download = `invoice-${Date.now()}.jpg`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 }
 
 function buildReceiptShareText(transaction = null) {
