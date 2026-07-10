@@ -5631,8 +5631,9 @@ function renderPaymentItemEditor() {
     const canIncrease = stockInfo.maxAllowedQty === null || stockInfo.availableStock === null || stockInfo.availableStock > 0;
     const maxAttr = Number.isFinite(stockInfo.maxAllowedQty) ? `max="${stockInfo.maxAllowedQty}"` : '';
 
-    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(0, 1.4fr) 60px 70px 56px 46px 62px 24px; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
-      <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">${item.name}</div>
+    const truncatedName = item.name && item.name.length > 4 ? `${item.name.slice(0, 4)}…` : item.name;
+    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(0, 1.2fr) 50px 70px 56px 46px 62px 24px; gap:4px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
+      <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">${truncatedName}</div>
       <div style="text-align:center; color:#475569; font-size:0.78rem;">${stockLabel}</div>
       <div style="display:flex; gap:4px; align-items:center;">
         <button type="button" onclick="adjustPaymentItemQuantity('${item.id}', -1)" style="border:1px solid #cbd5e1; background:#fff; border-radius:4px; width:20px; height:20px; cursor:pointer; padding:0;">−</button>
@@ -5647,7 +5648,7 @@ function renderPaymentItemEditor() {
   }).join('');
 
   container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc;">
-    <div style="display:grid; grid-template-columns: minmax(0, 1.4fr) 60px 70px 56px 46px 62px 24px; gap:6px; font-size:0.72rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:4px;">
+    <div style="display:grid; grid-template-columns: minmax(0, 1.2fr) 50px 70px 56px 46px 62px 24px; gap:4px; font-size:0.72rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:4px;">
       <div>Item</div>
       <div>Stock</div>
       <div>Qty</div>
