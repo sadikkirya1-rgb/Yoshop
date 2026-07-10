@@ -6442,25 +6442,19 @@ async function downloadCurrentReceiptAsPDF() {
 
     const { canvas, imageDataUrl } = exportResult;
     const pdf = new jsPDF('p', 'mm', 'a4');
-    const pdfWidth = pdf.internal.pageSize.getWidth();
-    const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
+    const pageWidth = pdf.internal.pageSize.getWidth();
     const pageHeight = pdf.internal.pageSize.getHeight();
-    const imgHeight = pdfHeight;
-    let position = 0;
+    const marginX = 8;
+    const marginY = 8;
+    const usableWidth = pageWidth - (marginX * 2);
+    const usableHeight = pageHeight - (marginY * 2);
+    const scale = Math.min(usableWidth / canvas.width, usableHeight / canvas.height);
+    const scaledWidth = canvas.width * scale;
+    const scaledHeight = canvas.height * scale;
+    const x = (pageWidth - scaledWidth) / 2;
+    const y = (pageHeight - scaledHeight) / 2;
 
-    if (imgHeight > pageHeight) {
-      let remainingHeight = imgHeight;
-      while (remainingHeight > 0) {
-        if (position > 0) pdf.addPage();
-        pdf.addImage(imageDataUrl, 'PNG', 0, -position, pdfWidth, imgHeight);
-        remainingHeight -= pageHeight;
-        position += pageHeight;
-      }
-    } else {
-      pdf.addImage(imageDataUrl, 'PNG', 0, 0, pdfWidth, pdfHeight);
-    }
-
+    pdf.addImage(imageDataUrl, 'PNG', x, y, scaledWidth, scaledHeight, undefined, 'FAST');
     pdf.save(`invoice-${Date.now()}.pdf`);
   } catch (error) {
     console.error('Error generating PDF:', error);
@@ -7214,11 +7208,11 @@ function populateReceiptContent(transaction) {
           ${balanceLine}
           ${taxHtml}
           ${discountHtml}
-          <div class="summary-line total" style="display:flex; align-items:center; justify-content:space-between; gap:12px;">
+          <div class="summary-line total" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:nowrap;">
             <span>TOTAL</span>
-            <span style="display:flex; align-items:center; gap:10px; justify-content:flex-end;">
-              ${ transaction.balance !== undefined && parseFloat(transaction.balance) === 0 ? `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 12px; border-radius:14px; border:2px dashed rgba(40,167,69,0.55); color:#28a745; font-weight:700; font-size:0.78rem; letter-spacing:0.08em; background:rgba(40,167,69,0.06); text-transform: uppercase; box-shadow: inset 0 0 0 1px rgba(40,167,69,0.18);">INVOICE PAID FULLY</span>` : '' }
-              <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(total)}</span>
+            <span style="display:flex; align-items:center; gap:10px; justify-content:flex-end; flex-wrap:nowrap; white-space:nowrap;">
+              ${ transaction.balance !== undefined && parseFloat(transaction.balance) === 0 ? `<span style="display:inline-flex; align-items:center; justify-content:center; padding:6px 12px; border-radius:14px; border:2px dashed rgba(40,167,69,0.55); color:#28a745; font-weight:700; font-size:0.78rem; letter-spacing:0.08em; background:rgba(40,167,69,0.06); text-transform: uppercase; box-shadow: inset 0 0 0 1px rgba(40,167,69,0.18); white-space:nowrap; flex-wrap:nowrap;">INVOICE PAID FULLY</span>` : '' }
+              <span style="white-space:nowrap;"> <span class="currency-symbol">${currencySymbol}</span>${formatCurrency(total)}</span>
             </span>
           </div>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:0.82rem; opacity:0.78; letter-spacing:0.03em;">
