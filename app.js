@@ -5632,8 +5632,8 @@ function renderPaymentItemEditor() {
     const maxAttr = Number.isFinite(stockInfo.maxAllowedQty) ? `max="${stockInfo.maxAllowedQty}"` : '';
 
     return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(0, 1.4fr) 60px 70px 56px 46px 62px 24px; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
-      <div style="min-width:0; overflow-wrap:anywhere; font-weight:600;">${item.name}</div>
-      <div style="text-align:right; color:#475569; font-size:0.78rem;">${stockLabel}</div>
+      <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">${item.name}</div>
+      <div style="text-align:center; color:#475569; font-size:0.78rem;">${stockLabel}</div>
       <div style="display:flex; gap:4px; align-items:center;">
         <button type="button" onclick="adjustPaymentItemQuantity('${item.id}', -1)" style="border:1px solid #cbd5e1; background:#fff; border-radius:4px; width:20px; height:20px; cursor:pointer; padding:0;">−</button>
         <input type="number" min="0" step="1" ${maxAttr} value="${normalizedQty}" oninput="updatePaymentItemQuantity('${item.id}', this.value)" onchange="updatePaymentItemQuantity('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px; width:100%;" />
