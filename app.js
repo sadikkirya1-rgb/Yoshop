@@ -8951,7 +8951,7 @@ function renderInvoices() {
     const adjustDisabledAttr = isPaid || !customer?.id ? 'disabled' : '';
     const adjustStyle = isPaid || !customer?.id ? 'opacity:0.45; pointer-events:none;' : '';
     const statusBadge = isPaid
-      ? `<span style="margin-left:8px; padding:4px 8px; background:#28a745; color:#fff; border-radius:6px; font-size:0.85em;">Paid${Math.abs(balance) === 0 ? ' (0 balance)' : ''}</span>`
+      ? `<span style="margin-left:8px; padding:4px 8px; background:#28a745; color:#fff; border-radius:6px; font-size:0.85em;">Cleared</span>`
       : `<span style="margin-left:8px; padding:4px 8px; background:#ffc107; color:#212529; border-radius:6px; font-size:0.85em;">Pending</span>`;
 
     return `<tr class="u-cursor-pointer">
@@ -8966,7 +8966,8 @@ function renderInvoices() {
       <td style="text-align: right;">${adjustedHtml}</td>
       <td style="text-align: right; display:flex; gap:6px; justify-content:flex-end; align-items:center;">
         <button class="btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(String(row.transaction?.id || row.transaction?.invoiceNumber || ''))}); event.stopPropagation();'>Adjust</button>
-        <button class="btn" type="button" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>Preview</button>
+        <button class="btn" type="button" title="BC🖨️" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>BC🖨️</button>
+        <button class="btn" type="button" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>A4 🖨️</button>
         ${statusBadge}
       </td>
     </tr>`;
