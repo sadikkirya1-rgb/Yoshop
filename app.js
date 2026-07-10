@@ -6571,11 +6571,12 @@ async function printReceipt() {
       }
     }
   }
+
   const receiptModal = document.getElementById('receiptModal');
-  let printTransaction = receiptModal._transactionData; // Check for a historical transaction first
+  const receiptContentEl = document.getElementById('receiptContent');
+  let printTransaction = receiptModal && receiptModal._transactionData ? receiptModal._transactionData : null;
 
   if (!printTransaction) {
-    // If no historical transaction is being viewed, get the active order
     const currentOrder = activeOrders[CART_ID];
     if (!currentOrder || currentOrder.items.length === 0) return alert("No active order to print.");
     const totals = calculateTransactionTotals(currentOrder.items);
@@ -6590,48 +6591,73 @@ async function printReceipt() {
     };
   }
 
-  const { date, customerName, tableNo, items, total } = printTransaction;
-  const transactionId = new Date(date).getTime();
-  const invoiceNumber = getInvoiceNumber(printTransaction);
+  if (!receiptContentEl || !receiptContentEl.innerHTML.trim()) {
+    populateReceiptContent(printTransaction);
+  }
 
-  const currencySymbol = getCurrencySymbol();
-  const logoUrl = sanitizeLogoUrl(settings.logo);
-  const logoHtml = logoUrl ? `<img src="${logoUrl}" onerror="this.src='assets/icons/icon.png';" style="width:50px; height:50px; object-fit:contain;">` : '🧾';
-  const barcodeImgUrl = getBarcodeDataUrl(transactionId.toString());
-  const barcodeHtml = barcodeImgUrl ? `<div style="text-align:center; margin: 15px 0;"><img src="${barcodeImgUrl}" style="width: 80%; max-height: 50px;"></div>` : '';
-
-  const itemsHtml = items.map(o => {
-    const notesHtml = o.notes ? `<br><small style="font-style: italic;">- ${o.notes}</small>` : '';
-    return `<div class="item-row"><div class="col-name">${o.name} ${notesHtml}</div><div class="col-qty">${o.qty}x</div><div class="col-price">${currencySymbol}${formatCurrency(o.price)}</div><div class="col-total">${currencySymbol}${formatCurrency(o.qty * o.price)}</div></div>`;
-  }).join('');
-
-  const receiptHtml = `
+  const printMarkup = receiptContentEl && receiptContentEl.innerHTML.trim()
+    ? receiptContentEl.innerHTML
+    : `
       <div class="receipt-header">
-        <div class="logo">${logoHtml}</div>
+        <div class="logo">🧾</div>
         <h3>${settings.name || 'My Business'}</h3>
         <p>${settings.address || '123 Business Avenue, Suite 100'}</p>
       </div>
       <div class="receipt-details">
-        <div><span>Invoice No:</span> <span>${invoiceNumber}</span></div>
-        <div><span>Transaction ID:</span> <span>${transactionId}</span></div>
-        <div><span>Date:</span> <span>${new Date(date).toLocaleDateString()}</span></div>
-        <div><span>Time:</span> <span>${new Date(date).toLocaleTimeString()}</span></div>
-      </div>
-      <div class="receipt-items">
-        <div class="table-header"><div class="col-name">Item</div><div class="col-qty">Qty</div><div class="col-price">Price</div><div class="col-total">Total</div></div>
-        ${itemsHtml}
+        <div><span>Invoice No:</span> <span>${getInvoiceNumber(printTransaction)}</span></div>
+        <div><span>Date:</span> <span>${new Date(printTransaction.date).toLocaleDateString()}</span></div>
       </div>
       <div class="receipt-summary">
-        <div class="summary-line total"><span>TOTAL</span> <span>${currencySymbol}${formatCurrency(total)}</span></div>
-      </div>
-      <div class="receipt-footer"><p>THANK YOU FOR YOUR PATRONAGE!</p>${barcodeHtml}<p class="promo">Get 10% off on your next visit!</p><p style="font-size:0.7em; margin-top:10px; opacity:0.6;">Power by YoShop POS</p></div>`;
+        <div class="summary-line total"><span>TOTAL</span> <span>${getCurrencySymbol()}${formatCurrency(printTransaction.total || 0)}</span></div>
+      </div>`;
 
-  const printWindow = window.open('', 'Print Invoice', 'width=420,height=600,scrollbars=yes');
-  const printHtml = `<html><head><title>Print Invoice</title><style>body { margin: 0; padding: 10px; background: #f0f0f0; } .receipt-paper { font-family: 'Courier New', Courier, monospace; background: #fff; color: #000; padding: 30px 20px; max-width: 400px; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); } .receipt-header { text-align: center; margin-bottom: 15px; } .receipt-header h2 { margin: 0; font-size: 1.4em; text-transform: uppercase; } .receipt-header p { margin: 2px 0; font-size: 0.8em; } .receipt-details { font-size: 0.8em; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 10px 0; margin: 15px 0; } .receipt-details div { display: flex; justify-content: space-between; } .receipt-items .table-header { display: flex; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 5px; margin-bottom: 8px; font-size: 0.8em; } .receipt-items .item-row { display: flex; margin-bottom: 5px; font-size: 0.8em; } .receipt-items .col-name { width: 50%; } .receipt-items .col-qty { width: 10%; text-align: left; } .receipt-items .col-price { width: 20%; text-align: right; } .receipt-items .col-total { width: 20%; text-align: right; } .receipt-summary { border-top: 1px dashed #000; padding-top: 10px; margin-top: 15px; font-size: 0.9em; } .summary-line { display: flex; justify-content: space-between; margin-bottom: 5px; } .summary-line.total { font-weight: bold; font-size: 1.4em; border-top: 1px double #000; padding-top: 5px; } .receipt-footer { text-align: center; margin-top: 25px; font-size: 0.8em; } .receipt-footer .promo { margin-top: 15px; font-weight: bold; border: 1px dashed #000; padding: 5px; display: inline-block; }</style></head><body><div class="receipt-paper">${receiptHtml}</div></body></html>`;
+  const printWindow = window.open('', 'Print Invoice', 'width=460,height=760,scrollbars=yes,resizable=yes');
+  if (!printWindow) {
+    return (typeof showAppAlert === 'function') ? showAppAlert('Please allow pop-ups to print the invoice.') : alert('Please allow pop-ups to print the invoice.');
+  }
+
+  const printHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Print Invoice</title>
+  <style>
+    body { margin: 0; padding: 20px; background: #f5f7fb; font-family: 'Segoe UI', Arial, sans-serif; color: #1f2937; }
+    .receipt-paper { max-width: 420px; margin: 0 auto; padding: 24px 20px; background: #fff; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+    .receipt-header { text-align: center; margin-bottom: 16px; }
+    .logo { width: 52px; height: 52px; margin: 0 auto 10px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: #ff6b35; color: #fff; font-size: 24px; }
+    .receipt-header h3 { margin: 0 0 4px; font-size: 1.1rem; text-transform: uppercase; }
+    .receipt-header p { margin: 0; font-size: 0.8rem; opacity: 0.8; }
+    .receipt-details { font-size: 0.82rem; border-top: 1px dashed #cbd5e1; border-bottom: 1px dashed #cbd5e1; padding: 10px 0; margin: 12px 0; }
+    .receipt-details div { display: flex; justify-content: space-between; gap: 8px; margin: 4px 0; }
+    .receipt-items { margin-top: 10px; }
+    .receipt-items .table-header { display: flex; font-weight: 700; border-bottom: 1px solid #e2e8f0; padding-bottom: 6px; margin-bottom: 8px; font-size: 0.82rem; }
+    .receipt-items .item-row { display: flex; margin-bottom: 7px; font-size: 0.8rem; align-items: flex-start; gap: 6px; }
+    .receipt-items .col-name { flex: 1; min-width: 0; }
+    .receipt-items .col-qty { width: 35px; text-align: left; flex-shrink: 0; }
+    .receipt-items .col-price { width: 54px; text-align: right; flex-shrink: 0; }
+    .receipt-items .col-total { width: 62px; text-align: right; flex-shrink: 0; }
+    .receipt-summary { border-top: 1px dashed #cbd5e1; padding-top: 10px; margin-top: 12px; font-size: 0.9rem; }
+    .summary-line { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+    .summary-line.total { font-weight: 700; font-size: 1.1rem; margin-top: 10px; padding-top: 8px; border-top: 1px double #94a3b8; }
+    .receipt-footer { text-align: center; margin-top: 18px; font-size: 0.8rem; }
+    .promo { margin-top: 10px; font-weight: 700; border: 1px dashed #94a3b8; padding: 6px 8px; display: inline-block; }
+    .currency-symbol { font-size: 0.9em; }
+    img { max-width: 100%; height: auto; }
+    @media print { body { background: #fff; padding: 0; } .receipt-paper { box-shadow: none; border-radius: 0; padding: 0; } }
+  </style>
+</head>
+<body>
+  <div class="receipt-paper">${printMarkup}</div>
+</body>
+</html>`;
+
+  printWindow.document.open();
   printWindow.document.write(printHtml);
   printWindow.document.close();
-  printWindow.focus(); // Focus on the new window
-  printWindow.print(); // Trigger the print dialog
+  printWindow.focus();
+  printWindow.print();
 }
 
 // ===== Scanner Functions =====
