@@ -4272,6 +4272,8 @@ function closeAuthModal() {
 
 let activeAppPopupResolver = null;
 let activeAppPopupKeydown = null;
+let activeLoginOverlayKeydown = null;
+let activeReceiptModalKeydown = null;
 
 function closeAppPopup(result = { confirmed: false, value: null }) {
   const modal = document.getElementById('appPopupModal');
@@ -6306,7 +6308,32 @@ function previewOrder(transactionData = null) {
   populateReceiptContent(currentTransaction);
   document.getElementById('receiptModal').style.display = 'flex';
 
+  if (activeReceiptModalKeydown) {
+    document.removeEventListener('keydown', activeReceiptModalKeydown);
+    activeReceiptModalKeydown = null;
+  }
+
+  activeReceiptModalKeydown = function (e) {
+    if (e.key === 'Escape') {
+      closeReceiptModal();
+      return;
+    }
+    if (e.key === 'Enter') {
+      printReceipt();
+    }
+  };
+  document.addEventListener('keydown', activeReceiptModalKeydown);
+
   updateCurrencyDisplay();
+}
+
+function closeReceiptModal() {
+  const receiptModal = document.getElementById('receiptModal');
+  if (receiptModal) receiptModal.style.display = 'none';
+  if (activeReceiptModalKeydown) {
+    document.removeEventListener('keydown', activeReceiptModalKeydown);
+    activeReceiptModalKeydown = null;
+  }
 }
 
 async function downloadCurrentReceiptAsPDF() {
@@ -11401,25 +11428,6 @@ function showLoginOverlay(mode = 'login') {
           </div>
         </div>
       `;
-    // Attach Enter key handlers for login forms (submit on Enter)
-    (function attachLoginEnterHandler() {
-      const onKey = (e) => {
-        if (e.key !== 'Enter') return;
-        const pinInput = document.getElementById('loginPIN');
-        if (pinInput && document.activeElement && document.activeElement.id === 'loginPIN') {
-          const pinBtn = overlay.querySelector('button[onclick*="loginWithPIN"]');
-          if (pinBtn) pinBtn.click();
-          return;
-        }
-        const emailInput = document.getElementById('authEmail');
-        const pwdInput = document.getElementById('authPassword');
-        if ((emailInput && document.activeElement === emailInput) || (pwdInput && document.activeElement === pwdInput)) {
-          const submitBtn = overlay.querySelector('button[onclick*="loginWithEmail"] , button[onclick*="registerWithEmail"]');
-          if (submitBtn) submitBtn.click();
-        }
-      };
-      overlay.addEventListener('keydown', onKey);
-    })();
   } else {
     if (window._marketingInterval) clearInterval(window._marketingInterval);
 
@@ -11521,11 +11529,47 @@ function showLoginOverlay(mode = 'login') {
       `;
   }
 
+  // Attach Enter/Escape keyboard handler for the login overlay
+  if (activeLoginOverlayKeydown) {
+    document.removeEventListener('keydown', activeLoginOverlayKeydown);
+    activeLoginOverlayKeydown = null;
+  }
+  const onKey = (e) => {
+    if (e.key === 'Escape') {
+      closeLoginOverlay();
+      return;
+    }
+    if (e.key !== 'Enter') return;
+    const pinInput = document.getElementById('loginPIN');
+    if (pinInput && document.activeElement && document.activeElement.id === 'loginPIN') {
+      const pinBtn = overlay.querySelector('button[onclick*="loginWithPIN"]');
+      if (pinBtn) pinBtn.click();
+      return;
+    }
+    const emailInput = document.getElementById('authEmail');
+    const pwdInput = document.getElementById('authPassword');
+    if ((emailInput && document.activeElement === emailInput) || (pwdInput && document.activeElement === pwdInput)) {
+      const submitBtn = overlay.querySelector('button[onclick*="loginWithEmail"] , button[onclick*="registerWithEmail"]');
+      if (submitBtn) submitBtn.click();
+    }
+  };
+  activeLoginOverlayKeydown = onKey;
+  document.addEventListener('keydown', onKey);
+
   // Auto-focus PIN field if on entry screen
   const pinInput = document.getElementById('loginPIN');
   if (pinInput) pinInput.focus();
 
   overlay.style.display = 'flex';
+}
+
+function closeLoginOverlay() {
+  const overlay = document.getElementById('login-overlay');
+  if (overlay) overlay.style.display = 'none';
+  if (activeLoginOverlayKeydown) {
+    document.removeEventListener('keydown', activeLoginOverlayKeydown);
+    activeLoginOverlayKeydown = null;
+  }
 }
 
 function applyRolePermissions() {
@@ -11540,7 +11584,6 @@ function applyRolePermissions() {
   const isInAdminTab = activeTab && activeTab.id === 'appAdminTab';
 
   nav.querySelectorAll('button').forEach(btn => {
-    // Strictly hide App Admin specific buttons for non-AppAdmins
     const isAdminSpecific = btn.id === 'nav-app-admin-btn' || btn.id === 'nav-admin-shops' || btn.id === 'nav-admin-subscriptions' || btn.id === 'nav-admin-shops-list' || btn.id === 'nav-admin-settings';
     if (!isAppAdmin && isAdminSpecific) {
       btn.style.display = 'none';
@@ -11563,8 +11606,6 @@ function applyRolePermissions() {
     if (tabIdMatch) {
       const tabId = tabIdMatch[1];
       if (isAppAdmin) {
-        // Hide shop navigation while looking at the Admin Management panel 
-        // or if no monitoring session is active.
         const isAdminBtn = tabId === 'appAdminTab' || ['nav-admin-shops', 'nav-admin-shops-list', 'nav-admin-settings'].includes(btn.id);
         if (isInAdminTab || !isMonitoringMode) {
           btn.style.display = isAdminBtn ? 'flex' : 'none';
@@ -11579,16 +11620,13 @@ function applyRolePermissions() {
     }
   });
 
-  // Hide ShopAdmin-specific settings groups
   const securityGroup = document.getElementById('securitySettingsGroup');
   if (securityGroup) securityGroup.style.display = isShopAdmin ? 'block' : 'none';
 
   const appAdminBtn = document.getElementById('nav-app-admin-btn');
   if (appAdminBtn) appAdminBtn.style.display = isAppAdmin ? 'flex' : 'none';
 
-  // Tab restriction and redirection logic
   if (isAppAdmin && !isMonitoringMode && activeTab && activeTab.id !== 'appAdminTab') {
-    // Force App Admin back to management screen if they attempt to view a shop tab without monitoring
     const adminBtn = document.getElementById('nav-app-admin-btn');
     if (adminBtn) showTab('appAdminTab', adminBtn);
   } else if (!isShopAdmin && !isAppAdmin && activeTab && !normalizedPermissions.includes(activeTab.id)) {
@@ -11661,7 +11699,19 @@ async function loginWithPIN() {
   }
 }
 // Ensure early global availability for inline handlers
-try { window.loginWithPIN = loginWithPIN; } catch (e) { /* ignore */ }
+try {
+  window.login = login;
+  window.loginWithEmail = loginWithEmail;
+  window.registerWithEmail = registerWithEmail;
+  window.handleForgotPassword = handleForgotPassword;
+  window.logout = logout;
+  window.prepareLogin = prepareLogin;
+  window.resetLoginStage = resetLoginStage;
+  window.forgotPIN = forgotPIN;
+  window.togglePINVisibility = togglePINVisibility;
+  window.showLoginOverlay = showLoginOverlay;
+  window.loginWithPIN = loginWithPIN;
+} catch (e) { /* ignore */ }
 
 /**
  * Helper to set session storage and update UI after successful PIN verification
