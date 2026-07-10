@@ -6015,6 +6015,168 @@ async function deleteItem(i) {
 }
 
 // ===== Receipt =====
+window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = null) {
+  const previewWindow = window.open('', '_blank', 'width=1100,height=1400,scrollbars=yes,resizable=yes');
+  if (!previewWindow) {
+    return (typeof showAppAlert === 'function') ? showAppAlert('Please allow pop-ups to preview the A4 invoice.') : alert('Please allow pop-ups to preview the A4 invoice.');
+  }
+
+  const source = transactionData || {};
+  const invoiceNumber = normalizeInvoiceNumber(source.invoiceNumber || source.invoiceNo || getInvoiceNumber(source)) || 'INV-UNKNOWN';
+  const invoiceDate = source.date ? new Date(source.date).toLocaleString() : new Date().toLocaleString();
+  const customerName = source.customerName || source.customer?.name || 'Walk-in Customer';
+  const customerPhone = source.customerPhone || source.customer?.phone || '';
+  const customerAddress = source.customerAddress || source.customer?.address || '';
+  const paymentMethod = source.paymentMethod || source.payment?.method || 'Cash';
+  const paymentStatus = source.paymentStatus || source.payment?.status || source.status || 'PAID';
+  const cashier = source.cashier || source.staffName || source.servedBy || 'Admin';
+  const note = source.note || 'Please keep this invoice for warranty and return purposes.';
+  const currencySymbol = getCurrencySymbol();
+  const storeName = settings?.name || 'YO SHOP';
+  const storeAddress = settings?.address || 'Smart POS & Inventory System';
+  const logoUrl = sanitizeLogoUrl(settings?.logo);
+  const logoHtml = logoUrl
+    ? `<img src="${logoUrl}" alt="Store Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" style="width:70px;height:70px;object-fit:contain;border-radius:50%;"><div class="logo-circle" style="display:none;">${(storeName || 'Y').charAt(0).toUpperCase()}</div>`
+    : `<div class="logo-circle">${(storeName || 'Y').charAt(0).toUpperCase()}</div>`;
+
+  const rawItems = Array.isArray(source.items) ? source.items : [];
+  let subtotal = 0;
+  const itemsHtml = rawItems.length > 0 ? rawItems.map((item, index) => {
+    const name = item?.name || item?.productName || item?.itemName || 'Item';
+    const qty = Number(item?.qty || item?.quantity || 1);
+    const price = Number(item?.price || item?.unitPrice || item?.cost || 0);
+    const total = qty * price;
+    subtotal += total;
+    return `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${name}</td>
+        <td>${qty}</td>
+        <td>${currencySymbol}${formatCurrency(price)}</td>
+        <td>${currencySymbol}${formatCurrency(total)}</td>
+      </tr>`;
+  }).join('') : `
+      <tr>
+        <td colspan="5" style="text-align:center; color:#64748b;">No items available</td>
+      </tr>`;
+
+  const taxAmount = Number(source.taxAmount ?? source.tax ?? source.vatAmount ?? source.vat ?? 0);
+  const grandTotal = subtotal + taxAmount;
+  const subtotalText = `${currencySymbol}${formatCurrency(subtotal)}`;
+  const taxText = `${currencySymbol}${formatCurrency(taxAmount)}`;
+  const grandText = `${currencySymbol}${formatCurrency(grandTotal)}`;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${storeName} Invoice</title>
+  <style>
+    :root { --primary:#2563eb; --secondary:#10b981; --light:#f8fafc; --border:#dbe4ee; --text:#334155; }
+    * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', Arial, sans-serif; }
+    body { background:#edf2f7; padding:30px; color:var(--text); }
+    .invoice { width:210mm; min-height:297mm; background:white; margin:auto; border-radius:14px; overflow:hidden; box-shadow:0 15px 35px rgba(0,0,0,.15); }
+    .header { background:linear-gradient(135deg,#2563eb,#1d4ed8,#10b981); color:white; padding:30px; display:flex; justify-content:space-between; align-items:center; }
+    .logo { display:flex; align-items:center; gap:15px; }
+    .logo-circle { width:70px; height:70px; background:white; color:#2563eb; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:34px; font-weight:bold; }
+    .logo h1 { font-size:30px; }
+    .logo p { opacity:.9; }
+    .invoice-title { text-align:right; }
+    .invoice-title h2 { font-size:38px; }
+    .content { padding:30px; }
+    .cards { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:25px; }
+    .card { background:#f8fafc; border-left:5px solid var(--primary); padding:18px; border-radius:10px; }
+    .card h3 { color:var(--primary); margin-bottom:10px; }
+    .badge { display:inline-block; padding:6px 14px; background:#10b981; color:white; border-radius:30px; font-size:13px; font-weight:bold; }
+    table { width:100%; border-collapse:collapse; margin-top:20px; }
+    thead { background:var(--primary); color:white; }
+    th { padding:14px; }
+    td { padding:13px; border-bottom:1px solid #eee; }
+    tbody tr:nth-child(even) { background:#f8fafc; }
+    .summary { margin-top:30px; width:360px; margin-left:auto; }
+    .summary td { padding:12px; border:none; }
+    .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:22px; font-weight:bold; border-radius:8px; }
+    .footer { margin-top:40px; text-align:center; }
+    .barcodes { margin:20px auto; width:280px; height:70px; background:repeating-linear-gradient(90deg,#000 0px,#000 3px,white 3px,white 5px,#000 5px,#000 8px,white 8px,white 10px); }
+    .note { margin-top:20px; padding:18px; background:#eff6ff; border-left:5px solid var(--primary); border-radius:8px; color:#555; }
+    .actions { display:flex; justify-content:center; gap:12px; margin:25px auto; }
+    button { padding:14px 40px; font-size:18px; background:linear-gradient(135deg,#2563eb,#10b981); border:none; border-radius:8px; color:white; cursor:pointer; }
+    button:hover { transform:scale(1.03); }
+    @media print { body { background:white; padding:0; } .actions { display:none; } .invoice { width:100%; box-shadow:none; border-radius:0; } @page { size:A4; margin:10mm; } }
+  </style>
+</head>
+<body>
+  <div class="actions">
+    <button onclick="window.print()">🖨 Print Invoice</button>
+    <button onclick="window.close()">Close</button>
+  </div>
+  <div class="invoice">
+    <div class="header">
+      <div class="logo">
+        ${logoHtml}
+        <div>
+          <h1>${storeName.toUpperCase()}</h1>
+          <p>${storeAddress}</p>
+        </div>
+      </div>
+      <div class="invoice-title">
+        <h2>INVOICE</h2>
+        <div><b>${invoiceNumber}</b></div>
+        <div>${invoiceDate}</div>
+      </div>
+    </div>
+    <div class="content">
+      <div class="cards">
+        <div class="card">
+          <h3>Customer</h3>
+          <p>${customerName}</p>
+          <p>${customerPhone || ''}</p>
+          <p>${customerAddress || ''}</p>
+        </div>
+        <div class="card">
+          <h3>Payment</h3>
+          <p>Method: <b>${paymentMethod}</b></p>
+          <p>Status: <span class="badge">${paymentStatus}</span></p>
+          <p>Cashier: <b>${cashier}</b></p>
+        </div>
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Product</th>
+            <th>Qty</th>
+            <th>Price</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>${itemsHtml}</tbody>
+      </table>
+      <div class="summary">
+        <table>
+          <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
+          <tr><td>VAT</td><td align="right">${taxText}</td></tr>
+          <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
+        </table>
+      </div>
+      <div class="footer">
+        <div class="barcodes"></div>
+        <p><b>Thank you for shopping with ${storeName} ❤️</b></p>
+        <p>${window.location.hostname || 'yoshop.web.app'}</p>
+      </div>
+      <div class="note">${note}</div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  previewWindow.document.open();
+  previewWindow.document.write(html);
+  previewWindow.document.close();
+  previewWindow.focus();
+}
+
 function previewOrder(transactionData = null) {
   const receiptModal = document.getElementById('receiptModal');
   let currentTransaction;
@@ -8967,7 +9129,7 @@ function renderInvoices() {
       <td style="text-align: right; display:flex; gap:6px; justify-content:flex-end; align-items:center;">
         <button class="btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(String(row.transaction?.id || row.transaction?.invoiceNumber || ''))}); event.stopPropagation();'>Adjust</button>
         <button class="btn" type="button" title="BC🖨️" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>BC🖨️</button>
-        <button class="btn" type="button" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>A4 🖨️</button>
+        <button class="btn" type="button" onclick='openA4InvoicePreview(${previewDataJson}); event.stopPropagation();'>A4 🖨️</button>
         ${statusBadge}
       </td>
     </tr>`;
