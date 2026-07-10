@@ -61,16 +61,10 @@ async function markNoticeReadOnServer(uid, sentAt) {
 function updateHeaderNoticeBadge(unreadCount) {
   try {
           const badge = document.getElementById('update-badge');
-    if (!badge) return;
-    if (unreadCount > 0) {
-      badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
-      badge.style.display = 'inline-block';
-      badge.classList.add('notice-unread-badge');
-    } else {
-      badge.textContent = '';
-      badge.style.display = 'none';
-      badge.classList.remove('notice-unread-badge');
-    }
+          if (!badge) return;
+          badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+          badge.style.display = unreadCount > 0 ? 'inline-block' : 'none';
+          badge.classList.toggle('notice-unread-badge', unreadCount > 0);
   } catch (e) { /* non-blocking */ }
 }
 
@@ -83,7 +77,7 @@ async function showNoticesPage() {
   main.style.display = 'block';
   // Render notices into the dedicated list container
   const list = document.getElementById('noticesPageList');
-  await renderShopNoticesInSettings(list);
+    await renderShopNoticesInSettings(list, true);
 }
 
 async function renderShopNoticesInSettings(containerParam) {
@@ -6098,74 +6092,108 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .summary td { padding:12px; border:none; }
     .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:22px; font-weight:bold; border-radius:8px; }
     .footer { margin-top:40px; text-align:center; }
-    .barcodes { margin:20px auto; width:280px; height:70px; background:repeating-linear-gradient(90deg,#000 0px,#000 3px,white 3px,white 5px,#000 5px,#000 8px,white 8px,white 10px); }
     .note { margin-top:20px; padding:18px; background:#eff6ff; border-left:5px solid var(--primary); border-radius:8px; color:#555; }
     .actions { display:flex; justify-content:center; gap:12px; margin:25px auto; }
+    .preview-controls { position:sticky; top:0; z-index:100; display:flex; gap:10px; padding:12px; justify-content:center; width:100%; background:rgba(255,255,255,0.95); border-bottom:1px solid #ddd; backdrop-filter:blur(6px); }
+    #preview-zoom-wrapper { transform-origin: top center; width:100%; display:flex; justify-content:center; }
+    .preview-inner { width:210mm; }
     button { padding:14px 40px; font-size:18px; background:linear-gradient(135deg,#2563eb,#10b981); border:none; border-radius:8px; color:white; cursor:pointer; }
     button:hover { transform:scale(1.03); }
-    @media print { body { background:white; padding:0; } .actions { display:none; } .invoice { width:100%; box-shadow:none; border-radius:0; } @page { size:A4; margin:10mm; } }
+    /* Button variants (match app styles) */
+    .btn { display:inline-block; padding:10px 16px; color:#fff; border:none; border-radius:6px; cursor:pointer; }
+    .btn-primary-blue { background-color: #007bff; }
+    .btn-info { background-color: #17a2b8; }
+    .btn-secondary { background-color: #6c757d; }
+    .u-fs-08 { font-size: 0.85rem; }
+    @media print { body { background:white; padding:0; } .actions, .preview-controls { display:none; } .invoice { width:100%; box-shadow:none; border-radius:0; } @page { size:A4; margin:10mm; } }
   </style>
+  <script>
+    function changeA4Zoom(delta) {
+      window.a4ZoomLevel = Math.max(0.4, Math.min(2.0, (window.a4ZoomLevel || 1) + delta));
+      const wrapper = document.getElementById('preview-zoom-wrapper');
+      const display = document.getElementById('a4-zoom-percentage');
+      if (wrapper) {
+        wrapper.style.transform = 'scale(' + window.a4ZoomLevel + ')';
+        if (display) display.textContent = Math.round(window.a4ZoomLevel * 100) + '%';
+        const extraHeight = wrapper.offsetHeight * (window.a4ZoomLevel - 1);
+        wrapper.style.marginBottom = (extraHeight > 0 ? extraHeight + 40 : 20) + 'px';
+      }
+    }
+    window.a4ZoomLevel = 1;
+  </script>
 </head>
 <body>
-  <div class="actions">
-    <button onclick="window.print()">🖨 Print Invoice</button>
-    <button onclick="window.close()">Close</button>
-  </div>
-  <div class="invoice">
-    <div class="header">
-      <div class="logo">
-        ${logoHtml}
-        <div>
-          <h1>${storeName.toUpperCase()}</h1>
-          <p>${storeAddress}</p>
-        </div>
-      </div>
-      <div class="invoice-title">
-        <h2>INVOICE</h2>
-        <div><b>${invoiceNumber}</b></div>
-        <div>${invoiceDate}</div>
-      </div>
+  <div class="preview-controls">
+    <button class="btn btn-secondary" onclick="changeA4Zoom(-0.1)" style="width:42px; height:42px; border-radius:50%; font-size:1.4em;">-</button>
+    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:90px;">
+      <span style="font-size:0.7em; text-transform:uppercase; color:#666; font-weight:bold;">Zoom</span>
+      <span id="a4-zoom-percentage" style="font-weight:bold; color:var(--primary);">100%</span>
     </div>
-    <div class="content">
-      <div class="cards">
-        <div class="card">
-          <h3>Customer</h3>
-          <p>${customerName}</p>
-          <p>${customerPhone || ''}</p>
-          <p>${customerAddress || ''}</p>
+    <button class="btn btn-secondary" onclick="changeA4Zoom(0.1)" style="width:42px; height:42px; border-radius:50%; font-size:1.4em;">+</button>
+    <button class="btn btn-info u-fs-08" onclick="changeA4Zoom(1 - (window.a4ZoomLevel||1))" style="margin-left:12px; border-radius:20px; padding:0 12px;">Reset</button>
+    <div style="flex:1"></div>
+      <div style="display:flex; gap:8px;">
+      <button class="btn btn-primary-blue u-fs-08" onclick="window.print()">🖨 Print</button>
+      <button class="btn btn-secondary u-fs-08" onclick="window.close()">Close</button>
+    </div>
+  </div>
+  <div id="preview-zoom-wrapper">
+    <div class="preview-inner">
+      <div class="invoice">
+        <div class="header">
+          <div class="logo">
+            ${logoHtml}
+            <div>
+              <h1>${storeName.toUpperCase()}</h1>
+              <p>${storeAddress}</p>
+            </div>
+          </div>
+          <div class="invoice-title">
+            <h2>INVOICE</h2>
+            <div><b>${invoiceNumber}</b></div>
+            <div>${invoiceDate}</div>
+          </div>
         </div>
-        <div class="card">
-          <h3>Payment</h3>
-          <p>Method: <b>${paymentMethod}</b></p>
-          <p>Status: <span class="badge">${paymentStatus}</span></p>
-          <p>Cashier: <b>${cashier}</b></p>
+        <div class="content">
+          <div class="cards">
+            <div class="card">
+              <h3>Customer</h3>
+              <p>${customerName}</p>
+              <p>${customerPhone || ''}</p>
+              <p>${customerAddress || ''}</p>
+            </div>
+            <div class="card">
+              <h3>Payment</h3>
+              <p>Method: <b>${paymentMethod}</b></p>
+              <p>Status: <span class="badge">${paymentStatus}</span></p>
+              <p>Cashier: <b>${cashier}</b></p>
+            </div>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Product</th>
+                <th>Qty</th>
+                <th>Price</th>
+                <th>Total</th>
+              </tr>
+            </thead>
+            <tbody>${itemsHtml}</tbody>
+          </table>
+          <div class="summary">
+            <table>
+              <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
+              <tr><td>VAT</td><td align="right">${taxText}</td></tr>
+              <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
+            </table>
+          </div>
+          <div class="footer">
+            <p><b>Thank you for shopping with ${storeName} ❤️</b></p>
+          </div>
+          <div class="note">${note}</div>
         </div>
       </div>
-      <table>
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Product</th>
-            <th>Qty</th>
-            <th>Price</th>
-            <th>Total</th>
-          </tr>
-        </thead>
-        <tbody>${itemsHtml}</tbody>
-      </table>
-      <div class="summary">
-        <table>
-          <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
-          <tr><td>VAT</td><td align="right">${taxText}</td></tr>
-          <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
-        </table>
-      </div>
-      <div class="footer">
-        <div class="barcodes"></div>
-        <p><b>Thank you for shopping with ${storeName} ❤️</b></p>
-        <p>${window.location.hostname || 'yoshop.web.app'}</p>
-      </div>
-      <div class="note">${note}</div>
     </div>
   </div>
 </body>
@@ -7511,6 +7539,16 @@ function openReportPreview() {
   window.reportZoomLevel = 1;
 
   document.getElementById("reportPreviewModal").style.display = "flex";
+  // Add keyboard handlers for report preview zoom when modal is open
+  (function attachReportPreviewKeyboard() {
+    const onKey = (e) => {
+      try {
+        if (e.ctrlKey && (e.key === '+' || e.key === '=')) { e.preventDefault(); changeReportZoom(0.1); }
+        if (e.ctrlKey && e.key === '-') { e.preventDefault(); changeReportZoom(-0.1); }
+      } catch (err) { }
+    };
+    document.addEventListener('keydown', onKey);
+  })();
 }
 
 function changeReportZoom(delta) {
@@ -11252,6 +11290,25 @@ function showLoginOverlay(mode = 'login') {
           </div>
         </div>
       `;
+    // Attach Enter key handlers for login forms (submit on Enter)
+    (function attachLoginEnterHandler() {
+      const onKey = (e) => {
+        if (e.key !== 'Enter') return;
+        const pinInput = document.getElementById('loginPIN');
+        if (pinInput && document.activeElement && document.activeElement.id === 'loginPIN') {
+          const pinBtn = overlay.querySelector('button[onclick*="loginWithPIN"]');
+          if (pinBtn) pinBtn.click();
+          return;
+        }
+        const emailInput = document.getElementById('authEmail');
+        const pwdInput = document.getElementById('authPassword');
+        if ((emailInput && document.activeElement === emailInput) || (pwdInput && document.activeElement === pwdInput)) {
+          const submitBtn = overlay.querySelector('button[onclick*="loginWithEmail"] , button[onclick*="registerWithEmail"]');
+          if (submitBtn) submitBtn.click();
+        }
+      };
+      overlay.addEventListener('keydown', onKey);
+    })();
   } else {
     if (window._marketingInterval) clearInterval(window._marketingInterval);
 
