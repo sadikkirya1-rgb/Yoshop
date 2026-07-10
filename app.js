@@ -5553,6 +5553,113 @@ function setPaymentProcessingState(isProcessing, message = '', tone = 'info') {
   }
 }
 
+function getPaymentItemStockInfo(item = {}) {
+  const dish = menu.find(d => d.name === item.name);
+  const stockValue = dish && dish.stock !== undefined ? (parseFloat(dish.stock) || 0) : 0;
+  const otherCartsQty = Object.entries(activeOrders).reduce((sum, [cartId, order]) => {
+    if (cartId === CART_ID) return sum;
+    const cartItems = Array.isArray(order?.items) ? order.items : [];
+    return sum + cartItems.filter(cartItem => cartItem.name === item.name).reduce((itemSum, cartItem) => itemSum + (parseInt(cartItem.qty, 10) || 0), 0);
+  }, 0);
+  const available = Math.max(0, stockValue - otherCartsQty);
+  return { dish, stockValue, available, otherCartsQty };
+}
+
+function renderPaymentItemEditor() {
+  const container = document.getElementById('paymentItemsEditor');
+  const currentOrder = activeOrders[CART_ID];
+  if (!container) return;
+
+  if (!currentOrder || !Array.isArray(currentOrder.items) || currentOrder.items.length === 0) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const rowsHtml = currentOrder.items.map(item => {
+    const qty = Math.max(1, parseInt(item.qty, 10) || 1);
+    const unitPrice = Number(item.price || 0);
+    const discountAmount = Math.max(0, Number(item.discountAmount || 0) || 0);
+    const lineTotal = Math.max(0, (qty * unitPrice) - discountAmount);
+    const stockInfo = getPaymentItemStockInfo(item);
+    const stockLabel = stockInfo.dish ? `Available stock: ${stockInfo.available}` : 'Available stock: n/a';
+
+    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(0, 1.5fr) 44px 56px 46px 62px 24px; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
+      <div style="min-width:0;">
+        <div style="font-weight:600; overflow-wrap:anywhere;">${item.name}</div>
+        <div style="font-size:0.74rem; color:#64748b;">${stockLabel}</div>
+      </div>
+      <input type="number" min="1" step="1" value="${qty}" oninput="updatePaymentItemQuantity('${item.id}', this.value)" onchange="updatePaymentItemQuantity('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px;" />
+      <div style="text-align:right; font-weight:600; white-space:nowrap;">${getCurrencySymbol()}${formatCurrency(unitPrice)}</div>
+      <input type="number" min="0" step="0.01" value="${discountAmount.toFixed(2)}" oninput="updatePaymentItemDiscount('${item.id}', this.value)" onchange="updatePaymentItemDiscount('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px;" />
+      <div class="payment-item-total" style="text-align:right; font-weight:700; white-space:nowrap;">${getCurrencySymbol()}${formatCurrency(lineTotal)}</div>
+      <button type="button" onclick="removePaymentItem('${item.id}')" style="border:none; background:#ef4444; color:white; border-radius:50%; width:24px; height:24px; cursor:pointer; flex-shrink:0;">−</button>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc;">
+    <div style="display:grid; grid-template-columns: minmax(0, 1.5fr) 44px 56px 46px 62px 24px; gap:6px; font-size:0.72rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:4px;">
+      <div>Item</div>
+      <div>Qty</div>
+      <div>Unit</div>
+      <div>Disc</div>
+      <div>Total</div>
+      <div></div>
+    </div>
+    ${rowsHtml}
+  </div>`;
+}
+
+function updatePaymentItemQuantity(itemId, value) {
+  const currentOrder = activeOrders[CART_ID];
+  if (!currentOrder || !Array.isArray(currentOrder.items)) return;
+
+  const item = currentOrder.items.find(entry => String(entry.id) === String(itemId));
+  if (!item) return;
+
+  const parsedQty = parseInt(value, 10);
+  if (!Number.isFinite(parsedQty) || parsedQty < 1) {
+    removePaymentItem(itemId);
+    return;
+  }
+
+  item.qty = parsedQty;
+  updateOrders(CART_ID, false);
+  renderPaymentItemEditor();
+  updatePaymentTotals();
+}
+
+function updatePaymentItemDiscount(itemId, value) {
+  const currentOrder = activeOrders[CART_ID];
+  if (!currentOrder || !Array.isArray(currentOrder.items)) return;
+
+  const item = currentOrder.items.find(entry => String(entry.id) === String(itemId));
+  if (!item) return;
+
+  const parsedDiscount = parseFloat(value);
+  item.discountAmount = Number.isFinite(parsedDiscount) && parsedDiscount >= 0 ? parsedDiscount : 0;
+  updateOrders(CART_ID, false);
+  renderPaymentItemEditor();
+  updatePaymentTotals();
+}
+
+function removePaymentItem(itemId) {
+  const currentOrder = activeOrders[CART_ID];
+  if (!currentOrder || !Array.isArray(currentOrder.items)) return;
+
+  const itemIndex = currentOrder.items.findIndex(entry => String(entry.id) === String(itemId));
+  if (itemIndex === -1) return;
+
+  currentOrder.items.splice(itemIndex, 1);
+  updateOrders(CART_ID, false);
+  renderPaymentItemEditor();
+  updatePaymentTotals();
+}
+
+window.renderPaymentItemEditor = renderPaymentItemEditor;
+window.updatePaymentItemQuantity = updatePaymentItemQuantity;
+window.updatePaymentItemDiscount = updatePaymentItemDiscount;
+window.removePaymentItem = removePaymentItem;
+
 function processBill() { // This now opens the payment modal
   const currentOrder = activeOrders[CART_ID];
   if (!currentOrder || currentOrder.items.length === 0) {
@@ -5560,6 +5667,7 @@ function processBill() { // This now opens the payment modal
   }
   const totals = calculateTransactionTotals(currentOrder.items);
 
+  renderPaymentItemEditor();
   document.getElementById('paymentSubtotal').textContent = formatCurrency(totals.subtotal);
   document.getElementById('paymentTax').textContent = formatCurrency(totals.tax);
   document.getElementById('paymentDiscountDisplay').textContent = "0.00";
@@ -5618,10 +5726,16 @@ async function handleConfirmPaymentClick() {
 
 function updatePaymentTotals() {
   const totalDueEl = document.getElementById('paymentTotalDue');
-  const originalTotal = parseFloat(totalDueEl.dataset.originalTotal) || 0;
+  const paymentSubtotalEl = document.getElementById('paymentSubtotal');
+  const paymentTaxEl = document.getElementById('paymentTax');
+  const currentOrder = activeOrders[CART_ID];
+  const totals = currentOrder && Array.isArray(currentOrder.items)
+    ? calculateTransactionTotals(currentOrder.items)
+    : { subtotal: 0, tax: 0, total: 0 };
   const discountInput = parseFloat(document.getElementById('discountInput').value) || 0;
 
   let discountAmount = discountInput;
+  const originalTotal = totals.total;
 
   if (discountAmount > originalTotal) discountAmount = originalTotal;
   if (discountAmount < 0) discountAmount = 0;
@@ -5629,8 +5743,11 @@ function updatePaymentTotals() {
   document.getElementById('paymentDiscountDisplay').textContent = formatCurrency(discountAmount);
 
   const newTotal = originalTotal - discountAmount;
+  if (paymentSubtotalEl) paymentSubtotalEl.textContent = formatCurrency(totals.subtotal);
+  if (paymentTaxEl) paymentTaxEl.textContent = formatCurrency(totals.tax);
   totalDueEl.textContent = formatCurrency(newTotal);
   totalDueEl.dataset.currentTotal = newTotal;
+  totalDueEl.dataset.originalTotal = originalTotal;
 
   const paymentSelect = document.getElementById('paymentCustomerSelect');
   const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
@@ -5771,7 +5888,10 @@ async function finalizePayment(isSplit = false) {
       date: new Date().toISOString(),
       customerName: getCurrentServerName(), // This is the staff name for compatibility
       tableNo: 'Shop',
-      items: [...currentOrder.items],
+      items: currentOrder.items.map(item => ({
+        ...item,
+        discountAmount: Number(item?.discountAmount || 0)
+      })),
       total: finalTotal,
       subtotal: totals.subtotal,
       tax: totals.tax,
@@ -5824,7 +5944,13 @@ async function finalizePayment(isSplit = false) {
 
 // Helper to calculate subtotal, tax, and total
 function calculateTransactionTotals(items) {
-  const subtotal = items.reduce((sum, o) => sum + (o.qty * o.price), 0);
+  const subtotal = (Array.isArray(items) ? items : []).reduce((sum, item) => {
+    const qty = Math.max(0, parseInt(item?.qty, 10) || 0);
+    const unitPrice = Number(item?.price || 0);
+    const discountAmount = Math.max(0, Number(item?.discountAmount || 0) || 0);
+    const lineTotal = Math.max(0, (qty * unitPrice) - discountAmount);
+    return sum + lineTotal;
+  }, 0);
   const taxRate = settings.taxRate || 0;
   const tax = subtotal * (taxRate / 100);
   const total = subtotal + tax;

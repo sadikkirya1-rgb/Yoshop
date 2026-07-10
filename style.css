@@ -1374,10 +1374,13 @@
 
 /* Payment Modal Content */
 .payment-modal-content {
-  max-width: 450px;
+  width: min(95vw, 520px);
+  max-width: min(95vw, 520px);
+  max-height: min(92vh, 760px);
+  overflow-y: auto;
   background: var(--card);
   color: var(--text);
-  padding: 24px;
+  padding: 20px;
   border-radius: 12px;
   box-shadow: 0 10px 25px rgba(0,0,0,0.15), 0 3px 10px rgba(0,0,0,0.1);
   border: 1px solid var(--border-color);
@@ -1386,6 +1389,32 @@
 .payment-details-wrapper {
   margin-bottom: 10px;
   font-size: 0.9em;
+}
+
+#paymentItemsEditor {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 10px 0 12px;
+}
+
+#paymentItemsEditor > div {
+  min-width: 320px;
+}
+
+.payment-item-row {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.payment-item-row input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.payment-item-row .payment-item-total {
+  white-space: nowrap;
 }
 
 .payment-row {
