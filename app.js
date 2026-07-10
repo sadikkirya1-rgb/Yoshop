@@ -6070,7 +6070,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     :root { --primary:#2563eb; --secondary:#10b981; --light:#f8fafc; --border:#dbe4ee; --text:#334155; }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', Arial, sans-serif; }
     body { background:#edf2f7; padding:30px; color:var(--text); }
-    .invoice { width:210mm; min-height:297mm; background:white; margin:auto; border-radius:14px; overflow:hidden; box-shadow:0 15px 35px rgba(0,0,0,.15); }
+    .invoice { width:210mm; height:297mm; background:white; margin:auto; border-radius:14px; overflow:hidden; box-shadow:0 15px 35px rgba(0,0,0,.15); }
     .header { background:linear-gradient(135deg,#2563eb,#1d4ed8,#10b981); color:white; padding:30px; display:flex; justify-content:space-between; align-items:center; }
     .logo { display:flex; align-items:center; gap:15px; }
     .logo-circle { width:70px; height:70px; background:white; color:#2563eb; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:34px; font-weight:bold; }
@@ -6105,7 +6105,14 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .btn-info { background-color: #17a2b8; }
     .btn-secondary { background-color: #6c757d; }
     .u-fs-08 { font-size: 0.85rem; }
-    @media print { body { background:white; padding:0; } .actions, .preview-controls { display:none; } .invoice { width:100%; box-shadow:none; border-radius:0; } @page { size:A4; margin:10mm; } }
+    @media print {
+      html,body { background:white; padding:0; height:297mm; }
+      body { margin:0; }
+      .actions, .preview-controls { display:none !important; }
+      .invoice { box-shadow:none; border-radius:0; margin:0 auto; page-break-after:avoid; page-break-inside:avoid; }
+      table, thead, tbody, tr, td, th { page-break-inside:avoid; }
+      @page { size:A4; margin:10mm; }
+    }
   </style>
   <script>
     function changeA4Zoom(delta) {
@@ -6120,6 +6127,46 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
       }
     }
     window.a4ZoomLevel = 1;
+
+    function mmToPx(mm) {
+      return (mm * 96) / 25.4; // 96 DPI assumption
+    }
+
+    function fitA4ToPage() {
+      try {
+        const wrapper = document.getElementById('preview-zoom-wrapper');
+        const inner = document.querySelector('.preview-inner');
+        const display = document.getElementById('a4-zoom-percentage');
+        if (!wrapper || !inner) return;
+
+        // Available page height in px (A4 height minus print margins of 10mm top+bottom)
+        const pageHeightPx = mmToPx(297 - 20); // 10mm top + 10mm bottom
+        const pageWidthPx = mmToPx(210 - 20); // 10mm left + 10mm right
+
+        // Use the inner element size to compute required scale to fit both width and height
+        const innerHeight = inner.offsetHeight || inner.scrollHeight || 1;
+        const innerWidth = inner.offsetWidth || inner.scrollWidth || 1;
+
+        const scaleY = pageHeightPx / innerHeight;
+        const scaleX = pageWidthPx / innerWidth;
+        const scale = Math.min(1, Math.min(scaleX, scaleY));
+
+        window.a4ZoomLevel = Math.max(0.4, Math.min(1, scale));
+        wrapper.style.transform = 'scale(' + window.a4ZoomLevel + ')';
+        if (display) display.textContent = Math.round(window.a4ZoomLevel * 100) + '%';
+        const extraHeight = wrapper.offsetHeight * (window.a4ZoomLevel - 1);
+        wrapper.style.marginBottom = (extraHeight > 0 ? extraHeight + 40 : 20) + 'px';
+      } catch (e) {
+        console.warn('fitA4ToPage failed', e);
+      }
+    }
+
+    window.addEventListener('load', function() { setTimeout(fitA4ToPage, 60); });
+    window.addEventListener('resize', function() { setTimeout(fitA4ToPage, 60); });
+    if (window.matchMedia) {
+      window.matchMedia('print').addListener(function(mql) { if (mql.matches) fitA4ToPage(); });
+    }
+    window.addEventListener('beforeprint', function() { try { fitA4ToPage(); } catch(e){} });
   </script>
 </head>
 <body>
@@ -7539,6 +7586,10 @@ function openReportPreview() {
   window.reportZoomLevel = 1;
 
   document.getElementById("reportPreviewModal").style.display = "flex";
+  // Auto-fit cloned report to single A4 page in the preview
+  setTimeout(function() {
+    try { fitReportToA4Page(); } catch (e) { console.warn('fitReportToA4Page error', e); }
+  }, 80);
   // Add keyboard handlers for report preview zoom when modal is open
   (function attachReportPreviewKeyboard() {
     const onKey = (e) => {
@@ -7564,6 +7615,43 @@ function changeReportZoom(delta) {
     wrapper.style.marginBottom = (extraHeight > 0 ? extraHeight + 40 : 20) + 'px';
   }
 }
+
+function mmToPx(mm) {
+  return (mm * 96) / 25.4;
+}
+
+function fitReportToA4Page() {
+  try {
+    const wrapper = document.getElementById('preview-zoom-wrapper');
+    if (!wrapper) return;
+    const inner = wrapper.firstElementChild || wrapper.querySelector('#reportOutput') || wrapper.querySelector('.report');
+    const display = document.getElementById('zoom-percentage');
+    if (!inner) return;
+
+    const pageHeightPx = mmToPx(297 - 20); // A4 height minus 20mm margins
+    const pageWidthPx = mmToPx(210 - 20);  // A4 width minus 20mm margins
+
+    const innerHeight = inner.offsetHeight || inner.scrollHeight || 1;
+    const innerWidth = inner.offsetWidth || inner.scrollWidth || 1;
+
+    const scaleY = pageHeightPx / innerHeight;
+    const scaleX = pageWidthPx / innerWidth;
+    const scale = Math.min(1, Math.min(scaleX, scaleY));
+
+    window.reportZoomLevel = Math.max(0.4, Math.min(1, scale));
+    wrapper.style.transform = 'scale(' + window.reportZoomLevel + ')';
+    if (display) display.textContent = Math.round(window.reportZoomLevel * 100) + '%';
+    const extraHeight = wrapper.offsetHeight * (window.reportZoomLevel - 1);
+    wrapper.style.marginBottom = (extraHeight > 0 ? extraHeight + 40 : 20) + 'px';
+  } catch (e) { console.warn('fitReportToA4Page failed', e); }
+}
+
+// Refit on resize and before print
+window.addEventListener('resize', function() { try { fitReportToA4Page(); } catch(e){} });
+if (window.matchMedia) {
+  try { window.matchMedia('print').addListener(function(mql) { if (mql.matches) fitReportToA4Page(); }); } catch(e){}
+}
+window.addEventListener('beforeprint', function() { try { fitReportToA4Page(); } catch(e){} });
 
 function toggleReportCategoryDropdown() {
   const dropdown = document.getElementById('reportCategoryDropdown');
