@@ -5632,9 +5632,9 @@ function renderPaymentItemEditor() {
     const maxAttr = Number.isFinite(stockInfo.maxAllowedQty) ? `max="${stockInfo.maxAllowedQty}"` : '';
 
     const truncatedName = item.name && item.name.length > 4 ? `${item.name.slice(0, 4)}…` : item.name;
-    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(0, 1.2fr) 50px 70px 56px 46px 62px 24px; gap:4px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
+    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(0, 90px) 42px 60px 52px 42px 56px 24px; gap:2px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
       <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">${truncatedName}</div>
-      <div style="text-align:center; color:#475569; font-size:0.78rem; margin-left:-4px;">${stockLabel}</div>
+      <div style="text-align:center; color:#475569; font-size:0.78rem;">${stockLabel}</div>
       <input type="number" min="0" step="1" ${maxAttr} value="${normalizedQty}" oninput="updatePaymentItemQuantity('${item.id}', this.value)" onchange="updatePaymentItemQuantity('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:center;" />
       <div style="text-align:right; font-weight:600; white-space:nowrap;">${getCurrencySymbol()}${formatCurrency(unitPrice)}</div>
       <input type="number" min="0" step="0.01" value="${discountAmount.toFixed(2)}" oninput="updatePaymentItemDiscount('${item.id}', this.value)" onchange="updatePaymentItemDiscount('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px;" />
@@ -5644,9 +5644,9 @@ function renderPaymentItemEditor() {
   }).join('');
 
   container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc;">
-    <div style="display:grid; grid-template-columns: minmax(0, 1.2fr) 50px 70px 56px 46px 62px 24px; gap:4px; font-size:0.72rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0.02em; margin-bottom:4px;">
+    <div style="display:grid; grid-template-columns: minmax(0, 90px) 42px 60px 52px 42px 56px 24px; gap:2px; font-size:0.72rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0; margin-bottom:4px;">
       <div>Item</div>
-      <div style="margin-left:-4px;">Stock</div>
+      <div>Stock</div>
       <div>Qty</div>
       <div>Unit</div>
       <div>Disc</div>
