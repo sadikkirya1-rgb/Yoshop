@@ -6067,7 +6067,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>${storeName} Invoice</title>
   <style>
-    :root { --primary:#2563eb; --secondary:#10b981; --light:#f8fafc; --border:#dbe4ee; --text:#334155; }
+    :root { --primary-light: #ff6b35; --primary-hover-light: #ff854f; --bg-light: #f0f2f5; --card-light: #fff; --text-light: #333; --border-light: #eee; --primary-dark: #ff854f; --primary-hover-dark: #ff6b35; --primary: #ff6b35; --primary-hover: #ff854f; --secondary:#10b981; --light:#f8fafc; --border:#dbe4ee; --text:#334155; }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', Arial, sans-serif; }
     body { background:#edf2f7; padding:30px; color:var(--text); }
     .invoice { width:210mm; height:297mm; background:white; margin:auto; border-radius:14px; overflow:hidden; box-shadow:0 15px 35px rgba(0,0,0,.15); }
@@ -6097,13 +6097,14 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .preview-controls { position:sticky; top:0; z-index:100; display:flex; gap:10px; padding:12px; justify-content:center; width:100%; background:rgba(255,255,255,0.95); border-bottom:1px solid #ddd; backdrop-filter:blur(6px); }
     #preview-zoom-wrapper { transform-origin: top center; width:100%; display:flex; justify-content:center; }
     .preview-inner { width:210mm; }
-    button { padding:14px 40px; font-size:18px; background:linear-gradient(135deg,#2563eb,#10b981); border:none; border-radius:8px; color:white; cursor:pointer; }
+    button { padding:14px 40px; font-size:18px; border:none; border-radius:8px; color:white; cursor:pointer; background: transparent; }
     button:hover { transform:scale(1.03); }
     /* Button variants (match app styles) */
-    .btn { display:inline-block; padding:10px 16px; color:#fff; border:none; border-radius:6px; cursor:pointer; }
-    .btn-primary-blue { background-color: #007bff; }
+    .btn { display:inline-block; padding:10px 16px; color:#fff; border:none; border-radius:6px; cursor:pointer; background:var(--primary); }
+    .btn-primary-blue { background-color: var(--primary); }
     .btn-info { background-color: #17a2b8; }
     .btn-secondary { background-color: #6c757d; }
+    .btn:hover { background: var(--primary-hover); }
     .u-fs-08 { font-size: 0.85rem; }
     @media print {
       html,body { background:white; padding:0; height:297mm; }
