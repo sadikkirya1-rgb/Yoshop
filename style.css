@@ -659,6 +659,21 @@
     cursor: pointer;
     margin: 5px;
   }
+  .invoice-action-btn {
+    padding: 5px 8px;
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.2;
+    white-space: nowrap;
+    min-height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+  }
+  .invoice-action-group {
+    gap: 4px;
+  }
   .btn-danger {
     background: #dc3545;
   }
@@ -1060,6 +1075,14 @@
     background: rgba(255, 107, 53, 0.08);
   }
 
+  @media (max-width: 900px) {
+    .invoice-action-btn {
+      padding: 4px 7px;
+      font-size: 0.72rem;
+      min-height: 26px;
+    }
+  }
+
   @media (max-width: 600px) {
     .table-actions-cell {
       min-width: 0;
@@ -1067,6 +1090,15 @@
     .table-actions-cell .icon-btn {
       width: 26px;
       height: 26px;
+    }
+    .invoice-action-group {
+      flex-wrap: wrap;
+      justify-content: flex-start;
+    }
+    .invoice-action-btn {
+      padding: 4px 6px;
+      font-size: 0.68rem;
+      min-height: 24px;
     }
   }
 

@@ -4274,6 +4274,9 @@ let activeAppPopupResolver = null;
 let activeAppPopupKeydown = null;
 let activeLoginOverlayKeydown = null;
 let activeReceiptModalKeydown = null;
+let receiptShareFile = null;
+let receiptShareDataUrl = '';
+let receiptSharePreparing = false;
 
 function closeAppPopup(result = { confirmed: false, value: null }) {
   const modal = document.getElementById('appPopupModal');
@@ -4481,6 +4484,11 @@ window.createCustomerDebtInvoice = createCustomerDebtInvoice;
 window.showInvoiceAdjustmentPrompt = showInvoiceAdjustmentPrompt;
 window.editCustomer = editCustomer;
 window.deleteCustomer = deleteCustomer;
+window.downloadCurrentReceiptAsPDF = downloadCurrentReceiptAsPDF;
+window.shareReceipt = shareReceipt;
+window.printReceipt = printReceipt;
+window.directPrint = directPrint;
+window.closeReceiptModal = closeReceiptModal;
 
 async function handleChangePassword() {
   const isEmailUser = currentUser?.providerData.some(p => p.providerId === 'password');
@@ -6012,10 +6020,11 @@ async function deleteItem(i) {
 
 // ===== Receipt =====
 window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = null) {
-  const previewWindow = window.open('', '_blank', 'width=1100,height=1400,scrollbars=yes,resizable=yes');
-  if (!previewWindow) {
-    return (typeof showAppAlert === 'function') ? showAppAlert('Please allow pop-ups to preview the A4 invoice.') : alert('Please allow pop-ups to preview the A4 invoice.');
-  }
+  try {
+    const previewWindow = window.open('', '_blank', 'width=1100,height=1400,scrollbars=yes,resizable=yes');
+    if (!previewWindow) {
+      return (typeof showAppAlert === 'function') ? showAppAlert('Please allow pop-ups to preview the A4 invoice.') : alert('Please allow pop-ups to preview the A4 invoice.');
+    }
 
   const source = transactionData || {};
   const invoiceNumber = normalizeInvoiceNumber(source.invoiceNumber || source.invoiceNo || getInvoiceNumber(source)) || 'INV-UNKNOWN';
@@ -6096,7 +6105,14 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .footer { margin-top:40px; text-align:center; }
     .note { margin-top:20px; padding:18px; background:#eff6ff; border-left:5px solid var(--primary); border-radius:8px; color:#555; }
     .actions { display:flex; justify-content:center; gap:12px; margin:25px auto; }
-    .preview-controls { position:sticky; top:0; z-index:100; display:flex; gap:10px; padding:12px; justify-content:center; width:100%; background:rgba(255,255,255,0.95); border-bottom:1px solid #ddd; backdrop-filter:blur(6px); }
+    .preview-controls { position:sticky; top:0; z-index:100; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; row-gap:8px; padding:10px 12px; width:100%; max-width:100%; box-sizing:border-box; background:rgba(255,255,255,0.95); border-bottom:1px solid #ddd; backdrop-filter:blur(6px); }
+    .preview-controls .zoom-group,
+    .preview-controls .action-group { display:flex; align-items:center; justify-content:center; gap:8px; flex-wrap:wrap; }
+    .preview-controls .zoom-group { min-width:0; }
+    .preview-controls .zoom-label { display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:74px; line-height:1.1; }
+    .preview-controls .preview-btn { display:inline-flex; align-items:center; justify-content:center; min-height:36px; padding:8px 12px; font-size:0.8rem; line-height:1; white-space:nowrap; }
+    .preview-controls .zoom-btn { width:36px; height:36px; padding:0; border-radius:999px; font-size:1rem; }
+    .preview-controls .reset-btn { border-radius:999px; min-width:72px; }
     #preview-zoom-wrapper { transform-origin: top center; width:100%; display:flex; justify-content:center; }
     .preview-inner { width:210mm; }
     button { padding:14px 40px; font-size:18px; border:none; border-radius:8px; color:white; cursor:pointer; background: transparent; }
@@ -6183,17 +6199,18 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
 </head>
 <body>
   <div class="preview-controls">
-    <button class="btn btn-secondary" onclick="changeA4Zoom(-0.1)" style="width:42px; height:42px; border-radius:50%; font-size:1.4em;">-</button>
-    <div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-width:90px;">
-      <span style="font-size:0.7em; text-transform:uppercase; color:#666; font-weight:bold;">Zoom</span>
-      <span id="a4-zoom-percentage" style="font-weight:bold; color:var(--primary);">100%</span>
+    <div class="zoom-group">
+      <button class="btn btn-secondary preview-btn zoom-btn" onclick="changeA4Zoom(-0.1)" aria-label="Zoom out">-</button>
+      <div class="zoom-label">
+        <span style="font-size:0.7em; text-transform:uppercase; color:#666; font-weight:bold;">Zoom</span>
+        <span id="a4-zoom-percentage" style="font-weight:bold; color:var(--primary);">100%</span>
+      </div>
+      <button class="btn btn-secondary preview-btn zoom-btn" onclick="changeA4Zoom(0.1)" aria-label="Zoom in">+</button>
+      <button class="btn btn-info preview-btn reset-btn" onclick="changeA4Zoom(1 - (window.a4ZoomLevel||1))">Reset</button>
     </div>
-    <button class="btn btn-secondary" onclick="changeA4Zoom(0.1)" style="width:42px; height:42px; border-radius:50%; font-size:1.4em;">+</button>
-    <button class="btn btn-info u-fs-08" onclick="changeA4Zoom(1 - (window.a4ZoomLevel||1))" style="margin-left:12px; border-radius:20px; padding:0 12px;">Reset</button>
-    <div style="flex:1"></div>
-      <div style="display:flex; gap:8px;">
-      <button class="btn btn-primary-blue u-fs-08" onclick="window.print()">🖨 Print</button>
-      <button class="btn btn-secondary u-fs-08" onclick="window.close()">Close</button>
+    <div class="action-group">
+      <button class="btn btn-primary-blue preview-btn" onclick="window.print()">🖨 Print</button>
+      <button class="btn btn-secondary preview-btn" onclick="window.close()">Close</button>
     </div>
   </div>
   <div id="preview-zoom-wrapper">
@@ -6258,10 +6275,14 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
 </body>
 </html>`;
 
-  previewWindow.document.open();
-  previewWindow.document.write(html);
-  previewWindow.document.close();
-  previewWindow.focus();
+    previewWindow.document.open();
+    previewWindow.document.write(html);
+    previewWindow.document.close();
+    previewWindow.focus();
+  } catch (error) {
+    console.error('Failed to open A4 invoice preview:', error);
+    return (typeof showAppAlert === 'function') ? showAppAlert('Could not open the A4 preview. Please allow pop-ups and try again.') : alert('Could not open the A4 preview. Please allow pop-ups and try again.');
+  }
 }
 
 function previewOrder(transactionData = null) {
@@ -6306,6 +6327,8 @@ function previewOrder(transactionData = null) {
 
   // Populate the content and then display the modal
   populateReceiptContent(currentTransaction);
+  receiptShareFile = null;
+  receiptShareDataUrl = '';
   document.getElementById('receiptModal').style.display = 'flex';
 
   if (activeReceiptModalKeydown) {
@@ -6336,6 +6359,38 @@ function closeReceiptModal() {
   }
 }
 
+async function prepareReceiptShareImage() {
+  if (receiptSharePreparing) return;
+  const receiptContentEl = document.getElementById('receiptContent');
+  if (!receiptContentEl || typeof html2canvas === 'undefined') {
+    receiptShareFile = null;
+    receiptShareDataUrl = '';
+    return;
+  }
+
+  try {
+    receiptSharePreparing = true;
+    const canvas = await html2canvas(receiptContentEl, {
+      scale: 2,
+      useCORS: true,
+      backgroundColor: '#ffffff',
+      logging: false,
+      willReadFrequently: true
+    });
+    receiptShareDataUrl = canvas.toDataURL('image/png');
+    const blob = await new Promise((resolve, reject) => {
+      canvas.toBlob((result) => result ? resolve(result) : reject(new Error('Could not create receipt image blob.')), 'image/png');
+    });
+    receiptShareFile = new File([blob], 'invoice.png', { type: 'image/png' });
+  } catch (error) {
+    console.warn('Could not prepare receipt image for sharing:', error);
+    receiptShareFile = null;
+    receiptShareDataUrl = '';
+  } finally {
+    receiptSharePreparing = false;
+  }
+}
+
 async function downloadCurrentReceiptAsPDF() {
   if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {
     if (typeof showAppAlert === 'function') showAppAlert("PDF generation libraries are not loaded. Please check your internet connection.");
@@ -6348,7 +6403,9 @@ async function downloadCurrentReceiptAsPDF() {
   try {
     const canvas = await html2canvas(receiptContentEl, {
       scale: 2, // Increase scale for better quality
-      useCORS: true // Important for external images
+      useCORS: true, // Important for external images
+      logging: false,
+      willReadFrequently: true
     });
 
     const imgData = canvas.toDataURL('image/png');
@@ -6366,35 +6423,70 @@ async function downloadCurrentReceiptAsPDF() {
   }
 }
 
+function buildReceiptShareText(transaction = null) {
+  const receiptModal = document.getElementById('receiptModal');
+  const tx = transaction || (receiptModal && receiptModal._transactionData) || null;
+  const storeName = settings?.name || 'YoShop';
+  const currencySymbol = getCurrencySymbol();
+  const invoiceNumber = normalizeInvoiceNumber(tx?.invoiceNumber || tx?.invoiceNo || getInvoiceNumber(tx)) || 'INV-UNKNOWN';
+  const date = tx?.date ? new Date(tx.date).toLocaleString() : new Date().toLocaleString();
+  const customerName = tx?.customerName || tx?.customer?.name || 'Walk-in Customer';
+  const total = Number(tx?.total ?? tx?.grandTotal ?? tx?.subtotal ?? 0);
+  const items = Array.isArray(tx?.items) ? tx.items : [];
+  const itemSummary = items.slice(0, 4).map(item => {
+    const name = item?.name || item?.productName || item?.itemName || 'Item';
+    const qty = Number(item?.qty || item?.quantity || 1);
+    const price = Number(item?.price || item?.unitPrice || item?.cost || 0);
+    return `${name} x${qty} (${currencySymbol}${formatCurrency(price)})`;
+  }).join(' | ');
+
+  return `Invoice ${invoiceNumber}\nStore: ${storeName}\nDate: ${date}\nCustomer: ${customerName}\nTotal: ${currencySymbol}${formatCurrency(total)}\nItems: ${itemSummary || 'No items listed'}`;
+}
+
+function getReceiptSharePhone(transaction = null) {
+  const receiptModal = document.getElementById('receiptModal');
+  const tx = transaction || (receiptModal && receiptModal._transactionData) || null;
+  const phone = tx?.customerPhone || tx?.customer?.phone || tx?.phone || '';
+  if (!phone) return '';
+  const digitsOnly = String(phone).replace(/\D/g, '');
+  return digitsOnly ? digitsOnly : '';
+}
+
 async function shareReceipt() {
-  const receiptContentEl = document.getElementById('receiptContent');
-  if (typeof html2canvas === 'undefined') {
-    if (typeof showAppAlert === 'function') showAppAlert("Library not loaded. Please check internet connection.");
-    else alert("Library not loaded. Please check internet connection.");
-    return;
+  const receiptModal = document.getElementById('receiptModal');
+  const transaction = receiptModal && receiptModal._transactionData ? receiptModal._transactionData : null;
+  const shareText = buildReceiptShareText(transaction);
+  const phone = getReceiptSharePhone(transaction);
+  const shareUrl = phone
+    ? `https://wa.me/${phone}?text=${encodeURIComponent(shareText)}`
+    : `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+
+  if (!receiptShareFile && !receiptSharePreparing) {
+    await prepareReceiptShareImage();
   }
+
+  if (receiptShareFile && navigator.share && navigator.canShare && navigator.canShare({ files: [receiptShareFile] })) {
+    try {
+      await navigator.share({
+        title: 'Invoice',
+        text: shareText,
+        files: [receiptShareFile]
+      });
+      return;
+    } catch (error) {
+      console.warn('Direct image share failed, falling back to WhatsApp:', error);
+    }
+  }
+
   try {
-    const canvas = await html2canvas(receiptContentEl, { scale: 2, useCORS: true });
-    canvas.toBlob(async (blob) => {
-      const file = new File([blob], "invoice.png", { type: "image/png" });
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: 'Invoice',
-            text: 'Here is your invoice from YoShop.',
-            files: [file]
-          });
-        } catch (err) {
-          console.error('Share failed:', err);
-        }
-      } else {
-        if (typeof showAppAlert === 'function') showAppAlert("Sharing is not supported on this device/browser. You can save as PDF instead.");
-        else alert("Sharing is not supported on this device/browser. You can save as PDF instead.");
-      }
-    });
+    const shareWindow = window.open(shareUrl, '_blank', 'noopener,noreferrer,width=600,height=700');
+    if (!shareWindow) {
+      window.location.href = shareUrl;
+    }
   } catch (error) {
-    console.error("Error sharing receipt:", error);
-    alert("Could not generate receipt image for sharing.");
+    console.error('Failed to open WhatsApp share:', error);
+    if (typeof showAppAlert === 'function') showAppAlert('Could not open WhatsApp. Please try again.');
+    else alert('Could not open WhatsApp. Please try again.');
   }
 }
 
@@ -9302,11 +9394,13 @@ function renderInvoices() {
       <td style="text-align: right;"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(amountPaid)}</td>
       <td style="text-align: right; color:${balance < 0 ? '#dc3545' : '#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</td>
       <td style="text-align: right;">${adjustedHtml}</td>
-      <td style="text-align: right; display:flex; gap:6px; justify-content:flex-end; align-items:center;">
-        <button class="btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(String(row.transaction?.id || row.transaction?.invoiceNumber || ''))}); event.stopPropagation();'>Adjust</button>
-        <button class="btn" type="button" title="BC🖨️" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>BC🖨️</button>
-        <button class="btn" type="button" onclick='openA4InvoicePreview(${previewDataJson}); event.stopPropagation();'>A4 🖨️</button>
-        ${statusBadge}
+      <td style="text-align: right; white-space: nowrap;">
+        <div class="invoice-action-group" style="display:inline-flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; align-items:center; min-width:0;">
+          <button class="btn invoice-action-btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(String(row.transaction?.id || row.transaction?.invoiceNumber || ''))}); event.stopPropagation();'>Adjust</button>
+          <button class="btn invoice-action-btn" type="button" title="BC Print" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>BC🖨️</button>
+          <button class="btn invoice-action-btn" type="button" title="A4 Print" onclick='openA4InvoicePreview(${previewDataJson}); event.stopPropagation();'>A4🖨️</button>
+          ${statusBadge}
+        </div>
       </td>
     </tr>`;
   }).join('');
