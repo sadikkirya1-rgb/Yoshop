@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -9442,6 +9442,20 @@ function createCustomerDebtInvoice(customer) {
   };
 }
 
+let currentInvoiceFilter = 'all';
+
+function setInvoiceFilter(filter = 'all') {
+  currentInvoiceFilter = String(filter || 'all').toLowerCase();
+  document.querySelectorAll('[data-invoice-filter]').forEach(button => {
+    const isActive = button.getAttribute('data-invoice-filter') === currentInvoiceFilter;
+    button.classList.toggle('btn-primary', isActive);
+    button.classList.toggle('btn-secondary', !isActive);
+  });
+  renderInvoices();
+}
+
+window.setInvoiceFilter = setInvoiceFilter;
+
 function renderInvoices() {
   const startDate = document.getElementById('invoiceStartDate')?.value;
   const endDate = document.getElementById('invoiceEndDate')?.value;
@@ -9450,12 +9464,14 @@ function renderInvoices() {
     transactions: Array.isArray(transactions) ? transactions : []
   });
 
-  const filteredRows = invoiceRows.filter(row => {
+  const dateFilteredRows = invoiceRows.filter(row => {
     const txDate = row?.date ? row.date.split('T')[0] : '';
     if (startDate && txDate && txDate < startDate) return false;
     if (endDate && txDate && txDate > endDate) return false;
     return true;
   });
+
+  const filteredRows = filterInvoiceRowsByStatus(dateFilteredRows, currentInvoiceFilter);
 
   const currencySymbol = getCurrencySymbol();
   const rowsHtml = filteredRows.map((row, idx) => {
@@ -9504,6 +9520,15 @@ function renderInvoices() {
   const invoiceCountEl = document.getElementById('invoiceCountInfo');
   if (invoiceCountEl) {
     invoiceCountEl.textContent = `Showing ${filteredRows.length} of ${invoiceRows.length} debt invoices`;
+  }
+
+  const activeFilterButton = document.querySelector(`[data-invoice-filter="${currentInvoiceFilter}"]`);
+  if (activeFilterButton) {
+    document.querySelectorAll('[data-invoice-filter]').forEach(button => {
+      const isActive = button === activeFilterButton;
+      button.classList.toggle('btn-primary', isActive);
+      button.classList.toggle('btn-secondary', !isActive);
+    });
   }
 
   const tbody = document.getElementById('invoiceListBody');

@@ -176,6 +176,21 @@ export function mergeTransactionsPreservingDuplicates(existingTransactions = [],
   return deduplicateTransactions(merged);
 }
 
+export function filterInvoiceRowsByStatus(rows = [], status = 'all') {
+  const invoiceRows = Array.isArray(rows) ? rows : [];
+  const normalizedStatus = String(status || 'all').toLowerCase();
+
+  if (normalizedStatus === 'pending') {
+    return invoiceRows.filter(row => Number(row?.balance || 0) !== 0);
+  }
+
+  if (normalizedStatus === 'paid') {
+    return invoiceRows.filter(row => Number(row?.balance || 0) === 0);
+  }
+
+  return invoiceRows;
+}
+
 export function buildInvoiceListItems({ customers = [], transactions = [] } = {}) {
   const customerList = Array.isArray(customers) ? customers : [];
   const txList = Array.isArray(transactions) ? transactions : [];

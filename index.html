@@ -648,7 +648,14 @@
           <input type="date" id="invoiceStartDate" onchange="renderInvoices()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
           <input type="date" id="invoiceEndDate" onchange="renderInvoices()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
         </div>
-        <div class="u-mb-10" id="invoiceCountInfo">Showing 0 of 0 invoices</div>
+        <div class="u-mb-10" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;">
+          <div id="invoiceCountInfo">Showing 0 of 0 invoices</div>
+          <div class="button-group" style="gap:6px;">
+            <button class="btn btn-secondary" type="button" data-invoice-filter="all" onclick="setInvoiceFilter('all')">All</button>
+            <button class="btn btn-secondary" type="button" data-invoice-filter="pending" onclick="setInvoiceFilter('pending')">Pending</button>
+            <button class="btn btn-secondary" type="button" data-invoice-filter="paid" onclick="setInvoiceFilter('paid')">Paid</button>
+          </div>
+        </div>
         <div class="u-overflow-x-auto">
           <table>
             <thead>

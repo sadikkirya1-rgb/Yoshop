@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus } from '../invoice-utils.mjs';
+
+test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
+  const rows = [
+    { balance: -50 },
+    { balance: 0 },
+    { balance: 25 }
+  ];
+
+  assert.deepEqual(filterInvoiceRowsByStatus(rows, 'pending').map(row => row.balance), [-50, 25]);
+  assert.deepEqual(filterInvoiceRowsByStatus(rows, 'paid').map(row => row.balance), [0]);
+  assert.deepEqual(filterInvoiceRowsByStatus(rows, 'all').map(row => row.balance), [-50, 0, 25]);
+});
 
 test('buildInvoiceListItems keeps separate debt transactions for the same customer', () => {
   const customer = {
