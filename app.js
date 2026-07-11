@@ -5632,19 +5632,19 @@ function renderPaymentItemEditor() {
     const maxAttr = Number.isFinite(stockInfo.maxAllowedQty) ? `max="${stockInfo.maxAllowedQty}"` : '';
 
     const truncatedName = item.name && item.name.length > 15 ? `${item.name.slice(0, 15)}…` : item.name;
-    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(90px, 1.2fr) 40px 55px 75px 55px 75px 26px; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
+    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(70px, 1fr) 30px 48px 65px 48px 65px 24px; gap:4px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
       <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;" title="${item.name}">${truncatedName}</div>
       <div style="text-align:center; color:#475569; font-size:0.78rem;">${stockLabel}</div>
-      <input type="number" min="0" step="1" ${maxAttr} value="${normalizedQty}" oninput="updatePaymentItemQuantity('${item.id}', this.value)" onchange="updatePaymentItemQuantity('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:center;" />
+      <input type="number" min="0" step="1" ${maxAttr} value="${normalizedQty}" oninput="updatePaymentItemQuantity('${item.id}', this.value)" onchange="updatePaymentItemQuantity('${item.id}', this.value)" style="padding:4px 2px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:center;" />
       <div style="text-align:right; font-weight:600; white-space:nowrap;">${getCurrencySymbol()}${formatCurrency(unitPrice)}</div>
-      <input type="number" min="0" step="0.01" value="${discountAmount.toFixed(2)}" oninput="updatePaymentItemDiscount('${item.id}', this.value)" onchange="updatePaymentItemDiscount('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:center;" />
+      <input type="number" min="0" step="0.01" value="${discountAmount.toFixed(2)}" oninput="updatePaymentItemDiscount('${item.id}', this.value)" onchange="updatePaymentItemDiscount('${item.id}', this.value)" style="padding:4px 2px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:center;" />
       <div class="payment-item-total" style="text-align:right; font-weight:700; white-space:nowrap;">${getCurrencySymbol()}${formatCurrency(lineTotal)}</div>
       <button type="button" onclick="removePaymentItem('${item.id}')" style="border:none; background:#ef4444; color:white; border-radius:50%; width:24px; height:24px; cursor:pointer; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; font-size:14px; line-height:1;">−</button>
     </div>`;
   }).join('');
 
-  container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc; min-width:450px;">
-    <div style="display:grid; grid-template-columns: minmax(90px, 1.2fr) 40px 55px 75px 55px 75px 26px; gap:6px; font-size:0.70rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0; margin-bottom:4px;">
+  container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc; min-width:370px;">
+    <div style="display:grid; grid-template-columns: minmax(70px, 1fr) 30px 48px 65px 48px 65px 24px; gap:4px; font-size:0.70rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0; margin-bottom:4px;">
       <div>Item</div>
       <div style="text-align:center;">Stock</div>
       <div style="text-align:center;">Qty</div>
