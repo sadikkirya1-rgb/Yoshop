@@ -5644,7 +5644,7 @@ function renderPaymentItemEditor() {
   }).join('');
 
   container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc; min-width:340px;">
-    <div style="display:grid; grid-template-columns: minmax(50px, 1fr) 24px 48px 65px 48px 65px 24px; gap:4px; font-size:0.70rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0; margin-bottom:4px;">
+    <div class="payment-item-header-row" style="display:grid; grid-template-columns: minmax(50px, 1fr) 24px 48px 65px 48px 65px 24px; gap:4px; font-size:0.70rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0; margin-bottom:4px;">
       <div>Item</div>
       <div style="text-align:center;">Stock</div>
       <div style="text-align:center;">Qty</div>

@@ -2323,3 +2323,42 @@ body.dark-mode #reportOutput table tfoot tr {
   font-weight: bold;
   border-radius: 10px;
 }
+
+@media (max-width: 480px) {
+  /* Reduce font sizes and spacings inside paymentItemsEditor on small screens */
+  #paymentItemsEditor > div {
+    min-width: 300px !important;
+    padding: 4px 6px !important;
+  }
+
+  .payment-item-header-row,
+  .payment-item-row {
+    grid-template-columns: minmax(40px, 1fr) 20px 40px 58px 40px 58px 20px !important;
+    gap: 3px !important;
+  }
+
+  .payment-item-header-row {
+    font-size: 0.62rem !important;
+  }
+
+  .payment-item-row {
+    font-size: 0.72rem !important;
+    padding: 4px 0 !important;
+  }
+
+  .payment-item-row > div:nth-child(2) {
+    font-size: 0.68rem !important;
+  }
+
+  .payment-item-row input {
+    font-size: 0.72rem !important;
+    padding: 2px 1px !important;
+    height: 22px !important;
+  }
+
+  .payment-item-row button {
+    width: 20px !important;
+    height: 20px !important;
+    font-size: 11px !important;
+  }
+}
