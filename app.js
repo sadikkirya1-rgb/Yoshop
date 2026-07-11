@@ -5643,7 +5643,7 @@ function renderPaymentItemEditor() {
     </div>`;
   }).join('');
 
-  container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc;">
+  container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc; min-width:450px;">
     <div style="display:grid; grid-template-columns: minmax(90px, 1.2fr) 40px 55px 75px 55px 75px 26px; gap:6px; font-size:0.70rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0; margin-bottom:4px;">
       <div>Item</div>
       <div style="text-align:center;">Stock</div>
@@ -5670,6 +5670,7 @@ function updatePaymentItemQuantity(itemId, value) {
     item.qty = 0;
     updateOrders(CART_ID, false);
     updatePaymentTotals();
+    updateMenuUI();
     return;
   }
 
@@ -5679,6 +5680,7 @@ function updatePaymentItemQuantity(itemId, value) {
   updateOrders(CART_ID, false);
   renderPaymentItemEditor();
   updatePaymentTotals();
+  updateMenuUI();
 }
 
 function adjustPaymentItemQuantity(itemId, delta = 1) {
@@ -5703,6 +5705,7 @@ function adjustPaymentItemQuantity(itemId, delta = 1) {
 
   updateOrders(CART_ID, false);
   updatePaymentTotals();
+  updateMenuUI();
 }
 
 function updatePaymentItemDiscount(itemId, value) {
@@ -5734,6 +5737,7 @@ function removePaymentItem(itemId) {
 
   updateOrders(CART_ID, false);
   updatePaymentTotals();
+  updateMenuUI();
 }
 
 window.renderPaymentItemEditor = renderPaymentItemEditor;
