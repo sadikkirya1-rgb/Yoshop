@@ -12181,8 +12181,6 @@ async function loginWithPIN() {
     } else {
       playErrorSound();
       await showAppAlert("Incorrect Admin PIN.", "Login Failed");
-      if (pinInput) pinInput.value = '';
-      if (typeof prepareLogin === 'function') prepareLogin('admin');
     }
     return;
   }
@@ -12225,8 +12223,6 @@ async function loginWithPIN() {
   } else {
     playErrorSound();
     await showAppAlert("Incorrect Name or PIN. Please try again.", "Login Failed");
-    if (document.getElementById('loginPIN')) document.getElementById('loginPIN').value = '';
-    if (typeof prepareLogin === 'function') prepareLogin('staff');
   }
 }
 // Ensure early global availability for inline handlers
