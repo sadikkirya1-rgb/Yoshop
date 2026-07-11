@@ -4115,8 +4115,12 @@ async function loginWithEmail() {
 
   try {
     await signInWithEmailAndPassword(auth, email, password);
+    // Play success sound on successful email/password login
+    try { playNotificationSound(); } catch (e) { /* ignore audio errors */ }
   } catch (error) {
     console.error('Email login failed:', error);
+    // Play error sound on failed email/password login
+    try { playErrorSound(); } catch (e) { /* ignore audio errors */ }
     const authError = getAuthErrorMessage(error);
     const isCredentialFailure = error?.code === 'auth/invalid-credential' || error?.code === 'auth/user-not-found' || error?.code === 'auth/wrong-password';
     const detail = isCredentialFailure
