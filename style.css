@@ -3102,3 +3102,26 @@ body.dark-mode #reportOutput table tfoot tr {
     font-size: 9px !important;
   }
 }
+
+/* Styles for manual quantity input inside shop products cards */
+.item-controls .qty-input {
+  width: 38px !important;
+  text-align: center;
+  font-weight: bold;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 2px 0;
+  height: 24px;
+  font-size: 0.85rem;
+  box-sizing: border-box;
+}
+
+/* Hide standard browser spinner buttons on number inputs for cleaner UI */
+.item-controls .qty-input::-webkit-outer-spin-button,
+.item-controls .qty-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.item-controls .qty-input {
+  -moz-appearance: textfield;
+}

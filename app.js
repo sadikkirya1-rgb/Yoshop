@@ -4765,9 +4765,9 @@ function renderMenu() {
                 </div>
                 <p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">Available: ${availableStock}</p>
                 <div class="item-controls">
-                  <button onclick="decreaseQty('${CART_ID}', '${dish.name}')" ${quantity === 0 ? 'disabled' : ''}>-</button>
-                  <span class="qty-display">${quantity}</span>
-                  <button onclick="addToOrder('${CART_ID}', '${dish.name}')" ${isOutOfStock ? 'disabled' : ''}>+</button>
+                  <button onclick="decreaseQty('${CART_ID}', '${escapeJsString(dish.name)}')" ${quantity === 0 ? 'disabled' : ''}>-</button>
+                  <input type="number" class="qty-input" min="0" value="${quantity}" oninput="updateMenuItemQuantity('${escapeJsString(dish.name)}', this.value)" onchange="updateMenuItemQuantity('${escapeJsString(dish.name)}', this.value)" />
+                  <button onclick="addToOrder('${CART_ID}', '${escapeJsString(dish.name)}')" ${isOutOfStock ? 'disabled' : ''}>+</button>
                 </div>
               </div>`;
         grid.appendChild(item);
@@ -4789,6 +4789,59 @@ function renderMenu() {
 
   // Initial orders sync
   updateOrders(CART_ID, false);
+}
+
+function escapeJsString(str) {
+  return (str || '').replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
+function updateMenuItemQuantity(name, value) {
+  const currentOrder = activeOrders[CART_ID] || { items: [] };
+  if (!activeOrders[CART_ID]) {
+    activeOrders[CART_ID] = { items: [] };
+  }
+
+  const parsedQty = parseInt(value, 10);
+  const dish = menu.find(d => d.name === name);
+  if (!dish) return;
+
+  const totalStock = calculateDishStock(dish, true);
+  
+  // Calculate what other carts hold
+  const otherCartsQty = Object.entries(activeOrders)
+    .filter(([cartId]) => cartId !== CART_ID)
+    .flatMap(([, order]) => order.items || [])
+    .filter(item => item.name === name)
+    .reduce((sum, item) => sum + item.qty, 0);
+
+  const maxAvailable = Math.max(0, totalStock - otherCartsQty);
+
+  if (!Number.isFinite(parsedQty) || parsedQty <= 0) {
+    const itemIndex = currentOrder.items.findIndex(o => o.name === name && !o.notes);
+    if (itemIndex > -1) {
+      currentOrder.items.splice(itemIndex, 1);
+      playQtyChangeSound(false);
+    }
+  } else {
+    const targetQty = Math.min(parsedQty, maxAvailable);
+    const existing = currentOrder.items.find(o => o.name === name && !o.notes);
+    
+    const playSound = !existing || targetQty !== existing.qty;
+    const isIncrement = existing && targetQty > existing.qty;
+
+    if (existing) {
+      existing.qty = targetQty;
+    } else {
+      currentOrder.items.push({ ...dish, qty: targetQty });
+    }
+    
+    if (playSound) {
+      playQtyChangeSound(isIncrement);
+    }
+  }
+
+  updateOrders(CART_ID);
+  updateMenuUI();
 }
 
 /**
