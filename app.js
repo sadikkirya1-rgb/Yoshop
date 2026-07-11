@@ -5631,26 +5631,26 @@ function renderPaymentItemEditor() {
     const canIncrease = stockInfo.maxAllowedQty === null || stockInfo.availableStock === null || stockInfo.availableStock > 0;
     const maxAttr = Number.isFinite(stockInfo.maxAllowedQty) ? `max="${stockInfo.maxAllowedQty}"` : '';
 
-    const truncatedName = item.name && item.name.length > 4 ? `${item.name.slice(0, 4)}…` : item.name;
-    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(0, 90px) 36px 60px 50px 42px 56px 24px; gap:3px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
-      <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;">${truncatedName}</div>
+    const truncatedName = item.name && item.name.length > 15 ? `${item.name.slice(0, 15)}…` : item.name;
+    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(90px, 1.2fr) 40px 55px 75px 55px 75px 26px; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
+      <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;" title="${item.name}">${truncatedName}</div>
       <div style="text-align:center; color:#475569; font-size:0.78rem;">${stockLabel}</div>
       <input type="number" min="0" step="1" ${maxAttr} value="${normalizedQty}" oninput="updatePaymentItemQuantity('${item.id}', this.value)" onchange="updatePaymentItemQuantity('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:center;" />
       <div style="text-align:right; font-weight:600; white-space:nowrap;">${getCurrencySymbol()}${formatCurrency(unitPrice)}</div>
-      <input type="number" min="0" step="0.01" value="${discountAmount.toFixed(2)}" oninput="updatePaymentItemDiscount('${item.id}', this.value)" onchange="updatePaymentItemDiscount('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px;" />
+      <input type="number" min="0" step="0.01" value="${discountAmount.toFixed(2)}" oninput="updatePaymentItemDiscount('${item.id}', this.value)" onchange="updatePaymentItemDiscount('${item.id}', this.value)" style="padding:4px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:center;" />
       <div class="payment-item-total" style="text-align:right; font-weight:700; white-space:nowrap;">${getCurrencySymbol()}${formatCurrency(lineTotal)}</div>
-      <button type="button" onclick="removePaymentItem('${item.id}')" style="border:none; background:#ef4444; color:white; border-radius:50%; width:24px; height:24px; cursor:pointer; flex-shrink:0;">−</button>
+      <button type="button" onclick="removePaymentItem('${item.id}')" style="border:none; background:#ef4444; color:white; border-radius:50%; width:24px; height:24px; cursor:pointer; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; font-size:14px; line-height:1;">−</button>
     </div>`;
   }).join('');
 
   container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc;">
-    <div style="display:grid; grid-template-columns: minmax(0, 90px) 42px 60px 52px 42px 56px 24px; gap:2px; font-size:0.70rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0; margin-bottom:4px;">
+    <div style="display:grid; grid-template-columns: minmax(90px, 1.2fr) 40px 55px 75px 55px 75px 26px; gap:6px; font-size:0.70rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0; margin-bottom:4px;">
       <div>Item</div>
-      <div>Stock</div>
-      <div>Qty</div>
-      <div>Unit</div>
-      <div>Disc</div>
-      <div>Total</div>
+      <div style="text-align:center;">Stock</div>
+      <div style="text-align:center;">Qty</div>
+      <div style="text-align:right;">Unit</div>
+      <div style="text-align:center;">Disc</div>
+      <div style="text-align:right;">Total</div>
       <div></div>
     </div>
     ${rowsHtml}
@@ -5726,6 +5726,12 @@ function removePaymentItem(itemId) {
   if (itemIndex === -1) return;
 
   currentOrder.items.splice(itemIndex, 1);
+
+  // Blur focus to ensure the schedulePaymentEditorRender re-renders immediately
+  if (document.activeElement && typeof document.activeElement.blur === 'function') {
+    document.activeElement.blur();
+  }
+
   updateOrders(CART_ID, false);
   updatePaymentTotals();
 }
