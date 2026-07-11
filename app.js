@@ -4115,6 +4115,8 @@ async function loginWithEmail() {
 
   try {
     await signInWithEmailAndPassword(auth, email, password);
+    // Dismiss any lingering error popups from previous failed attempts
+    try { closeAppPopup({ confirmed: false, value: null }); } catch (e) { /* ignore */ }
     // Play success sound on successful email/password login
     try { playNotificationSound(); } catch (e) { /* ignore audio errors */ }
   } catch (error) {
@@ -12246,6 +12248,9 @@ try {
  * Helper to set session storage and update UI after successful PIN verification
  */
 function completePinLogin(role, permissions, staffName) {
+  // Dismiss any lingering error popups from previous failed PIN attempts
+  try { closeAppPopup({ confirmed: false, value: null }); } catch (e) { /* ignore */ }
+
   isPinVerified = true;
   currentUserRole = role;
 
