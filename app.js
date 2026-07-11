@@ -4607,9 +4607,11 @@ function updateCurrencyDisplay() {
 function showTab(tabId, btn) {
   const hasFullAccess = isFullAccessRole();
   if (!hasFullAccess && !currentUserPermissions.includes(tabId)) {
+    playErrorSound();
     return showAppAlert("Access Denied: You do not have permission to open this section.", 'Access Denied');
   }
 
+  playClickSound();
   document.querySelectorAll('section').forEach(sec => sec.classList.remove('active'));
   const activeSection = document.querySelector(`#${tabId}`);
   activeSection.classList.add('active');
@@ -5556,6 +5558,7 @@ async function clearCurrentOrder() {
     delete activeOrders[CART_ID];
     updateOrders(CART_ID);
     updateMenuUI();
+    playTrashSound();
   }
 }
 
@@ -5759,6 +5762,7 @@ function removePaymentItem(itemId) {
   if (itemIndex === -1) return;
 
   currentOrder.items.splice(itemIndex, 1);
+  playTrashSound();
 
   // Blur focus to ensure the schedulePaymentEditorRender re-renders immediately
   if (document.activeElement && typeof document.activeElement.blur === 'function') {
@@ -7489,6 +7493,7 @@ async function deleteTransaction(index) {
   const pin = await showAppPrompt("Enter Admin PIN to delete transaction:", "Admin PIN Required", "Admin PIN");
   const adminPin = settings.ShopAdminPIN || settings.managerPIN;
   if (!adminPin || pin !== adminPin) {
+    playErrorSound();
     await showAppAlert("Incorrect PIN. Access denied.", "Access Denied");
     return;
   }
@@ -12113,6 +12118,7 @@ async function loginWithPIN() {
     if (isOwner) {
       completePinLogin('shopAdmin', [], 'ShopAdmin');
     } else {
+      playErrorSound();
       await showAppAlert("Incorrect Admin PIN.", "Login Failed");
       if (pinInput) pinInput.value = '';
       if (typeof prepareLogin === 'function') prepareLogin('admin');
@@ -12121,6 +12127,7 @@ async function loginWithPIN() {
   }
 
   if (!staffName || staffName.toLowerCase() === 'admin') {
+    playErrorSound();
     await showAppAlert("Identification Required: Please select your name.", "Login Failed");
     if (staffNameInput && staffNameInput.offsetParent !== null) {
       staffNameInput.focus();
@@ -12136,6 +12143,7 @@ async function loginWithPIN() {
 
   if (staffMember) {
     if (staffMember.isActive === false) {
+      playErrorSound();
       await showAppAlert("This account is currently inactive. Please contact the admin.", "Account Inactive");
       return;
     }
@@ -12153,6 +12161,8 @@ async function loginWithPIN() {
       staffMember.name
     );
     console.log(`Unlocked as ${loginRole === 'shopAdmin' ? 'ShopAdmin' : 'Staff'}: ${staffMember.name}`);
+  } else {
+    playErrorSound();
     await showAppAlert("Incorrect Name or PIN. Please try again.", "Login Failed");
     if (document.getElementById('loginPIN')) document.getElementById('loginPIN').value = '';
     if (typeof prepareLogin === 'function') prepareLogin('staff');
@@ -12966,17 +12976,10 @@ document.addEventListener('keydown', (e) => {
 });
 
 // ===== Scan Sound (Web Audio API — no external files needed) =====
-let _scanAudioCtx = null;
-
 function playScanSound(type = 'success') {
   try {
-    if (!_scanAudioCtx) {
-      _scanAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    }
-    const ctx = _scanAudioCtx;
-
-    // Resume context if suspended (browser autoplay policy)
-    if (ctx.state === 'suspended') ctx.resume();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
 
     if (type === 'success') {
       // Two-tone ascending beep — classic scanner "got it" sound
@@ -13008,7 +13011,6 @@ function playScanSound(type = 'success') {
       osc.stop(ctx.currentTime + 0.23);
     }
   } catch (e) {
-    // Silently fail if Web Audio is unavailable
     console.warn('playScanSound: Web Audio API unavailable', e);
   }
 }
@@ -13332,30 +13334,52 @@ function printDishLabel(index) {
   window.open(pdfBlob, '_blank');
 }
 
-// ===== Sound Effects (Web Audio API) =====
+// ===== Sound Effects (Web Audio API — Shared Context for Mobile/PWA) =====
+let _sharedAudioCtx = null;
+
+function getSharedAudioContext() {
+  if (!_sharedAudioCtx) {
+    _sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (_sharedAudioCtx.state === 'suspended') {
+    _sharedAudioCtx.resume().catch(e => console.warn("AudioContext resume failed:", e));
+  }
+  return _sharedAudioCtx;
+}
+
+// Automatically unlock AudioContext on user gesture (essential for iOS Safari, mobile Chrome, PWA)
+function unlockAudioContext() {
+  const ctx = getSharedAudioContext();
+  if (ctx && ctx.state === 'suspended') {
+    ctx.resume().catch(e => console.warn("AudioContext unlock failed:", e));
+  }
+}
+window.addEventListener('click', unlockAudioContext, { once: false });
+window.addEventListener('touchstart', unlockAudioContext, { once: false });
+
 function playQtyChangeSound(isIncrement) {
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const audioCtx = new AudioContext();
-    const osc = audioCtx.createOscillator();
-    const gainNode = audioCtx.createGain();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+
+    const osc = ctx.createOscillator();
+    const gainNode = ctx.createGain();
 
     osc.connect(gainNode);
-    gainNode.connect(audioCtx.destination);
+    gainNode.connect(ctx.destination);
 
     const startFreq = isIncrement ? 550 : 450;
     const endFreq = isIncrement ? 750 : 350;
 
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(startFreq, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(endFreq, audioCtx.currentTime + 0.08);
+    osc.frequency.setValueAtTime(startFreq, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(endFreq, ctx.currentTime + 0.08);
 
-    gainNode.gain.setValueAtTime(0.08, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.09);
+    gainNode.gain.setValueAtTime(0.08, ctx.currentTime);
+    gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
 
-    osc.start(audioCtx.currentTime);
-    osc.stop(audioCtx.currentTime + 0.09);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.09);
   } catch (e) {
     console.warn("Could not play sound effect:", e);
   }
@@ -13363,31 +13387,130 @@ function playQtyChangeSound(isIncrement) {
 
 function playCelebrationSound() {
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
-    const ctx = new AudioContext();
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
 
-    // Play C major arpeggio sequence (C5, E5, G5, C6)
-    const notes = [523.25, 659.25, 783.99, 1046.50];
-    notes.forEach((freq, index) => {
+    const now = ctx.currentTime;
+    
+    // 1. Classic metallic "Ka-ching" ring (High frequencies)
+    const frequencies = [880, 1109, 1318, 1760]; // A5 -> C#6 -> E6 -> A6
+    frequencies.forEach((freq, idx) => {
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
-
       osc.connect(gain);
       gain.connect(ctx.destination);
-
+      
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, ctx.currentTime + index * 0.1);
+      osc.frequency.setValueAtTime(freq, now + idx * 0.04);
+      
+      gain.gain.setValueAtTime(0, now + idx * 0.04);
+      gain.gain.linearRampToValueAtTime(0.12, now + idx * 0.04 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.04 + 0.35);
+      
+      osc.start(now + idx * 0.04);
+      osc.stop(now + idx * 0.04 + 0.4);
+    });
 
-      gain.gain.setValueAtTime(0, ctx.currentTime + index * 0.1);
-      gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + index * 0.1 + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + index * 0.1 + 0.25);
-
-      osc.start(ctx.currentTime + index * 0.1);
-      osc.stop(ctx.currentTime + index * 0.1 + 0.3);
+    // 2. Coin drop rattle effect (rapid low-volume chimes)
+    const coinDelay = 0.15;
+    const coinTimes = [0, 0.05, 0.09, 0.14, 0.18];
+    const coinFreqs = [1500, 1300, 1600, 1400, 1750];
+    coinTimes.forEach((timeOffset, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(coinFreqs[idx], now + coinDelay + timeOffset);
+      
+      gain.gain.setValueAtTime(0, now + coinDelay + timeOffset);
+      gain.gain.linearRampToValueAtTime(0.05, now + coinDelay + timeOffset + 0.005);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + coinDelay + timeOffset + 0.06);
+      
+      osc.start(now + coinDelay + timeOffset);
+      osc.stop(now + coinDelay + timeOffset + 0.08);
     });
   } catch (e) {
     console.warn("Could not play celebration sound:", e);
+  }
+}
+
+function playTrashSound() {
+  try {
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(500, now);
+    osc.frequency.exponentialRampToValueAtTime(100, now + 0.18);
+    
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    
+    osc.start(now);
+    osc.stop(now + 0.2);
+  } catch (e) {
+    console.warn("Could not play trash sound:", e);
+  }
+}
+
+function playErrorSound() {
+  try {
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    [0, 0.12].forEach(delay => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(130, now + delay);
+      
+      gain.gain.setValueAtTime(0.15, now + delay);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + delay + 0.1);
+      
+      osc.start(now + delay);
+      osc.stop(now + delay + 0.12);
+    });
+  } catch (e) {
+    console.warn("Could not play error sound:", e);
+  }
+}
+
+function playClickSound() {
+  try {
+    const ctx = getSharedAudioContext();
+    if (!ctx) return;
+
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(900, now);
+    
+    gain.gain.setValueAtTime(0.05, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+    
+    osc.start(now);
+    osc.stop(now + 0.04);
+  } catch (e) {
+    console.warn("Could not play click sound:", e);
   }
 }
 
@@ -13767,6 +13890,7 @@ Object.assign(window, {
   db, CART_ID, analytics, app, dbFirestore,
 
   // Functions
+  playQtyChangeSound, playCelebrationSound, playNotificationSound, playTrashSound, playErrorSound, playClickSound, playScanSound,
   toggleNav, showTab, renderMenu, addDish, generateRandomBarcode, editDish,
   addNewRecipeItemFromForm, updateRecipeItemUnit, updateRecipeTotals,
   previewDishImage, previewLogo, toggleAddDishForm, openBillSplitModal, closeSplitBillModal, renderRestockHistoryTable,
