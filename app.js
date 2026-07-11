@@ -4918,8 +4918,10 @@ function updateMenuUI() {
       stockEl.className = `stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}`;
     }
 
-    const qtyEl = card.querySelector('.qty-display');
-    if (qtyEl) qtyEl.textContent = quantity;
+    const qtyEl = card.querySelector('.qty-input');
+    if (qtyEl && document.activeElement !== qtyEl) {
+      qtyEl.value = quantity;
+    }
     // Synchronize button disabled states so they update without a refresh
     const minusBtn = card.querySelector('.item-controls button:first-child');
     if (minusBtn) minusBtn.disabled = (quantity === 0);
