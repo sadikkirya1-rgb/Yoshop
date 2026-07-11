@@ -1954,13 +1954,15 @@ section#menuTab.active {
 .payment-item-header-row>*:nth-child(2),
 .payment-item-row>*:nth-child(2) {
   margin-left: 3px !important;
-  /* Gap between Item and Stock - same as Qty→Unit */
+  /* Small gap between Item and Stock */
+  padding-right: 8px !important;
+  /* Creates visual gap between Stock content and Qty column */
 }
 
 .payment-item-header-row>*:nth-child(3),
 .payment-item-row>*:nth-child(3) {
-  margin-left: 6px !important;
-  /* Gap between Stock and Qty */
+  margin-left: 0px !important;
+  /* Gap comes from Stock's padding-right */
 }
 
 .payment-item-header-row>*:nth-child(4),
@@ -3063,43 +3065,16 @@ body.dark-mode #reportOutput table tfoot tr {
 
   .payment-item-header-row,
   .payment-item-row {
-    grid-template-columns: minmax(28px, 38px) 16px 36px 52px 36px 52px 18px !important;
-    gap: 0 0 !important;
-    column-gap: 0 !important;
+    grid-template-columns: 1fr 22px 34px 52px 34px 1fr 18px !important;
+    gap: 4px !important;
+    width: 100% !important;
   }
 
-  .payment-item-header-row>*:nth-child(2),
-  .payment-item-row>*:nth-child(2) {
-    margin-left: 2px !important;
-    /* Small gap between Item and Stock */
-  }
-
-  .payment-item-header-row>*:nth-child(3),
-  .payment-item-row>*:nth-child(3) {
-    margin-left: 10px !important;
-    /* Clear visible gap between Stock and Qty */
-  }
-
-  .payment-item-header-row>*:nth-child(4),
-  .payment-item-row>*:nth-child(4) {
-    margin-left: 5px !important;
-  }
-
-  .payment-item-header-row>*:nth-child(5),
-  .payment-item-row>*:nth-child(5) {
-    margin-left: 5px !important;
-    /* Gap between Unit and Disc */
-  }
-
-  .payment-item-header-row>*:nth-child(6),
-  .payment-item-row>*:nth-child(6) {
-    margin-left: 5px !important;
-    /* Gap between Disc and Total */
-  }
-
-  .payment-item-header-row>*:nth-child(7),
-  .payment-item-row>*:nth-child(7) {
-    margin-left: 3px !important;
+  /* Reset all nth-child margin hacks - gap handles spacing now */
+  .payment-item-header-row>*,
+  .payment-item-row>* {
+    margin-left: 0 !important;
+    padding-right: 0 !important;
   }
 
   .payment-item-header-row {
