@@ -4109,9 +4109,23 @@ async function login() {
 }
 
 async function loginWithEmail() {
-  const email = document.getElementById('authEmail')?.value?.trim();
-  const password = document.getElementById('authPassword')?.value?.trim();
+  const emailInput = document.getElementById('authEmail');
+  const passwordInput = document.getElementById('authPassword');
+  const email = emailInput?.value?.trim();
+  const password = passwordInput?.value?.trim();
   if (!email || !password) return alert("Please enter email and password.");
+
+  // Save credentials before async call so we can restore them if the overlay is rebuilt
+  const savedEmail = email;
+  const savedPassword = password;
+
+  // Show a loading state on the submit button to prevent double-click
+  const submitBtn = document.querySelector('#email-login-form button[onclick*="loginWithEmail"]');
+  const originalBtnHtml = submitBtn ? submitBtn.innerHTML : null;
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spinner"></span> Signing in...';
+  }
 
   try {
     await signInWithEmailAndPassword(auth, email, password);
@@ -4126,13 +4140,23 @@ async function loginWithEmail() {
     const authError = getAuthErrorMessage(error);
     const isCredentialFailure = error?.code === 'auth/invalid-credential' || error?.code === 'auth/user-not-found' || error?.code === 'auth/wrong-password';
     const detail = isCredentialFailure
-      ? `${authError.message}\n\nIf you already use Google for this account, click “Login with Google” instead. Otherwise, switch to Register to create a password-based account.`
+      ? `${authError.message}\n\nIf you already use Google for this account, click "Login with Google" instead. Otherwise, switch to Register to create a password-based account.`
       : authError.message;
     await showAppAlert(detail, authError.title);
     if (isCredentialFailure && typeof showLoginOverlay === 'function') {
       showLoginOverlay('register');
     }
-    if (typeof showLoggedOutScreen === 'function') showLoggedOutScreen();
+    // Restore email/password into fields in case the overlay was rebuilt during the async flow
+    const restoredEmail = document.getElementById('authEmail');
+    const restoredPassword = document.getElementById('authPassword');
+    if (restoredEmail) restoredEmail.value = savedEmail;
+    if (restoredPassword) restoredPassword.value = savedPassword;
+    // Restore button state
+    const restoredBtn = document.querySelector('#email-login-form button[onclick*="loginWithEmail"]');
+    if (restoredBtn && originalBtnHtml !== null) {
+      restoredBtn.disabled = false;
+      restoredBtn.innerHTML = originalBtnHtml;
+    }
   }
 }
 
@@ -6201,6 +6225,11 @@ function deductStock(itemName, quantity, visited = new Set()) {
     const dish = menu.find(d => d.name === itemName);
     if (dish && dish.stock !== undefined) {
       dish.stock = Math.max(0, (parseFloat(dish.stock) || 0) - quantity);
+      const index = menu.indexOf(dish);
+      if (index >= 0) {
+        menu[index] = enrichEnterpriseRecord('products', dish, dish);
+        enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
+      }
     }
     return;
   }
@@ -6212,6 +6241,11 @@ function deductStock(itemName, quantity, visited = new Set()) {
   if (!dish.recipe || dish.recipe.length === 0) {
     if (dish.stock !== undefined) {
       dish.stock = Math.max(0, (parseFloat(dish.stock) || 0) - quantity);
+      const index = menu.indexOf(dish);
+      if (index >= 0) {
+        menu[index] = enrichEnterpriseRecord('products', dish, dish);
+        enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
+      }
       const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
       if (dish.stock <= threshold) {
         sendLowStockNotification(dish.name, dish.stock);
@@ -11904,6 +11938,10 @@ function showLoginOverlay(mode = 'login') {
     overlay.style.alignItems = 'stretch';
     overlay.style.justifyContent = 'center';
 
+    // Preserve any values the user has already typed before rebuilding the form
+    const prevEmail = document.getElementById('authEmail')?.value || '';
+    const prevPassword = document.getElementById('authPassword')?.value || '';
+
     overlay.innerHTML = `
         ${deviceLabel}
         <div class="marketing-side animate-panel-left" style="flex: 1.2; background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; padding: 0; border-right: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); overflow: hidden;">
@@ -11954,6 +11992,16 @@ function showLoginOverlay(mode = 'login') {
           </div>
         </div>
       `;
+
+    // Restore any values the user had already typed (prevents clearing on form rebuild)
+    if (prevEmail) {
+      const emailField = document.getElementById('authEmail');
+      if (emailField) emailField.value = prevEmail;
+    }
+    if (prevPassword) {
+      const passwordField = document.getElementById('authPassword');
+      if (passwordField) passwordField.value = prevPassword;
+    }
   } else {
     if (window._marketingInterval) clearInterval(window._marketingInterval);
 

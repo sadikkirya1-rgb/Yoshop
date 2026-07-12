@@ -30,51 +30,77 @@ function isSellableProduct(record = {}) {
 }
 
 export function mergeProductRecord(existingRecord = {}, incomingRecord = {}) {
-  const merged = { ...existingRecord, ...incomingRecord };
+  const existingVersion = Number(existingRecord?.version || 0);
+  const incomingVersion = Number(incomingRecord?.version || 0);
+  const existingTime = new Date(existingRecord?.updatedAt || existingRecord?.date || 0).getTime();
+  const incomingTime = new Date(incomingRecord?.updatedAt || incomingRecord?.date || 0).getTime();
 
-  const existingPrice = Number(existingRecord?.price ?? 0);
-  const incomingPrice = Number(incomingRecord?.price ?? 0);
-  if (incomingPrice > existingPrice) {
-    merged.price = incomingRecord.price;
-  } else if (existingPrice > 0 && incomingPrice <= 0) {
+  const existingHasTimeline = existingRecord?.version !== undefined || existingRecord?.updatedAt !== undefined || existingRecord?.date !== undefined;
+  const incomingHasTimeline = incomingRecord?.version !== undefined || incomingRecord?.updatedAt !== undefined || incomingRecord?.date !== undefined;
+
+  let incomingIsNewer = false;
+  if (incomingHasTimeline && !existingHasTimeline) {
+    incomingIsNewer = true;
+  } else if (existingHasTimeline && !incomingHasTimeline) {
+    incomingIsNewer = false;
+  } else if (incomingHasTimeline && existingHasTimeline) {
+    if (incomingVersion > existingVersion) {
+      incomingIsNewer = true;
+    } else if (existingVersion > incomingVersion) {
+      incomingIsNewer = false;
+    } else {
+      incomingIsNewer = incomingTime >= existingTime;
+    }
+  } else {
+    incomingIsNewer = true;
+  }
+
+  // Base merge starts with the older record, overridden by the newer record
+  const merged = incomingIsNewer
+    ? { ...existingRecord, ...incomingRecord }
+    : { ...incomingRecord, ...existingRecord };
+
+  // For specific fields, apply fallback logic if one of them is missing/undefined/zero
+  // 1. Price
+  const existingPrice = existingRecord?.price !== undefined ? Number(existingRecord.price) : undefined;
+  const incomingPrice = incomingRecord?.price !== undefined ? Number(incomingRecord.price) : undefined;
+  if (existingPrice !== undefined && incomingPrice !== undefined) {
+    merged.price = incomingIsNewer ? incomingRecord.price : existingRecord.price;
+  } else if (existingPrice !== undefined) {
     merged.price = existingRecord.price;
+  } else if (incomingPrice !== undefined) {
+    merged.price = incomingRecord.price;
   }
 
-  const existingCostPrice = Number(existingRecord?.costPrice ?? 0);
-  const incomingCostPrice = Number(incomingRecord?.costPrice ?? 0);
-  if (incomingCostPrice > 0 && (existingCostPrice <= 0 || incomingCostPrice < existingCostPrice)) {
-    merged.costPrice = incomingRecord.costPrice;
-  } else if (existingCostPrice > 0 && incomingCostPrice <= 0) {
+  // 2. CostPrice
+  const existingCostPrice = existingRecord?.costPrice !== undefined ? Number(existingRecord.costPrice) : undefined;
+  const incomingCostPrice = incomingRecord?.costPrice !== undefined ? Number(incomingRecord.costPrice) : undefined;
+  if (existingCostPrice !== undefined && incomingCostPrice !== undefined) {
+    merged.costPrice = incomingIsNewer ? incomingRecord.costPrice : existingRecord.costPrice;
+  } else if (existingCostPrice !== undefined) {
     merged.costPrice = existingRecord.costPrice;
+  } else if (incomingCostPrice !== undefined) {
+    merged.costPrice = incomingRecord.costPrice;
   }
 
-  const existingStock = Number(existingRecord?.stock ?? 0);
-  const incomingStock = Number(incomingRecord?.stock ?? 0);
-  if (incomingStock > 0 && (existingStock <= 0 || incomingStock > existingStock)) {
-    merged.stock = incomingRecord.stock;
-  } else if (existingStock > 0 && incomingStock <= 0) {
+  // 3. Stock
+  const existingStock = existingRecord?.stock !== undefined ? Number(existingRecord.stock) : undefined;
+  const incomingStock = incomingRecord?.stock !== undefined ? Number(incomingRecord.stock) : undefined;
+  if (existingStock !== undefined && incomingStock !== undefined) {
+    merged.stock = incomingIsNewer ? incomingRecord.stock : existingRecord.stock;
+  } else if (existingStock !== undefined) {
     merged.stock = existingRecord.stock;
+  } else if (incomingStock !== undefined) {
+    merged.stock = incomingRecord.stock;
   }
 
-  if (!merged.category && (existingRecord?.category || incomingRecord?.category)) {
-    merged.category = existingRecord?.category || incomingRecord?.category;
-  }
-
-  if (!merged.name && (existingRecord?.name || incomingRecord?.name)) {
-    merged.name = existingRecord?.name || incomingRecord?.name;
-  }
-
-  if (!merged.unit && (existingRecord?.unit || incomingRecord?.unit)) {
-    merged.unit = existingRecord?.unit || incomingRecord?.unit;
-  }
-
-  if (!merged.barcode && (existingRecord?.barcode || incomingRecord?.barcode)) {
-    merged.barcode = existingRecord?.barcode || incomingRecord?.barcode;
-  }
-
-  if (!merged.image && (existingRecord?.image || incomingRecord?.image)) {
-    merged.image = existingRecord?.image || incomingRecord?.image;
-  }
+  // Fill in other string/object fields if missing in the chosen winner
+  const fields = ['category', 'name', 'unit', 'barcode', 'image', 'recipe'];
+  fields.forEach(field => {
+    if (merged[field] === undefined || merged[field] === null || merged[field] === '') {
+      merged[field] = existingRecord[field] || incomingRecord[field];
+    }
+  });
 
   return merged;
 }
