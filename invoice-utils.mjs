@@ -284,6 +284,14 @@ export function calculateTotalExpenses(expenses = []) {
   }, 0);
 }
 
+export function calculatePurchaseAmount(qty = 0, cost = 0) {
+  const parsedQty = Number(qty || 0);
+  const parsedCost = Number(cost || 0);
+  const safeQty = Number.isFinite(parsedQty) && parsedQty > 0 ? parsedQty : 1;
+  const safeCost = Number.isFinite(parsedCost) ? parsedCost : 0;
+  return safeQty * safeCost;
+}
+
 export function calculateTotalWastageLoss(records = []) {
   const sourceRecords = Array.isArray(records) ? records : [];
   return sourceRecords.reduce((sum, record) => {

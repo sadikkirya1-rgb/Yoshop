@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -4709,6 +4709,7 @@ function showTab(tabId, btn) {
       renderRestockHistoryTable(); // For the main stock table
       break;
     case 'purchaseTab':
+      populatePurchaseFormOptions();
       renderPurchaseHistory();
       break;
     case 'supplierTab':
@@ -8625,6 +8626,8 @@ window.applyDashboardDateFilter = applyDashboardDateFilter;
 window.savePurchaseEntry = savePurchaseEntry;
 window.clearPurchaseForm = clearPurchaseForm;
 window.renderPurchaseHistory = renderPurchaseHistory;
+window.populatePurchaseFormOptions = populatePurchaseFormOptions;
+window.populatePurchaseCost = populatePurchaseCost;
 window.saveWastageLossEntry = saveWastageLossEntry;
 window.clearWastageLossForm = clearWastageLossForm;
 window.renderWastageLossHistory = renderWastageLossHistory;
@@ -10796,6 +10799,7 @@ async function saveNewStockItem() {
   }
   try {
     toggleNewStockItemForm(false);
+    populatePurchaseFormOptions();
     renderStockListTable();
     renderMenu();
     renderDishesTable();
@@ -10867,6 +10871,51 @@ function clearNewStockItemForm() {
   delete document.getElementById('newStockItemFormContainer').dataset.editingIndex;
 }
 
+function populatePurchaseFormOptions() {
+  const supplierSelect = document.getElementById('purchaseSupplier');
+  const itemSelect = document.getElementById('purchaseItem');
+  if (!supplierSelect && !itemSelect) return;
+
+  const currentSupplier = supplierSelect?.value || '';
+  const currentItem = itemSelect?.value || '';
+
+  if (supplierSelect) {
+    const supplierOptions = Array.isArray(supplierList) ? supplierList : [];
+    const selectedSupplier = supplierOptions.find(entry => entry && (entry.name === currentSupplier || entry.id === currentSupplier));
+    supplierSelect.innerHTML = '<option value="">Select supplier</option>' + supplierOptions.map(entry => `
+      <option value="${entry.name}" ${selectedSupplier?.name === entry.name ? 'selected' : ''}>${entry.name}</option>
+    `).join('');
+
+    if (currentSupplier && supplierOptions.some(entry => entry.name === currentSupplier)) {
+      supplierSelect.value = currentSupplier;
+    }
+  }
+
+  if (itemSelect) {
+    const stockItems = (Array.isArray(menu) ? menu : []).filter(item => item && item.stock !== undefined);
+    const selectedItem = stockItems.find(entry => entry && (entry.name === currentItem || entry.id === currentItem));
+    itemSelect.innerHTML = '<option value="">Select stock item</option>' + stockItems.map(item => `
+      <option value="${item.name}" data-cost="${Number(item.costPrice || 0)}" ${selectedItem?.name === item.name ? 'selected' : ''}>${item.name} (${Number(calculateDishStock(item, true)).toFixed(1)} in stock)</option>
+    `).join('');
+
+    if (currentItem && stockItems.some(item => item.name === currentItem)) {
+      itemSelect.value = currentItem;
+    }
+
+    populatePurchaseCost();
+  }
+}
+
+function populatePurchaseCost() {
+  const itemSelect = document.getElementById('purchaseItem');
+  const costInput = document.getElementById('purchaseCost');
+  if (!itemSelect || !costInput) return;
+
+  const selectedOption = itemSelect.options[itemSelect.selectedIndex];
+  const defaultCost = Number(selectedOption?.dataset.cost || 0);
+  costInput.value = defaultCost.toFixed(2);
+}
+
 function clearPurchaseForm() {
   const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseItem', 'purchaseQty', 'purchaseCost'];
   formFields.forEach(id => {
@@ -10880,6 +10929,8 @@ function clearPurchaseForm() {
   if (dateInput) {
     dateInput.value = new Date().toISOString().split('T')[0];
   }
+
+  populatePurchaseFormOptions();
 }
 
 function renderPurchaseHistory() {
@@ -10903,15 +10954,49 @@ function renderPurchaseHistory() {
 }
 
 function savePurchaseEntry() {
-  const supplier = document.getElementById('purchaseSupplier')?.value?.trim() || 'Unknown Supplier';
+  const supplier = document.getElementById('purchaseSupplier')?.value?.trim() || '';
   const dateValue = document.getElementById('purchaseDate')?.value || new Date().toISOString().split('T')[0];
   const item = document.getElementById('purchaseItem')?.value?.trim();
   const qty = Number(document.getElementById('purchaseQty')?.value || 0);
   const cost = Number(document.getElementById('purchaseCost')?.value || 0);
 
-  if (!item) {
-    showAppAlert('Please enter an item name for the purchase.', 'Purchase Required');
+  if (!supplier) {
+    showAppAlert('Please select a supplier for the purchase.', 'Supplier Required');
     return;
+  }
+
+  if (!item) {
+    showAppAlert('Please select a stock item for the purchase.', 'Purchase Required');
+    return;
+  }
+
+  const parsedQty = Number.isFinite(qty) && qty > 0 ? qty : 0;
+  if (parsedQty <= 0) {
+    showAppAlert('Please enter a valid quantity greater than zero.', 'Invalid Quantity');
+    return;
+  }
+
+  const stockItem = (Array.isArray(menu) ? menu : []).find(entry => entry && entry.name === item && entry.stock !== undefined);
+  const unitCost = Number.isFinite(cost) && cost >= 0 ? cost : Number(stockItem?.costPrice || 0);
+  const purchaseAmount = calculatePurchaseAmount(parsedQty, unitCost);
+
+  if (stockItem) {
+    const newStock = (Number(stockItem.stock || 0) + parsedQty);
+    stockItem.stock = newStock;
+    stockItem = enrichEnterpriseRecord('products', stockItem, stockItem);
+    enqueueEnterpriseRecordChange('products', stockItem, 'upsert').catch(console.warn);
+
+    const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
+      date: new Date().toISOString(),
+      itemName: stockItem.name,
+      itemId: stockItem.recordId || stockItem.id || null,
+      adjustment: parsedQty,
+      newTotal: newStock,
+      note: `Purchase from ${supplier}`
+    });
+    restockHistory.unshift(restockRecord);
+    enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
+    if (restockHistory.length > 100) restockHistory.pop();
   }
 
   const entry = {
@@ -10919,15 +11004,22 @@ function savePurchaseEntry() {
     date: dateValue,
     supplier,
     item,
-    qty,
-    cost,
-    purchaseAmount: cost * (Number.isFinite(qty) && qty > 0 ? qty : 1),
-    amount: cost * (Number.isFinite(qty) && qty > 0 ? qty : 1)
+    qty: parsedQty,
+    cost: unitCost,
+    purchaseAmount,
+    amount: purchaseAmount,
+    stockUpdated: Boolean(stockItem)
   };
 
   purchaseHistory.unshift(entry);
   if (purchaseHistory.length > 100) purchaseHistory.pop();
+
+  saveData().catch(() => {});
   renderPurchaseHistory();
+  renderStockListTable();
+  renderInventoryReport();
+  renderDishesTable();
+  renderMenu();
   updateDashboard();
   clearPurchaseForm();
   showAppAlert('Purchase saved successfully.', 'Purchase Saved');
@@ -11149,6 +11241,7 @@ function saveSupplierEntry() {
   });
   if (supplierList.length > 100) supplierList.pop();
   renderSupplierList();
+  populatePurchaseFormOptions();
   clearSupplierForm();
   showAppAlert('Supplier saved successfully.', 'Supplier Saved');
 }
