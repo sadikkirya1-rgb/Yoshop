@@ -7813,7 +7813,7 @@ function renderReport() {
         <div class="dashboard-card"><h4>Stock Value</h4><p>${formatCurrency(stockValue)}</p></div>
       </div>
       <h5>Sales</h5><table id="reportTable"><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Payment</th><th class="u-text-right">Amount</th></tr></thead><tbody>${salesRows}</tbody></table>
-      <h5 class="u-mt-20">Current Inventory</h5><table><thead><tr><th>Item</th><th>Category</th><th class="u-text-right">Stock</th><th class="u-text-right">Alert At</th><th>Status</th></tr></thead><tbody>${stockRows}</tbody></table>
+      <h5 class="u-mt-20">Current Inventory</h5><table><thead><tr><th>Item</th><th>Category</th><th class="u-text-right">Stock</th><th class="u-text-right">Low Stock Level</th><th>Status</th></tr></thead><tbody>${stockRows}</tbody></table>
       <h5 class="u-mt-20">Purchases</h5><table><thead><tr><th>Date</th><th>Supplier</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th></tr></thead><tbody>${purchaseRows}</tbody></table>
       <h5 class="u-mt-20">Waste / Loss</h5><table><thead><tr><th>Date</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th><th>Note</th></tr></thead><tbody>${wasteRows}</tbody></table>
       <h5 class="u-mt-20">Expenses</h5><table><thead><tr><th>Date</th><th>Expense</th><th>Note</th><th class="u-text-right">Amount</th></tr></thead><tbody>${expenseRows}</tbody></table>`;
