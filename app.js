@@ -4986,6 +4986,13 @@ function updateMenuUI() {
   });
 }
 
+function getLowStockThreshold(item) {
+  const productThreshold = Number(item?.lowStockThreshold);
+  if (Number.isFinite(productThreshold) && productThreshold >= 0) return productThreshold;
+  const defaultThreshold = Number(settings?.lowStockThreshold);
+  return Number.isFinite(defaultThreshold) && defaultThreshold >= 0 ? defaultThreshold : 10;
+}
+
 async function addDish(buttonElement) {
   const name = document.getElementById('dishName').value.trim();
   const barcode = document.getElementById('dishBarcode').value.trim();
@@ -5008,6 +5015,9 @@ async function addDish(buttonElement) {
   const dishIndexInput = document.getElementById('dishIndex').value;
   const isUpdate = dishIndexInput !== '';
   const existingDish = isUpdate ? menu[parseInt(dishIndexInput, 10)] : null;
+  const thresholdInput = document.getElementById('dishLowStockThreshold');
+  const enteredThreshold = thresholdInput?.value.trim();
+  const lowStockThreshold = enteredThreshold === '' ? existingDish?.lowStockThreshold : Number(enteredThreshold);
   const oldName = existingDish ? existingDish.name : null;
 
   let totalRecipeCost = 0;
@@ -5045,7 +5055,8 @@ async function addDish(buttonElement) {
       const imageToSave = isValidMenuImage(image) ? image : menu[index].image;
       let dishData = enrichEnterpriseRecord('products', {
         ...menu[index],
-        name, barcode, category, recipe, costPrice, price, image: imageToSave
+        name, barcode, category, recipe, costPrice, price, image: imageToSave,
+        lowStockThreshold: Number.isFinite(lowStockThreshold) && lowStockThreshold >= 0 ? lowStockThreshold : undefined
       }, menu[index]);
 
       menu[index] = dishData;
@@ -5085,7 +5096,8 @@ async function addDish(buttonElement) {
         recipe,
         costPrice,
         price,
-        image: isValidMenuImage(image) ? image : undefined
+        image: isValidMenuImage(image) ? image : undefined,
+        lowStockThreshold: Number.isFinite(lowStockThreshold) && lowStockThreshold >= 0 ? lowStockThreshold : undefined
       });
 
       if (existingMatchIndex >= 0) {
@@ -5139,6 +5151,7 @@ function editDish(index) {
   document.getElementById('dishImageBase64').value = isValidMenuImage(dish.image) ? dish.image : ''; // Store current image
   document.getElementById('dishImagePreview').src = isValidMenuImage(dish.image) ? dish.image : PLACEHOLDER_IMAGE; // Show current image in preview
   document.getElementById('dishSellingPrice').value = (dish.price || 0);
+  document.getElementById('dishLowStockThreshold').value = dish.lowStockThreshold ?? '';
 
   // Show the form first to ensure all elements are visible and ready.
   toggleAddDishForm(true);
@@ -5339,6 +5352,7 @@ function toggleAddDishForm(show) {
     document.getElementById('dishImagePreview').src = 'https://placehold.co/100';
     document.getElementById('dishImageBase64').value = '';
     document.getElementById('dishSellingPrice').value = '';
+    document.getElementById('dishLowStockThreshold').value = '';
   }
 }
 
@@ -6271,7 +6285,7 @@ function deductStock(itemName, quantity, visited = new Set()) {
         menu[index] = enrichEnterpriseRecord('products', dish, dish);
         enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
       }
-      const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
+      const threshold = getLowStockThreshold(dish);
       if (dish.stock <= threshold) {
         sendLowStockNotification(dish.name, dish.stock);
       }
@@ -6309,6 +6323,7 @@ function renderDishesTable() {
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(sellingPrice)}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(profitValue)}</td>
+        <td class="u-text-right u-nowrap">${getLowStockThreshold(dish)}</td>
         <td class="u-text-right">
           <button class="icon-btn" title="Print Label" onclick="printDishLabel(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M2.5 8a.5.5 0 1 0 0-1 .5.5 0 0 0 0 1z"/><path d="M5 1a2 2 0 0 0-2 2v2H2a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h1v1a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-1h1a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-1V3a2 2 0 0 0-2-2H5zM4 3a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2H4V3zm1 5a2 2 0 0 0-2 0v2H2a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-1v-2a2 2 0 0 0-2-2H5z"/></svg></button>
           <button class="icon-btn" title="Edit Dish" onclick="editDish(${i})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
@@ -7760,13 +7775,49 @@ function renderReport() {
 
   const watermarkHtml = `<div class="report-watermark" style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 100px; color: rgba(150, 150, 150, 0.05); font-weight: bold; pointer-events: none; z-index: 0; white-space: nowrap; text-transform: uppercase;">CONFIDENTIAL</div>`;
 
-  if (filteredTransactions.length === 0) {
+  if (filteredTransactions.length === 0 && reportType !== 'allData') {
     outputContainer.innerHTML = '<p style="text-align: center; padding: 20px; color: #888;">No data available for the selected filters.</p>';
     return;
   }
   let reportHtml = '';
 
-  if (reportType === 'salesSummary') {
+  if (reportType === 'allData') {
+    const isOnSelectedDate = entry => !reportDate || String(entry?.date || entry?.createdAt || entry?.expenseDate || '').slice(0, 10) === reportDate;
+    const purchasesForReport = (Array.isArray(purchaseHistory) ? purchaseHistory : []).filter(isOnSelectedDate);
+    const wastageForReport = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).filter(isOnSelectedDate);
+    const expensesForReport = (Array.isArray(expenses) ? expenses : []).filter(isOnSelectedDate);
+    const numberFrom = (record, keys) => Number(keys.map(key => record?.[key]).find(value => value !== undefined && value !== null && value !== '') || 0);
+    const salesTotal = filteredTransactions.reduce((sum, transaction) => sum + Number(transaction.total || 0), 0);
+    const purchaseTotal = purchasesForReport.reduce((sum, entry) => sum + numberFrom(entry, ['purchaseAmount', 'amount', 'total', 'totalCost', 'cost']), 0);
+    const wasteTotal = wastageForReport.reduce((sum, entry) => sum + numberFrom(entry, ['amount', 'total', 'value', 'cost']), 0);
+    const expenseTotal = expensesForReport.reduce((sum, entry) => sum + numberFrom(entry, ['amount', 'total', 'value', 'cost']), 0);
+    const stockItems = (Array.isArray(menu) ? menu : []).filter(item => item && item.stock !== undefined);
+    const stockValue = stockItems.reduce((sum, item) => sum + (Number(calculateDishStock(item, true)) * Number(item.costPrice || 0)), 0);
+    const stockRows = stockItems.map(item => {
+      const stock = Number(calculateDishStock(item, true));
+      const threshold = getLowStockThreshold(item);
+      return `<tr><td>${item.name}</td><td>${item.category || 'Uncategorized'}</td><td class="u-text-right">${stock.toFixed(1)}</td><td class="u-text-right">${threshold}</td><td class="u-text-center" style="${stock <= threshold ? 'color:#dc3545;font-weight:bold;' : 'color:#28a745;'}">${stock <= threshold ? 'LOW' : 'OK'}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" class="u-text-center">No stock items recorded.</td></tr>';
+    const purchaseRows = purchasesForReport.map(entry => `<tr><td>${String(entry.date || '').slice(0, 10) || '—'}</td><td>${entry.supplier || '—'}</td><td>${entry.item || entry.itemName || '—'}</td><td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td><td class="u-text-right">${formatCurrency(numberFrom(entry, ['purchaseAmount', 'amount', 'total', 'totalCost', 'cost']))}</td></tr>`).join('') || '<tr><td colspan="5" class="u-text-center">No purchases for this period.</td></tr>';
+    const wasteRows = wastageForReport.map(entry => `<tr><td>${String(entry.date || '').slice(0, 10) || '—'}</td><td>${entry.item || entry.itemName || '—'}</td><td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td><td class="u-text-right">${formatCurrency(numberFrom(entry, ['amount', 'total', 'value', 'cost']))}</td><td>${entry.note || '—'}</td></tr>`).join('') || '<tr><td colspan="5" class="u-text-center">No waste/loss records for this period.</td></tr>';
+    const expenseRows = expensesForReport.map(entry => `<tr><td>${String(entry.date || entry.expenseDate || '').slice(0, 10) || '—'}</td><td>${entry.name || entry.title || entry.description || entry.category || 'Expense'}</td><td>${entry.note || entry.notes || '—'}</td><td class="u-text-right">${formatCurrency(numberFrom(entry, ['amount', 'total', 'value', 'cost']))}</td></tr>`).join('') || '<tr><td colspan="4" class="u-text-center">No expenses for this period.</td></tr>';
+    const salesRows = filteredTransactions.map(entry => `<tr><td>${String(entry.date || '').slice(0, 10) || '—'}</td><td>${entry.invoiceNo || entry.invoiceNumber || '—'}</td><td>${entry.customerName || 'Walk-in'}</td><td>${entry.paymentMethod || '—'}</td><td class="u-text-right">${formatCurrency(Number(entry.total || 0))}</td></tr>`).join('') || '<tr><td colspan="5" class="u-text-center">No sales for this period.</td></tr>';
+
+    reportHtml = brandingHeader + watermarkHtml + `
+      <div class="report-header-info u-mb-20"><h4 class="u-m-0">Complete Business Report</h4><p class="u-fs-08 u-text-muted">Period: ${reportDate || 'All Time'} | Includes sales, inventory, purchases, waste/loss, and expenses.</p></div>
+      <div class="dashboard-grid u-mb-20">
+        <div class="dashboard-card"><h4>Sales</h4><p>${formatCurrency(salesTotal)}</p></div>
+        <div class="dashboard-card"><h4>Purchases</h4><p>${formatCurrency(purchaseTotal)}</p></div>
+        <div class="dashboard-card"><h4>Waste/Loss</h4><p>${formatCurrency(wasteTotal)}</p></div>
+        <div class="dashboard-card"><h4>Expenses</h4><p>${formatCurrency(expenseTotal)}</p></div>
+        <div class="dashboard-card"><h4>Stock Value</h4><p>${formatCurrency(stockValue)}</p></div>
+      </div>
+      <h5>Sales</h5><table id="reportTable"><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Payment</th><th class="u-text-right">Amount</th></tr></thead><tbody>${salesRows}</tbody></table>
+      <h5 class="u-mt-20">Current Inventory</h5><table><thead><tr><th>Item</th><th>Category</th><th class="u-text-right">Stock</th><th class="u-text-right">Alert At</th><th>Status</th></tr></thead><tbody>${stockRows}</tbody></table>
+      <h5 class="u-mt-20">Purchases</h5><table><thead><tr><th>Date</th><th>Supplier</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th></tr></thead><tbody>${purchaseRows}</tbody></table>
+      <h5 class="u-mt-20">Waste / Loss</h5><table><thead><tr><th>Date</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th><th>Note</th></tr></thead><tbody>${wasteRows}</tbody></table>
+      <h5 class="u-mt-20">Expenses</h5><table><thead><tr><th>Date</th><th>Expense</th><th>Note</th><th class="u-text-right">Amount</th></tr></thead><tbody>${expenseRows}</tbody></table>`;
+  } else if (reportType === 'salesSummary') {
     const totalRevenue = filteredTransactions.reduce((sum, t) => sum + (t.total || 0), 0);
     const totalBills = filteredTransactions.length;
 
@@ -7914,7 +7965,6 @@ function renderReport() {
     }
 
   } else if (reportType === 'itemSales') {
-    const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
     const itemSales = {};
 
     // Initialize with all sellable products from the menu to show products even with 0 sales
@@ -7926,7 +7976,7 @@ function renderReport() {
       itemSales[dish.name] = {
         qty: 0, revenue: 0, cost: 0,
         bp: itemCost, sp: dish.price || 0,
-        inStock: calculateDishStock(dish, true)
+        inStock: calculateDishStock(dish, true), threshold: getLowStockThreshold(dish)
       };
     });
 
@@ -7938,7 +7988,7 @@ function renderReport() {
         itemSales[item.name] = {
           qty: 0, revenue: 0, cost: 0,
           bp: itemCost, sp: item.price || 0,
-          inStock: menuDish ? calculateDishStock(menuDish, true) : 0
+          inStock: menuDish ? calculateDishStock(menuDish, true) : 0, threshold: getLowStockThreshold(menuDish)
         };
       }
       itemSales[item.name].qty += (item.qty || 0);
@@ -7977,7 +8027,7 @@ function renderReport() {
       grossTotalTP += data.revenue;
       totalProfit += itemProfit;
 
-      const isLowStock = data.inStock <= threshold;
+      const isLowStock = data.inStock <= data.threshold;
       const stockStyle = isLowStock ? 'color: #dc3545; font-weight: bold;' : '';
 
       return `
@@ -10444,11 +10494,11 @@ function renderInventoryReport() {
   const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
 
   // Only check primary ingredients (items with a stock property) for the low stock report.
-  const lowStockItems = menu.filter(item => item.stock !== undefined && item.stock <= threshold);
+  const lowStockItems = menu.filter(item => item.stock !== undefined && calculateDishStock(item, true) <= getLowStockThreshold(item));
 
   if (lowStockItems.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; padding: 15px;">No items are currently low on stock.</td></tr>`;
-    if (dashboardTbody) dashboardTbody.innerHTML = `<tr><td colspan="3" style="text-align: center; padding: 12px;">No items are currently low on stock.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 15px;">No items are currently low on stock.</td></tr>`;
+    if (dashboardTbody) dashboardTbody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 12px;">No items are currently low on stock.</td></tr>`;
     return;
   }
   // Populate full low stock table
@@ -10458,6 +10508,7 @@ function renderInventoryReport() {
     tr.innerHTML = `
         <td>${item.name}</td>
         <td>${item.category}</td>
+        <td style="text-align: right;">${getLowStockThreshold(item)}</td>
         <td style="text-align: right; color: #dc3545; font-weight: bold;">${Number(stock).toFixed(1)}</td>
       `;
     tbody.appendChild(tr);
@@ -10472,6 +10523,7 @@ function renderInventoryReport() {
       tr.innerHTML = `
           <td>${item.name}</td>
           <td>${item.category}</td>
+          <td style="text-align: right;">${getLowStockThreshold(item)}</td>
           <td style="text-align: right; color: #dc3545; font-weight: bold;">${Number(stock).toFixed(1)}</td>
         `;
       dashboardTbody.appendChild(tr);
@@ -10503,6 +10555,7 @@ function renderStockListTable() {
         <td class="u-fs-08">${(item.recipe && item.recipe.length > 0) ? 'Recipe' : (item.unit || 'N/A')}</td>
         <td class="u-fs-08 u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>
         <td class="u-fs-08 u-text-right">${Number(stock).toFixed(1)}</td>
+        <td class="u-fs-08 u-text-right">${getLowStockThreshold(item)}</td>
         <td class="u-fs-08 u-text-right"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(totalCost)}</td>
         <td class="u-text-right table-actions-cell">
           <button class="icon-btn" title="Adjust Stock" onclick="toggleStockAdjustmentForm(true, ${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413-1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/></svg></button>
@@ -10530,6 +10583,7 @@ function editStockItem(index) {
   document.getElementById('newStockItemCost').value = item.costPrice || 0;
   document.getElementById('newStockItemPrice').value = item.price || 0;
   document.getElementById('newStockItemStock').value = item.stock || 0;
+  document.getElementById('newStockItemLowStockThreshold').value = item.lowStockThreshold ?? '';
 
   // Store the index of the item being edited
   const formContainer = document.getElementById('newStockItemFormContainer');
@@ -10572,21 +10626,25 @@ function toggleStockAdjustmentForm(show, index = null) {
     }
     document.getElementById('stockItemIndex').value = index;
     document.getElementById('stockAdjustItemName').textContent = `Adjust Stock for: ${item.name} (Current: ${item.stock})`;
-    document.getElementById('newStockValue').value = '';
+    document.getElementById('newStockValue').value = item.stock;
+    document.getElementById('stockItemLowStockThreshold').value = item.lowStockThreshold ?? '';
     formContainer.style.display = 'block';
     document.getElementById('newStockValue').focus();
   } else {
     formContainer.style.display = 'none';
     document.getElementById('stockItemIndex').value = '';
+    document.getElementById('stockItemLowStockThreshold').value = '';
   }
 }
 
 async function saveStockAdjustment() {
   const index = document.getElementById('stockItemIndex').value;
   const newStockInput = document.getElementById('newStockValue');
-  const newStock = parseInt(newStockInput.value, 10);
+  const lowStockInput = document.getElementById('stockItemLowStockThreshold');
+  const newStock = Number(newStockInput.value);
+  const lowStockValue = lowStockInput.value.trim();
 
-  if (index === '' || isNaN(newStock) || newStock < 0) {
+  if (index === '' || !Number.isFinite(newStock) || newStock < 0 || (lowStockValue !== '' && (!Number.isFinite(Number(lowStockValue)) || Number(lowStockValue) < 0))) {
     return showAppAlert("Please enter a valid, non-negative number for the stock.", 'Invalid Stock');
   }
 
@@ -10618,6 +10676,11 @@ async function saveStockAdjustment() {
 
   const oldStock = menu[index].stock;
   menu[index].stock = newStock;
+  if (lowStockValue === '') {
+    delete menu[index].lowStockThreshold;
+  } else {
+    menu[index].lowStockThreshold = Number(lowStockValue);
+  }
   menu[index] = enrichEnterpriseRecord('products', menu[index], menu[index]);
   enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
 
@@ -10671,6 +10734,8 @@ async function saveNewStockItem() {
   const costPrice = parseFloat(document.getElementById('newStockItemCost').value);
   const sellingPriceInput = document.getElementById('newStockItemPrice').value;
   const stock = parseInt(document.getElementById('newStockItemStock').value, 10);
+  const lowStockInput = document.getElementById('newStockItemLowStockThreshold').value.trim();
+  const lowStockThreshold = lowStockInput === '' ? undefined : Number(lowStockInput);
 
   if (!name) {
     return showAppAlert("Please enter an item name.", 'Item Name Required');
@@ -10683,6 +10748,9 @@ async function saveNewStockItem() {
   }
   if (isNaN(stock) || stock < 0) {
     return showAppAlert("Please enter a valid stock quantity.", 'Invalid Stock');
+  }
+  if (lowStockInput !== '' && (!Number.isFinite(lowStockThreshold) || lowStockThreshold < 0)) {
+    return showAppAlert("Please enter a valid, non-negative low-stock level.", 'Invalid Low Stock Level');
   }
 
   const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
@@ -10698,6 +10766,8 @@ async function saveNewStockItem() {
     item.unit = unit;
     item.costPrice = costPrice;
     item.stock = stock;
+    if (lowStockInput === '') delete item.lowStockThreshold;
+    else item.lowStockThreshold = lowStockThreshold;
     menu[index] = enrichEnterpriseRecord('products', item, item);
     // If name changed, update all recipes and active orders to keep the app working perfectly
     if (oldName !== name) {
@@ -10742,6 +10812,7 @@ async function saveNewStockItem() {
       costPrice,
       stock,
       unit,
+      lowStockThreshold: lowStockInput === '' ? existingItem?.lowStockThreshold : lowStockThreshold,
       price: (() => {
         if (sellingPriceInput && !isNaN(parseFloat(sellingPriceInput))) return parseFloat(sellingPriceInput);
         const markup = (settings.defaultMarkup || 200) / 100;
@@ -10769,6 +10840,7 @@ async function saveNewStockItem() {
       costPrice,
       stock,
       unit,
+      lowStockThreshold,
       price,
       image: undefined
     });
@@ -10872,6 +10944,7 @@ function clearNewStockItemForm() {
   document.getElementById('newStockItemCost').value = '';
   document.getElementById('newStockItemPrice').value = '';
   document.getElementById('newStockItemStock').value = '';
+  document.getElementById('newStockItemLowStockThreshold').value = '';
   delete document.getElementById('newStockItemFormContainer').dataset.editingIndex;
 }
 

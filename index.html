@@ -447,6 +447,8 @@
                 title="Generate Random Barcode">🎲</button>
             </div>
             <select id="dishCategory" class="u-flex-grow-1"></select>
+            <input type="number" id="dishLowStockThreshold" placeholder="Low-stock level" min="0" step="0.01"
+              class="u-flex-grow-05" title="Alert level for this product. Leave empty to use the default stock setting.">
             <input type="file" id="dishImage" accept="image/*" onchange="previewDishImage(this)" class="u-flex-grow-1"
               title="Product Image">
             <img id="dishImagePreview" src="https://placehold.co/100" alt="Preview">
@@ -503,6 +505,7 @@
                 <th style="text-align: right;">Cost</th>
                 <th style="text-align: right;">Price</th>
                 <th style="text-align: right;">Profit</th>
+                <th style="text-align: right;">Low-stock level</th>
                 <th style="text-align: right;">Action</th>
               </tr>
             </thead>
@@ -779,6 +782,7 @@
                 <tr>
                   <th>Item</th>
                   <th>Category</th>
+                  <th style="text-align: right;">Alert At</th>
                   <th style="text-align: right;">Stock</th>
                 </tr>
               </thead>
@@ -792,7 +796,7 @@
       <section id="stockTab">
         <h3>📦 Stock Management</h3>
         <div class="input-row u-mb-20 u-flex-nowrap settings-group">
-          <label for="lowStockThreshold">Low Stock:</label>
+          <label for="lowStockThreshold">Default low-stock level:</label>
           <input type="number" id="lowStockThreshold" placeholder="e.g., 10" min="0"
             class="u-flex-grow-0 u-flex-basis-100">
           <button class="btn" onclick="saveSettings()">Save</button>
@@ -803,6 +807,7 @@
             <tr>
               <th>Item Name</th>
               <th>Category</th>
+              <th class="u-text-right">Alert At</th>
               <th class="u-text-right">Current Stock</th>
             </tr>
           </thead>
@@ -813,7 +818,9 @@
           <h5 id="stockAdjustItemName" class="u-m-0">Adjust Stock for...</h5>
           <div class="input-row">
             <input type="number" id="newStockValue" placeholder="Enter new stock quantity" min="0">
-            <button class="btn" onclick="saveStockAdjustment()">Save Stock</button>
+            <input type="number" id="stockItemLowStockThreshold" placeholder="Low-stock level" min="0" step="0.01"
+              title="Alert level for this item. Leave empty to use the default level.">
+            <button class="btn" onclick="saveStockAdjustment()">Save Changes</button>
             <button class="btn btn-secondary" onclick="toggleStockAdjustmentForm(false)">Cancel</button>
           </div>
         </div>
@@ -829,6 +836,8 @@
             <input type="number" id="newStockItemCost" placeholder="Cost Price" step="0.01" min="0">
             <input type="number" id="newStockItemPrice" placeholder="Selling Price" step="0.01" min="0">
             <input type="number" id="newStockItemStock" placeholder="Initial Stock" min="0">
+            <input type="number" id="newStockItemLowStockThreshold" placeholder="Low-stock level" min="0" step="0.01"
+              title="Alert level for this item. Leave empty to use the default level.">
           </div>
           <div class="input-row" style="justify-content: flex-end;">
             <button class="btn" onclick="saveNewStockItem()">Save Item</button>
@@ -838,7 +847,7 @@
         <table class="u-mt-10">
           <thead>
             <tr>
-              <th colspan="6"><input type="text" id="stockSearchInput" onkeyup="renderStockListTable()"
+              <th colspan="9"><input type="text" id="stockSearchInput" onkeyup="renderStockListTable()"
                   placeholder="Search stock items..." class="u-w-full u-mb-15"></th>
             </tr>
           </thead>
@@ -850,6 +859,7 @@
               <th>Unit</th>
               <th class="u-text-right">Cost</th> <!-- 2 -->
               <th class="u-text-right">Stock</th> <!-- 4 -->
+              <th class="u-text-right">Low Stock</th>
               <th class="u-text-right">Total</th> <!-- 5 -->
               <th class="u-text-right">Action</th> <!-- 6 -->
             </tr>
@@ -1050,6 +1060,7 @@
               <option value="itemSales">Item Report</option>
               <option value="categorySales">Category Report</option>
               <option value="customerBalances">Customer Balances</option>
+              <option value="allData">Complete Business Report</option>
             </select>
             <input type="date" id="reportDate" onchange="renderReport()" class="u-flex-basis-150" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
             <div id="reportOptionsFilterContainer" class="u-flex-basis-150" style="position:relative;">
