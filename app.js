@@ -4715,6 +4715,7 @@ function showTab(tabId, btn) {
       renderSupplierList();
       break;
     case 'wastageLossTab':
+      populateWastageLossItemOptions();
       renderWastageLossHistory();
       break;
     case 'reportsTab':
@@ -8627,6 +8628,9 @@ window.renderPurchaseHistory = renderPurchaseHistory;
 window.saveWastageLossEntry = saveWastageLossEntry;
 window.clearWastageLossForm = clearWastageLossForm;
 window.renderWastageLossHistory = renderWastageLossHistory;
+window.populateWastageLossItemOptions = populateWastageLossItemOptions;
+window.populateWastageLossCost = populateWastageLossCost;
+window.updateWastageLossSummary = updateWastageLossSummary;
 window.saveSupplierEntry = saveSupplierEntry;
 window.clearSupplierForm = clearSupplierForm;
 window.renderSupplierList = renderSupplierList;
@@ -10929,8 +10933,71 @@ function savePurchaseEntry() {
   showAppAlert('Purchase saved successfully.', 'Purchase Saved');
 }
 
+function populateWastageLossItemOptions() {
+  const select = document.getElementById('wastageLossItem');
+  if (!select) return;
+
+  const stockItems = (Array.isArray(menu) ? menu : []).filter(item => item && item.stock !== undefined);
+  const currentValue = select.value;
+  select.innerHTML = '';
+
+  if (stockItems.length === 0) {
+    const emptyOption = document.createElement('option');
+    emptyOption.value = '';
+    emptyOption.textContent = 'No stock items available';
+    select.appendChild(emptyOption);
+    populateWastageLossCost();
+    return;
+  }
+
+  stockItems.forEach(item => {
+    const option = document.createElement('option');
+    option.value = item.name;
+    option.textContent = `${item.name} (${Number(calculateDishStock(item, true)).toFixed(1)} in stock)`;
+    option.dataset.cost = Number(item.costPrice || 0);
+    option.dataset.unit = item.unit || 'unit';
+    select.appendChild(option);
+  });
+
+  if (currentValue && stockItems.some(item => item.name === currentValue)) {
+    select.value = currentValue;
+  } else {
+    select.selectedIndex = 0;
+  }
+
+  populateWastageLossCost();
+}
+
+function populateWastageLossCost() {
+  const select = document.getElementById('wastageLossItem');
+  const costInput = document.getElementById('wastageLossCost');
+  const unitDisplay = document.getElementById('wastageLossUnitDisplay');
+  if (!select || !costInput) return;
+
+  const selectedOption = select.options[select.selectedIndex];
+  const defaultCost = Number(selectedOption?.dataset.cost || 0);
+  const unit = selectedOption?.dataset.unit || '—';
+  costInput.value = defaultCost.toFixed(2);
+  if (unitDisplay) {
+    unitDisplay.textContent = `Unit: ${unit}`;
+  }
+  updateWastageLossSummary();
+}
+
+function updateWastageLossSummary() {
+  const qtyInput = document.getElementById('wastageLossQty');
+  const costInput = document.getElementById('wastageLossCost');
+  const totalDisplay = document.getElementById('wastageLossTotalDisplay');
+  if (!qtyInput || !costInput || !totalDisplay) return;
+
+  const qty = Number(qtyInput.value || 0);
+  const cost = Number(costInput.value || 0);
+  const total = qty * cost;
+  totalDisplay.textContent = `Total: ${formatCurrency(total)}`;
+}
+
 function clearWastageLossForm() {
-  const formFields = ['wastageLossDate', 'wastageLossItem', 'wastageLossQty', 'wastageLossCost', 'wastageLossNote'];
+  const formFields = ['wastageLossDate', 'wastageLossQty', 'wastageLossCost', 'wastageLossNote'];
   formFields.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -10942,6 +11009,8 @@ function clearWastageLossForm() {
   if (dateInput) {
     dateInput.value = new Date().toISOString().split('T')[0];
   }
+
+  populateWastageLossItemOptions();
 }
 
 function renderWastageLossHistory() {
@@ -10969,30 +11038,73 @@ function saveWastageLossEntry() {
   const item = document.getElementById('wastageLossItem')?.value?.trim();
   const qty = Number(document.getElementById('wastageLossQty')?.value || 0);
   const cost = Number(document.getElementById('wastageLossCost')?.value || 0);
-  const note = document.getElementById('wastageLossNote')?.value?.trim() || 'Wastage/Loss';
+  const note = document.getElementById('wastageLossNote')?.value?.trim() || 'Waste/Loss';
 
   if (!item) {
-    showAppAlert('Please enter an item name for wastage/loss.', 'Wastage Required');
+    showAppAlert('Please select a stock item for waste/loss.', 'Waste Required');
     return;
   }
+
+  const stockItem = (Array.isArray(menu) ? menu : []).find(entry => entry && entry.name === item && entry.stock !== undefined);
+  if (!stockItem) {
+    showAppAlert('The selected item is not available in stock.', 'Stock Item Missing');
+    return;
+  }
+
+  const availableStock = Number(calculateDishStock(stockItem, true) || 0);
+  if (!Number.isFinite(qty) || qty <= 0) {
+    showAppAlert('Please enter a valid quantity greater than zero.', 'Invalid Quantity');
+    return;
+  }
+
+  if (qty > availableStock) {
+    showAppAlert(`Only ${availableStock} units are available for ${item}.`, 'Insufficient Stock');
+    return;
+  }
+
+  const unitCost = Number.isFinite(cost) && cost >= 0 ? cost : Number(stockItem.costPrice || 0);
+  const amount = unitCost * qty;
+  const newStock = Math.max(0, Number(stockItem.stock || 0) - qty);
+
+  stockItem.stock = newStock;
+  stockItem = enrichEnterpriseRecord('products', stockItem, stockItem);
+  enqueueEnterpriseRecordChange('products', stockItem, 'upsert').catch(console.warn);
+
+  const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
+    date: new Date().toISOString(),
+    itemName: stockItem.name,
+    itemId: stockItem.recordId || stockItem.id || null,
+    adjustment: -qty,
+    newTotal: newStock,
+    note: note || 'Waste/Loss'
+  });
+  restockHistory.unshift(restockRecord);
+  enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
+  if (restockHistory.length > 100) restockHistory.pop();
 
   const entry = {
     id: `wastage-${Date.now()}`,
     date: dateValue,
     item,
     qty,
-    cost,
-    amount: cost * (Number.isFinite(qty) && qty > 0 ? qty : 1),
-    total: cost * (Number.isFinite(qty) && qty > 0 ? qty : 1),
+    cost: unitCost,
+    amount,
+    total: amount,
     note
   };
 
   wastageLossHistory.unshift(entry);
   if (wastageLossHistory.length > 100) wastageLossHistory.pop();
+
+  saveData().catch(() => {});
   renderWastageLossHistory();
+  renderStockListTable();
+  renderInventoryReport();
+  renderDishesTable();
+  renderMenu();
   updateDashboard();
   clearWastageLossForm();
-  showAppAlert('Wastage/loss saved successfully.', 'Wastage/Loss Saved');
+  showAppAlert('Waste/loss saved successfully.', 'Waste/Loss Saved');
 }
 
 function clearSupplierForm() {

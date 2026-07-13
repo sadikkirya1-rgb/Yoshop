@@ -373,7 +373,7 @@
       <button onclick="showTab('stockTab', this)"><span>📦</span><span>Stock</span></button>
       <button onclick="showTab('purchaseTab', this)"><span>🛒</span><span>Purchase</span></button>
       <button onclick="showTab('supplierTab', this)"><span>🏭</span><span>Supplier</span></button>
-      <button onclick="showTab('wastageLossTab', this)"><span>♻️</span><span>Wastage/Loss</span></button>
+      <button onclick="showTab('wastageLossTab', this)"><span>♻️</span><span>Waste/Loss</span></button>
       <button onclick="showTab('transactionsTab', this)"><span>🧾</span><span>Sales</span></button>
       <button onclick="showTab('reportsTab', this)"><span>📈</span><span>Reports</span></button>
       <button onclick="showTab('settingsTab', this)"><span>⚙️</span><span>Settings</span></button>
@@ -938,20 +938,24 @@
 
       <!-- Wastage/Loss -->
       <section id="wastageLossTab" style="display: none;">
-        <h3>♻️ Wastage / Loss Management</h3>
+        <h3>♻️ Waste / Loss Management</h3>
         <div class="u-mb-15" style="display:flex; justify-content:flex-end;">
-          <button class="btn" onclick="document.getElementById('wastageLossFormPanel').style.display = document.getElementById('wastageLossFormPanel').style.display === 'none' ? 'block' : 'none'">➕ Record New Wastage/Loss</button>
+          <button class="btn" onclick="document.getElementById('wastageLossFormPanel').style.display = document.getElementById('wastageLossFormPanel').style.display === 'none' ? 'block' : 'none'; populateWastageLossItemOptions()">➕ Record New Waste/Loss</button>
         </div>
         <div id="wastageLossFormPanel" class="form-panel u-mt-20" style="padding: 20px; display: none;">
-          <h5 class="u-m-0">Record Wastage / Loss</h5>
+          <h5 class="u-m-0">Record Waste / Loss</h5>
           <div class="input-row">
             <input type="date" id="wastageLossDate">
-            <input type="text" id="wastageLossItem" placeholder="Item Name" class="u-flex-grow-1">
+            <select id="wastageLossItem" class="u-flex-grow-1" onchange="populateWastageLossCost()"></select>
           </div>
           <div class="input-row">
-            <input type="number" id="wastageLossQty" placeholder="Qty" min="0" step="1">
-            <input type="number" id="wastageLossCost" placeholder="Cost" min="0" step="0.01">
+            <input type="number" id="wastageLossQty" placeholder="Qty" min="0" step="1" oninput="updateWastageLossSummary()">
+            <input type="number" id="wastageLossCost" placeholder="Cost" min="0" step="0.01" oninput="updateWastageLossSummary()">
             <input type="text" id="wastageLossNote" placeholder="Note" class="u-flex-grow-1">
+          </div>
+          <div class="input-row" style="justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <span id="wastageLossUnitDisplay" class="u-fs-08">Unit: —</span>
+            <span id="wastageLossTotalDisplay" class="u-fs-08 u-bold">Total: $0.00</span>
           </div>
           <div class="input-row" style="justify-content: flex-end;">
             <button class="btn" onclick="saveWastageLossEntry()">Save Record</button>
@@ -960,7 +964,7 @@
         </div>
 
         <div class="u-mt-20">
-          <h5 class="u-m-0">Wastage / Loss History</h5>
+          <h5 class="u-m-0">Waste / Loss History</h5>
           <div class="u-overflow-x-auto">
             <table class="u-mt-10">
               <thead>
