@@ -4649,12 +4649,18 @@ function showTab(tabId, btn) {
   }
 
   playClickSound();
-  document.querySelectorAll('section').forEach(sec => sec.classList.remove('active'));
-  const activeSection = document.querySelector(`#${tabId}`);
-  activeSection.classList.add('active');
+  document.querySelectorAll('section').forEach(sec => {
+    sec.classList.remove('active');
+    sec.style.display = 'none';
+  });
+  const activeSection = document.getElementById(tabId);
+  if (activeSection) {
+    activeSection.classList.add('active');
+    activeSection.style.display = 'block';
+  }
 
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-  btn.classList.add('active');
+  if (btn) btn.classList.add('active');
   toggleNav(false); // Close nav after selection
 
   // Dynamically update navigation visibility based on role and active tab
@@ -4700,6 +4706,12 @@ function showTab(tabId, btn) {
       renderStockListTable(); // For the main stock table
       renderUnitList();
       renderRestockHistoryTable(); // For the main stock table
+      break;
+    case 'purchaseTab':
+      renderPurchaseHistory();
+      break;
+    case 'wastageLossTab':
+      renderWastageLossHistory();
       break;
     case 'reportsTab':
       populateReportFilters();
