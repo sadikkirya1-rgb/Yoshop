@@ -1590,15 +1590,17 @@ body.dark-mode tr.u-cursor-pointer:hover {
 section#menuTab.active {
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  max-height: calc(100vh - 90px);
-  overflow: hidden;
+  /* Let every category and product card extend the page naturally.
+     The previous viewport cap hid the lower part of the shop grid. */
+  min-height: auto;
+  max-height: none;
+  overflow: visible;
 }
 
 #menuCategories {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
+  flex: 0 0 auto;
+  min-height: auto;
+  overflow: visible;
   padding-right: 5px;
 }
 
