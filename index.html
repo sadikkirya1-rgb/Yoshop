@@ -372,6 +372,7 @@
       <button onclick="showTab('invoicesTab', this)"><span>📄</span><span>Invoices</span></button>
       <button onclick="showTab('stockTab', this)"><span>📦</span><span>Stock</span></button>
       <button onclick="showTab('purchaseTab', this)"><span>🛒</span><span>Purchase</span></button>
+      <button onclick="showTab('wastageLossTab', this)"><span>♻️</span><span>Wastage/Loss</span></button>
       <button onclick="showTab('transactionsTab', this)"><span>🧾</span><span>Sales</span></button>
       <button onclick="showTab('reportsTab', this)"><span>📈</span><span>Reports</span></button>
       <button onclick="showTab('settingsTab', this)"><span>⚙️</span><span>Settings</span></button>
@@ -733,6 +734,10 @@
             <h4>Total Expenses</h4>
             <p><span class="currency-symbol">$</span><span id="totalExpenses">0.00</span></p>
           </div>
+          <div class="dashboard-card" data-dashboard-card-key="wastageLoss">
+            <h4>Wastage/Loss</h4>
+            <p><span class="currency-symbol">$</span><span id="totalWastageLoss">0.00</span></p>
+          </div>
           <div class="dashboard-card" data-dashboard-card-key="debt">
             <h4>Outstanding Debt</h4>
             <p><span class="currency-symbol">$</span><span id="outstandingDebt">0.00</span></p>
@@ -851,7 +856,10 @@
       <!-- Purchase -->
       <section id="purchaseTab" style="display: none;">
         <h3>🛒 Purchase Management</h3>
-        <div class="form-panel u-mt-20" style="padding: 20px;">
+        <div class="u-mb-15" style="display:flex; justify-content:flex-end;">
+          <button class="btn" onclick="document.getElementById('purchaseFormPanel').style.display = document.getElementById('purchaseFormPanel').style.display === 'none' ? 'block' : 'none'">➕ Add New Purchase/Expenditure</button>
+        </div>
+        <div id="purchaseFormPanel" class="form-panel u-mt-20" style="padding: 20px; display: none;">
           <h5 class="u-m-0">Record a Purchase</h5>
           <div class="input-row">
             <input type="text" id="purchaseSupplier" placeholder="Supplier" class="u-flex-grow-1">
@@ -882,6 +890,48 @@
                 </tr>
               </thead>
               <tbody id="purchaseHistoryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Wastage/Loss -->
+      <section id="wastageLossTab" style="display: none;">
+        <h3>♻️ Wastage / Loss Management</h3>
+        <div class="u-mb-15" style="display:flex; justify-content:flex-end;">
+          <button class="btn" onclick="document.getElementById('wastageLossFormPanel').style.display = document.getElementById('wastageLossFormPanel').style.display === 'none' ? 'block' : 'none'">➕ Record New Wastage/Loss</button>
+        </div>
+        <div id="wastageLossFormPanel" class="form-panel u-mt-20" style="padding: 20px; display: none;">
+          <h5 class="u-m-0">Record Wastage / Loss</h5>
+          <div class="input-row">
+            <input type="date" id="wastageLossDate">
+            <input type="text" id="wastageLossItem" placeholder="Item Name" class="u-flex-grow-1">
+          </div>
+          <div class="input-row">
+            <input type="number" id="wastageLossQty" placeholder="Qty" min="0" step="1">
+            <input type="number" id="wastageLossCost" placeholder="Cost" min="0" step="0.01">
+            <input type="text" id="wastageLossNote" placeholder="Note" class="u-flex-grow-1">
+          </div>
+          <div class="input-row" style="justify-content: flex-end;">
+            <button class="btn" onclick="saveWastageLossEntry()">Save Record</button>
+            <button class="btn btn-secondary" onclick="clearWastageLossForm()">Clear</button>
+          </div>
+        </div>
+
+        <div class="u-mt-20">
+          <h5 class="u-m-0">Wastage / Loss History</h5>
+          <div class="u-overflow-x-auto">
+            <table class="u-mt-10">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Item</th>
+                  <th class="u-text-right">Qty</th>
+                  <th class="u-text-right">Cost</th>
+                  <th>Note</th>
+                </tr>
+              </thead>
+              <tbody id="wastageLossHistoryBody"></tbody>
             </table>
           </div>
         </div>

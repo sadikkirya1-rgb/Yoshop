@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss } from '../invoice-utils.mjs';
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [
@@ -90,6 +90,20 @@ test('calculateTotalExpenses sums expense records with flexible amount fields', 
   ];
 
   assert.equal(calculateTotalExpenses(expenses), 52.5);
+});
+
+test('calculateTotalWastageLoss sums wastage records with flexible amount fields', () => {
+  const wastage = [
+    { amount: 12 },
+    { total: 18 },
+    { cost: 7 },
+    { amount: '5.50' },
+    { note: 'skip me' },
+    null,
+    { amount: -3 }
+  ];
+
+  assert.equal(calculateTotalWastageLoss(wastage), 39.5);
 });
 
 test('summarizeDebtInvoices matches pending invoice totals from transaction balances', () => {

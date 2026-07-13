@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -1922,6 +1922,7 @@ let customers = [];
 let expenses = [];
 let restockHistory = [];
 let purchaseHistory = [];
+let wastageLossHistory = [];
 let lastKnownDishImages = {}; // Cache the last valid image URL for each product name
 
 const defaultDishCategories = [];
@@ -8573,6 +8574,7 @@ function updateDashboard() {
     const purchaseValue = Number(record.purchaseAmount ?? record.amount ?? record.cost ?? record.totalCost ?? record.total ?? record.value ?? 0);
     return sum + (Number.isFinite(purchaseValue) ? purchaseValue : 0);
   }, 0);
+  const totalWastageLoss = calculateTotalWastageLoss(Array.isArray(wastageLossHistory) ? wastageLossHistory : []);
 
   // Always update dashboard cards (even with 0 values)
   document.getElementById('stockValue').textContent = formatCurrency(totalStockValue);
@@ -8582,6 +8584,7 @@ function updateDashboard() {
   document.getElementById('totalBills').textContent = totalBills;
   document.getElementById('totalPurchases').textContent = formatCurrency(totalPurchases);
   document.getElementById('totalExpenses').textContent = formatCurrency(expensesCardAmount);
+  document.getElementById('totalWastageLoss').textContent = formatCurrency(totalWastageLoss);
   document.getElementById('outstandingDebt').textContent = formatCurrency(outstandingDebt);
   document.getElementById('pendingInvoices').textContent = pendingInvoices;
   const avgOrderValue = totalBills > 0 ? totalRevenue / totalBills : 0;
@@ -8605,6 +8608,9 @@ window.applyDashboardDateFilter = applyDashboardDateFilter;
 window.savePurchaseEntry = savePurchaseEntry;
 window.clearPurchaseForm = clearPurchaseForm;
 window.renderPurchaseHistory = renderPurchaseHistory;
+window.saveWastageLossEntry = saveWastageLossEntry;
+window.clearWastageLossForm = clearWastageLossForm;
+window.renderWastageLossHistory = renderWastageLossHistory;
 
 function renderBestSellingItemsChart(sourceTransactions = transactions) {
   if (typeof Chart === 'undefined') return;
@@ -10843,11 +10849,7 @@ function clearPurchaseForm() {
   formFields.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
-      if (el.tagName === 'INPUT' && el.type === 'date') {
-        el.value = '';
-      } else {
-        el.value = '';
-      }
+      el.value = '';
     }
   });
 
@@ -10906,6 +10908,72 @@ function savePurchaseEntry() {
   updateDashboard();
   clearPurchaseForm();
   showAppAlert('Purchase saved successfully.', 'Purchase Saved');
+}
+
+function clearWastageLossForm() {
+  const formFields = ['wastageLossDate', 'wastageLossItem', 'wastageLossQty', 'wastageLossCost', 'wastageLossNote'];
+  formFields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      el.value = '';
+    }
+  });
+
+  const dateInput = document.getElementById('wastageLossDate');
+  if (dateInput) {
+    dateInput.value = new Date().toISOString().split('T')[0];
+  }
+}
+
+function renderWastageLossHistory() {
+  const tbody = document.getElementById('wastageLossHistoryBody');
+  if (!tbody) return;
+
+  const rows = Array.isArray(wastageLossHistory) ? wastageLossHistory : [];
+  tbody.innerHTML = rows.map(entry => {
+    const amount = Number(entry.amount ?? entry.total ?? entry.cost ?? entry.value ?? 0);
+    const dateLabel = entry.date ? new Date(entry.date).toLocaleDateString() : '—';
+    return `
+      <tr>
+        <td>${dateLabel}</td>
+        <td>${entry.item || entry.itemName || '—'}</td>
+        <td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td>
+        <td class="u-text-right">${formatCurrency(amount)}</td>
+        <td>${entry.note || '—'}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function saveWastageLossEntry() {
+  const dateValue = document.getElementById('wastageLossDate')?.value || new Date().toISOString().split('T')[0];
+  const item = document.getElementById('wastageLossItem')?.value?.trim();
+  const qty = Number(document.getElementById('wastageLossQty')?.value || 0);
+  const cost = Number(document.getElementById('wastageLossCost')?.value || 0);
+  const note = document.getElementById('wastageLossNote')?.value?.trim() || 'Wastage/Loss';
+
+  if (!item) {
+    showAppAlert('Please enter an item name for wastage/loss.', 'Wastage Required');
+    return;
+  }
+
+  const entry = {
+    id: `wastage-${Date.now()}`,
+    date: dateValue,
+    item,
+    qty,
+    cost,
+    amount: cost * (Number.isFinite(qty) && qty > 0 ? qty : 1),
+    total: cost * (Number.isFinite(qty) && qty > 0 ? qty : 1),
+    note
+  };
+
+  wastageLossHistory.unshift(entry);
+  if (wastageLossHistory.length > 100) wastageLossHistory.pop();
+  renderWastageLossHistory();
+  updateDashboard();
+  clearWastageLossForm();
+  showAppAlert('Wastage/loss saved successfully.', 'Wastage/Loss Saved');
 }
 
 function renderRestockHistoryTable() {
@@ -11495,6 +11563,7 @@ function refreshCurrentView() {
     'settingsTab': () => { loadSettings(); },
     'stockTab': () => { renderInventoryReport(); renderStockListTable(); renderUnitList(); renderRestockHistoryTable(); },
     'purchaseTab': () => { renderPurchaseHistory(); },
+    'wastageLossTab': () => { renderWastageLossHistory(); },
     'reportsTab': () => { populateReportFilters(); renderReport(); }
   };
   if (renderMap[activeTab.id]) renderMap[activeTab.id]();

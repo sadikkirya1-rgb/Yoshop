@@ -284,6 +284,15 @@ export function calculateTotalExpenses(expenses = []) {
   }, 0);
 }
 
+export function calculateTotalWastageLoss(records = []) {
+  const sourceRecords = Array.isArray(records) ? records : [];
+  return sourceRecords.reduce((sum, record) => {
+    if (!record || typeof record !== 'object') return sum;
+    const amount = Number(record.amount ?? record.total ?? record.cost ?? record.value ?? 0);
+    return sum + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+}
+
 export function summarizeDebtInvoices({ customers = [], transactions = [] } = {}) {
   const invoiceRows = buildInvoiceListItems({ customers, transactions });
   const outstandingDebt = invoiceRows.reduce((sum, row) => {
