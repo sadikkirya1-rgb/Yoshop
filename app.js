@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -8578,9 +8578,11 @@ function updateDashboard() {
   }, 0);
 
   const totalExpenses = calculateTotalExpenses(filteredExpenses);
-  const netProfit = totalRevenue - totalCost - totalExpenses;
-  const expensesCardAmount = totalRevenue - netProfit;
-  const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalCost - totalExpenses) / totalRevenue) * 100 : 0;
+  const purchaseSummary = summarizePurchaseImpact(Array.isArray(purchaseHistory) ? purchaseHistory : []);
+  const effectiveRevenue = totalRevenue - purchaseSummary.internalRevenueDeduction;
+  const netProfit = effectiveRevenue - totalCost - totalExpenses;
+  const expensesCardAmount = effectiveRevenue - netProfit;
+  const profitMargin = effectiveRevenue > 0 ? ((effectiveRevenue - totalCost - totalExpenses) / effectiveRevenue) * 100 : 0;
   const totalBills = filteredTransactions.length;
   const debtSummary = summarizeDebtInvoices({
     customers: Array.isArray(customers) ? customers : [],
@@ -8588,20 +8590,21 @@ function updateDashboard() {
   });
   const outstandingDebt = debtSummary.outstandingDebt;
   const pendingInvoices = debtSummary.pendingInvoices;
-  const totalPurchases = (Array.isArray(purchaseHistory) ? purchaseHistory : []).reduce((sum, record) => {
-    const purchaseValue = Number(record.purchaseAmount ?? record.amount ?? record.cost ?? record.totalCost ?? record.total ?? record.value ?? 0);
-    return sum + (Number.isFinite(purchaseValue) ? purchaseValue : 0);
-  }, 0);
+  const totalPurchases = purchaseSummary.totalPurchases;
+  const totalServiceExpense = purchaseSummary.serviceExpense;
   const totalWastageLoss = calculateTotalWastageLoss(Array.isArray(wastageLossHistory) ? wastageLossHistory : []);
+  const stockValueIncrease = purchaseSummary.stockValueIncrease;
+  const effectiveStockValue = totalStockValue + stockValueIncrease;
 
   // Always update dashboard cards (even with 0 values)
-  document.getElementById('stockValue').textContent = formatCurrency(totalStockValue);
+  document.getElementById('stockValue').textContent = formatCurrency(effectiveStockValue);
   document.getElementById('profitPercentage').textContent = profitMargin.toFixed(2);
   document.getElementById('netProfit').textContent = formatCurrency(netProfit);
-  document.getElementById('totalRevenue').textContent = formatCurrency(totalRevenue);
+  document.getElementById('totalRevenue').textContent = formatCurrency(effectiveRevenue);
   document.getElementById('totalBills').textContent = totalBills;
   document.getElementById('totalPurchases').textContent = formatCurrency(totalPurchases);
   document.getElementById('totalExpenses').textContent = formatCurrency(expensesCardAmount);
+  document.getElementById('totalServiceExpense').textContent = formatCurrency(totalServiceExpense);
   document.getElementById('totalWastageLoss').textContent = formatCurrency(totalWastageLoss);
   document.getElementById('outstandingDebt').textContent = formatCurrency(outstandingDebt);
   document.getElementById('pendingInvoices').textContent = pendingInvoices;
@@ -8628,6 +8631,7 @@ window.clearPurchaseForm = clearPurchaseForm;
 window.renderPurchaseHistory = renderPurchaseHistory;
 window.populatePurchaseFormOptions = populatePurchaseFormOptions;
 window.populatePurchaseCost = populatePurchaseCost;
+window.togglePurchaseTypeFields = togglePurchaseTypeFields;
 window.saveWastageLossEntry = saveWastageLossEntry;
 window.clearWastageLossForm = clearWastageLossForm;
 window.renderWastageLossHistory = renderWastageLossHistory;
@@ -10916,8 +10920,19 @@ function populatePurchaseCost() {
   costInput.value = defaultCost.toFixed(2);
 }
 
+function togglePurchaseTypeFields() {
+  const purchaseType = document.getElementById('purchaseType')?.value || 'stock';
+  const stockFields = document.getElementById('purchaseStockFields');
+  const serviceFields = document.getElementById('purchaseServiceFields');
+  const newItemFields = document.getElementById('purchaseNewItemFields');
+
+  if (stockFields) stockFields.style.display = purchaseType === 'stock' ? 'flex' : 'none';
+  if (serviceFields) serviceFields.style.display = purchaseType === 'service' ? 'flex' : 'none';
+  if (newItemFields) newItemFields.style.display = purchaseType === 'new-item' ? 'flex' : 'none';
+}
+
 function clearPurchaseForm() {
-  const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseItem', 'purchaseQty', 'purchaseCost'];
+  const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseType', 'purchaseSource', 'purchaseItem', 'purchaseQty', 'purchaseCost', 'purchaseServiceName', 'purchaseServiceCost', 'purchaseNewItemName', 'purchaseNewItemCategory', 'purchaseNewItemCost', 'purchaseNewItemQty'];
   formFields.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -10930,6 +10945,11 @@ function clearPurchaseForm() {
     dateInput.value = new Date().toISOString().split('T')[0];
   }
 
+  const purchaseType = document.getElementById('purchaseType');
+  if (purchaseType) purchaseType.value = 'stock';
+  const purchaseSource = document.getElementById('purchaseSource');
+  if (purchaseSource) purchaseSource.value = 'external';
+  togglePurchaseTypeFields();
   populatePurchaseFormOptions();
 }
 
@@ -10956,59 +10976,111 @@ function renderPurchaseHistory() {
 function savePurchaseEntry() {
   const supplier = document.getElementById('purchaseSupplier')?.value?.trim() || '';
   const dateValue = document.getElementById('purchaseDate')?.value || new Date().toISOString().split('T')[0];
+  const purchaseType = document.getElementById('purchaseType')?.value || 'stock';
+  const purchaseSource = document.getElementById('purchaseSource')?.value || 'external';
   const item = document.getElementById('purchaseItem')?.value?.trim();
   const qty = Number(document.getElementById('purchaseQty')?.value || 0);
   const cost = Number(document.getElementById('purchaseCost')?.value || 0);
+  const serviceName = document.getElementById('purchaseServiceName')?.value?.trim();
+  const serviceCost = Number(document.getElementById('purchaseServiceCost')?.value || 0);
+  const newItemName = document.getElementById('purchaseNewItemName')?.value?.trim();
+  const newItemCategory = document.getElementById('purchaseNewItemCategory')?.value?.trim();
+  const newItemCost = Number(document.getElementById('purchaseNewItemCost')?.value || 0);
+  const newItemQty = Number(document.getElementById('purchaseNewItemQty')?.value || 0);
 
   if (!supplier) {
     showAppAlert('Please select a supplier for the purchase.', 'Supplier Required');
     return;
   }
 
-  if (!item) {
-    showAppAlert('Please select a stock item for the purchase.', 'Purchase Required');
-    return;
-  }
+  let purchaseAmount = 0;
+  let displayItem = '';
+  let stockUpdated = false;
+  let stockValueImpact = 0;
 
-  const parsedQty = Number.isFinite(qty) && qty > 0 ? qty : 0;
-  if (parsedQty <= 0) {
-    showAppAlert('Please enter a valid quantity greater than zero.', 'Invalid Quantity');
-    return;
-  }
+  if (purchaseType === 'service') {
+    if (!serviceName) {
+      showAppAlert('Please enter a service or expense name.', 'Service Required');
+      return;
+    }
+    purchaseAmount = Number.isFinite(serviceCost) && serviceCost >= 0 ? serviceCost : 0;
+    displayItem = serviceName;
+  } else if (purchaseType === 'new-item') {
+    if (!newItemName) {
+      showAppAlert('Please enter a new item name.', 'Item Required');
+      return;
+    }
+    purchaseAmount = Number.isFinite(newItemCost) && newItemCost >= 0 ? newItemCost : 0;
+    displayItem = newItemName;
+    if (Number.isFinite(newItemQty) && newItemQty > 0) {
+      const categoryName = newItemCategory || 'Purchased';
+      if (!dishCategories.includes(categoryName)) {
+        dishCategories.push(categoryName);
+      }
+      const newItemEntry = {
+        id: `stock-${Date.now()}`,
+        name: newItemName,
+        stock: newItemQty,
+        costPrice: newItemCost,
+        price: newItemCost,
+        unit: 'unit',
+        category: categoryName
+      };
+      menu.push(newItemEntry);
+      saveData().catch(() => {});
+      renderStockListTable();
+    }
+  } else {
+    if (!item) {
+      showAppAlert('Please select a stock item for the purchase.', 'Purchase Required');
+      return;
+    }
+    const parsedQty = Number.isFinite(qty) && qty > 0 ? qty : 0;
+    if (parsedQty <= 0) {
+      showAppAlert('Please enter a valid quantity greater than zero.', 'Invalid Quantity');
+      return;
+    }
 
-  const stockItem = (Array.isArray(menu) ? menu : []).find(entry => entry && entry.name === item && entry.stock !== undefined);
-  const unitCost = Number.isFinite(cost) && cost >= 0 ? cost : Number(stockItem?.costPrice || 0);
-  const purchaseAmount = calculatePurchaseAmount(parsedQty, unitCost);
+    const stockItem = (Array.isArray(menu) ? menu : []).find(entry => entry && entry.name === item && entry.stock !== undefined);
+    const unitCost = Number.isFinite(cost) && cost >= 0 ? cost : Number(stockItem?.costPrice || 0);
+    purchaseAmount = calculatePurchaseAmount(parsedQty, unitCost);
+    displayItem = item;
 
-  if (stockItem) {
-    const newStock = (Number(stockItem.stock || 0) + parsedQty);
-    stockItem.stock = newStock;
-    stockItem = enrichEnterpriseRecord('products', stockItem, stockItem);
-    enqueueEnterpriseRecordChange('products', stockItem, 'upsert').catch(console.warn);
+    if (stockItem) {
+      const newStock = (Number(stockItem.stock || 0) + parsedQty);
+      stockItem.stock = newStock;
+      stockUpdated = true;
+      stockValueImpact = purchaseAmount;
+      stockItem = enrichEnterpriseRecord('products', stockItem, stockItem);
+      enqueueEnterpriseRecordChange('products', stockItem, 'upsert').catch(console.warn);
 
-    const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
-      date: new Date().toISOString(),
-      itemName: stockItem.name,
-      itemId: stockItem.recordId || stockItem.id || null,
-      adjustment: parsedQty,
-      newTotal: newStock,
-      note: `Purchase from ${supplier}`
-    });
-    restockHistory.unshift(restockRecord);
-    enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
-    if (restockHistory.length > 100) restockHistory.pop();
+      const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
+        date: new Date().toISOString(),
+        itemName: stockItem.name,
+        itemId: stockItem.recordId || stockItem.id || null,
+        adjustment: parsedQty,
+        newTotal: newStock,
+        note: `Purchase from ${supplier}`
+      });
+      restockHistory.unshift(restockRecord);
+      enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
+      if (restockHistory.length > 100) restockHistory.pop();
+    }
   }
 
   const entry = {
     id: `purchase-${Date.now()}`,
     date: dateValue,
     supplier,
-    item,
-    qty: parsedQty,
-    cost: unitCost,
+    item: displayItem,
+    qty: purchaseType === 'stock' ? Number(document.getElementById('purchaseQty')?.value || 0) : (purchaseType === 'new-item' ? Number(document.getElementById('purchaseNewItemQty')?.value || 0) : 0),
+    cost: purchaseType === 'service' ? serviceCost : (purchaseType === 'new-item' ? newItemCost : cost),
     purchaseAmount,
     amount: purchaseAmount,
-    stockUpdated: Boolean(stockItem)
+    purchaseType,
+    purchaseSource,
+    stockUpdated,
+    stockValueImpact
   };
 
   purchaseHistory.unshift(entry);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact } from '../invoice-utils.mjs';
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [
@@ -110,6 +110,22 @@ test('calculatePurchaseAmount uses quantity and unit cost to compute the total p
   assert.equal(calculatePurchaseAmount(4, 2.5), 10);
   assert.equal(calculatePurchaseAmount(0, 5), 5);
   assert.equal(calculatePurchaseAmount('3', '1.25'), 3.75);
+});
+
+test('summarizePurchaseImpact separates purchase totals, internal deductions, stock value impact, and service expense', () => {
+  const purchases = [
+    { amount: 1000, purchaseType: 'stock', purchaseSource: 'internal' },
+    { amount: 250, purchaseType: 'stock', purchaseSource: 'external' },
+    { amount: 150, purchaseType: 'service', purchaseSource: 'internal' },
+    { amount: 80, purchaseType: 'new-item', purchaseSource: 'external' }
+  ];
+
+  const summary = summarizePurchaseImpact(purchases);
+
+  assert.equal(summary.totalPurchases, 1480);
+  assert.equal(summary.internalRevenueDeduction, 1150);
+  assert.equal(summary.serviceExpense, 150);
+  assert.equal(summary.stockValueIncrease, 1250);
 });
 
 test('summarizeDebtInvoices matches pending invoice totals from transaction balances', () => {

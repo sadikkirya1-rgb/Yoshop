@@ -292,6 +292,39 @@ export function calculatePurchaseAmount(qty = 0, cost = 0) {
   return safeQty * safeCost;
 }
 
+export function summarizePurchaseImpact(purchases = []) {
+  const purchaseList = Array.isArray(purchases) ? purchases : [];
+  const totalPurchases = purchaseList.reduce((sum, purchase) => {
+    const amount = Number(purchase?.amount ?? purchase?.purchaseAmount ?? purchase?.total ?? purchase?.cost ?? 0);
+    return sum + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+
+  const internalRevenueDeduction = purchaseList.reduce((sum, purchase) => {
+    const amount = Number(purchase?.amount ?? purchase?.purchaseAmount ?? purchase?.total ?? purchase?.cost ?? 0);
+    if (!Number.isFinite(amount)) return sum;
+    return sum + ((purchase?.purchaseSource === 'internal') ? amount : 0);
+  }, 0);
+
+  const serviceExpense = purchaseList.reduce((sum, purchase) => {
+    const amount = Number(purchase?.amount ?? purchase?.purchaseAmount ?? purchase?.total ?? purchase?.cost ?? 0);
+    if (!Number.isFinite(amount)) return sum;
+    return sum + ((purchase?.purchaseType === 'service') ? amount : 0);
+  }, 0);
+
+  const stockValueIncrease = purchaseList.reduce((sum, purchase) => {
+    const amount = Number(purchase?.amount ?? purchase?.purchaseAmount ?? purchase?.total ?? purchase?.cost ?? 0);
+    if (!Number.isFinite(amount)) return sum;
+    return sum + ((purchase?.purchaseType === 'stock') ? amount : 0);
+  }, 0);
+
+  return {
+    totalPurchases,
+    internalRevenueDeduction,
+    serviceExpense,
+    stockValueIncrease
+  };
+}
+
 export function calculateTotalWastageLoss(records = []) {
   const sourceRecords = Array.isArray(records) ? records : [];
   return sourceRecords.reduce((sum, record) => {
