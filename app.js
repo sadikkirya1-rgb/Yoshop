@@ -10958,11 +10958,13 @@ function renderPurchaseHistory() {
   if (!tbody) return;
 
   const rows = Array.isArray(purchaseHistory) ? purchaseHistory : [];
-  tbody.innerHTML = rows.map(entry => {
+  tbody.innerHTML = rows.map((entry, index) => {
     const amount = Number(entry.purchaseAmount ?? entry.amount ?? entry.cost ?? entry.totalCost ?? entry.total ?? entry.value ?? 0);
     const dateLabel = entry.date ? new Date(entry.date).toLocaleDateString() : '—';
     return `
       <tr>
+        <td>${index + 1}</td>
+        <td><input type="checkbox"></td>
         <td>${dateLabel}</td>
         <td>${entry.supplier || '—'}</td>
         <td>${entry.item || entry.itemName || '—'}</td>
@@ -11182,11 +11184,13 @@ function renderWastageLossHistory() {
   if (!tbody) return;
 
   const rows = Array.isArray(wastageLossHistory) ? wastageLossHistory : [];
-  tbody.innerHTML = rows.map(entry => {
+  tbody.innerHTML = rows.map((entry, index) => {
     const amount = Number(entry.amount ?? entry.total ?? entry.cost ?? entry.value ?? 0);
     const dateLabel = entry.date ? new Date(entry.date).toLocaleDateString() : '—';
     return `
       <tr>
+        <td>${index + 1}</td>
+        <td><input type="checkbox"></td>
         <td>${dateLabel}</td>
         <td>${entry.item || entry.itemName || '—'}</td>
         <td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td>
@@ -11283,8 +11287,10 @@ function renderSupplierList() {
   if (!tbody) return;
 
   const rows = Array.isArray(supplierList) ? supplierList : [];
-  tbody.innerHTML = rows.map(entry => `
+  tbody.innerHTML = rows.map((entry, index) => `
       <tr>
+        <td>${index + 1}</td>
+        <td><input type="checkbox"></td>
         <td>${entry.name || '—'}</td>
         <td>${entry.phone || '—'}</td>
         <td>${entry.email || '—'}</td>
