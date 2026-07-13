@@ -372,6 +372,7 @@
       <button onclick="showTab('invoicesTab', this)"><span>📄</span><span>Invoices</span></button>
       <button onclick="showTab('stockTab', this)"><span>📦</span><span>Stock</span></button>
       <button onclick="showTab('purchaseTab', this)"><span>🛒</span><span>Purchase</span></button>
+      <button onclick="showTab('supplierTab', this)"><span>🏭</span><span>Supplier</span></button>
       <button onclick="showTab('wastageLossTab', this)"><span>♻️</span><span>Wastage/Loss</span></button>
       <button onclick="showTab('transactionsTab', this)"><span>🧾</span><span>Sales</span></button>
       <button onclick="showTab('reportsTab', this)"><span>📈</span><span>Reports</span></button>
@@ -890,6 +891,46 @@
                 </tr>
               </thead>
               <tbody id="purchaseHistoryBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- Supplier -->
+      <section id="supplierTab" style="display: none;">
+        <h3>🏭 Supplier Management</h3>
+        <div class="u-mb-15" style="display:flex; justify-content:flex-end;">
+          <button class="btn" onclick="document.getElementById('supplierFormPanel').style.display = document.getElementById('supplierFormPanel').style.display === 'none' ? 'block' : 'none'">➕ Add New Supplier</button>
+        </div>
+        <div id="supplierFormPanel" class="form-panel u-mt-20" style="padding: 20px; display: none;">
+          <h5 class="u-m-0">Add Supplier</h5>
+          <div class="input-row">
+            <input type="text" id="supplierName" placeholder="Supplier Name" class="u-flex-grow-1">
+            <input type="text" id="supplierPhone" placeholder="Phone">
+          </div>
+          <div class="input-row">
+            <input type="text" id="supplierEmail" placeholder="Email" class="u-flex-grow-1">
+            <input type="text" id="supplierAddress" placeholder="Address" class="u-flex-grow-1">
+          </div>
+          <div class="input-row" style="justify-content: flex-end;">
+            <button class="btn" onclick="saveSupplierEntry()">Save Supplier</button>
+            <button class="btn btn-secondary" onclick="clearSupplierForm()">Clear</button>
+          </div>
+        </div>
+
+        <div class="u-mt-20">
+          <h5 class="u-m-0">Supplier List</h5>
+          <div class="u-overflow-x-auto">
+            <table class="u-mt-10">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Email</th>
+                  <th>Address</th>
+                </tr>
+              </thead>
+              <tbody id="supplierListBody"></tbody>
             </table>
           </div>
         </div>

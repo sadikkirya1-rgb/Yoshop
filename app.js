@@ -1923,6 +1923,7 @@ let expenses = [];
 let restockHistory = [];
 let purchaseHistory = [];
 let wastageLossHistory = [];
+let supplierList = [];
 let lastKnownDishImages = {}; // Cache the last valid image URL for each product name
 
 const defaultDishCategories = [];
@@ -4709,6 +4710,9 @@ function showTab(tabId, btn) {
       break;
     case 'purchaseTab':
       renderPurchaseHistory();
+      break;
+    case 'supplierTab':
+      renderSupplierList();
       break;
     case 'wastageLossTab':
       renderWastageLossHistory();
@@ -8623,6 +8627,9 @@ window.renderPurchaseHistory = renderPurchaseHistory;
 window.saveWastageLossEntry = saveWastageLossEntry;
 window.clearWastageLossForm = clearWastageLossForm;
 window.renderWastageLossHistory = renderWastageLossHistory;
+window.saveSupplierEntry = saveSupplierEntry;
+window.clearSupplierForm = clearSupplierForm;
+window.renderSupplierList = renderSupplierList;
 
 function renderBestSellingItemsChart(sourceTransactions = transactions) {
   if (typeof Chart === 'undefined') return;
@@ -10986,6 +10993,52 @@ function saveWastageLossEntry() {
   updateDashboard();
   clearWastageLossForm();
   showAppAlert('Wastage/loss saved successfully.', 'Wastage/Loss Saved');
+}
+
+function clearSupplierForm() {
+  ['supplierName', 'supplierPhone', 'supplierEmail', 'supplierAddress'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+}
+
+function renderSupplierList() {
+  const tbody = document.getElementById('supplierListBody');
+  if (!tbody) return;
+
+  const rows = Array.isArray(supplierList) ? supplierList : [];
+  tbody.innerHTML = rows.map(entry => `
+      <tr>
+        <td>${entry.name || '—'}</td>
+        <td>${entry.phone || '—'}</td>
+        <td>${entry.email || '—'}</td>
+        <td>${entry.address || '—'}</td>
+      </tr>
+    `).join('');
+}
+
+function saveSupplierEntry() {
+  const name = document.getElementById('supplierName')?.value?.trim();
+  const phone = document.getElementById('supplierPhone')?.value?.trim();
+  const email = document.getElementById('supplierEmail')?.value?.trim();
+  const address = document.getElementById('supplierAddress')?.value?.trim();
+
+  if (!name) {
+    showAppAlert('Please enter a supplier name.', 'Supplier Required');
+    return;
+  }
+
+  supplierList.unshift({
+    id: `supplier-${Date.now()}`,
+    name,
+    phone,
+    email,
+    address
+  });
+  if (supplierList.length > 100) supplierList.pop();
+  renderSupplierList();
+  clearSupplierForm();
+  showAppAlert('Supplier saved successfully.', 'Supplier Saved');
 }
 
 function renderRestockHistoryTable() {
