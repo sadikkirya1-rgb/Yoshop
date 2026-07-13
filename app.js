@@ -1921,6 +1921,7 @@ let dishCategories = [];
 let customers = [];
 let expenses = [];
 let restockHistory = [];
+let purchaseHistory = [];
 let lastKnownDishImages = {}; // Cache the last valid image URL for each product name
 
 const defaultDishCategories = [];
@@ -8568,6 +8569,10 @@ function updateDashboard() {
   });
   const outstandingDebt = debtSummary.outstandingDebt;
   const pendingInvoices = debtSummary.pendingInvoices;
+  const totalPurchases = (Array.isArray(purchaseHistory) ? purchaseHistory : []).reduce((sum, record) => {
+    const purchaseValue = Number(record.purchaseAmount ?? record.amount ?? record.cost ?? record.totalCost ?? record.total ?? record.value ?? 0);
+    return sum + (Number.isFinite(purchaseValue) ? purchaseValue : 0);
+  }, 0);
 
   // Always update dashboard cards (even with 0 values)
   document.getElementById('stockValue').textContent = formatCurrency(totalStockValue);
@@ -8575,6 +8580,7 @@ function updateDashboard() {
   document.getElementById('netProfit').textContent = formatCurrency(netProfit);
   document.getElementById('totalRevenue').textContent = formatCurrency(totalRevenue);
   document.getElementById('totalBills').textContent = totalBills;
+  document.getElementById('totalPurchases').textContent = formatCurrency(totalPurchases);
   document.getElementById('totalExpenses').textContent = formatCurrency(expensesCardAmount);
   document.getElementById('outstandingDebt').textContent = formatCurrency(outstandingDebt);
   document.getElementById('pendingInvoices').textContent = pendingInvoices;
@@ -8596,6 +8602,9 @@ function updateDashboard() {
 window.updateDashboard = updateDashboard;
 window.setDashboardFilter = setDashboardFilter;
 window.applyDashboardDateFilter = applyDashboardDateFilter;
+window.savePurchaseEntry = savePurchaseEntry;
+window.clearPurchaseForm = clearPurchaseForm;
+window.renderPurchaseHistory = renderPurchaseHistory;
 
 function renderBestSellingItemsChart(sourceTransactions = transactions) {
   if (typeof Chart === 'undefined') return;
@@ -10829,6 +10838,76 @@ function clearNewStockItemForm() {
   delete document.getElementById('newStockItemFormContainer').dataset.editingIndex;
 }
 
+function clearPurchaseForm() {
+  const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseItem', 'purchaseQty', 'purchaseCost'];
+  formFields.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) {
+      if (el.tagName === 'INPUT' && el.type === 'date') {
+        el.value = '';
+      } else {
+        el.value = '';
+      }
+    }
+  });
+
+  const dateInput = document.getElementById('purchaseDate');
+  if (dateInput) {
+    dateInput.value = new Date().toISOString().split('T')[0];
+  }
+}
+
+function renderPurchaseHistory() {
+  const tbody = document.getElementById('purchaseHistoryBody');
+  if (!tbody) return;
+
+  const rows = Array.isArray(purchaseHistory) ? purchaseHistory : [];
+  tbody.innerHTML = rows.map(entry => {
+    const amount = Number(entry.purchaseAmount ?? entry.amount ?? entry.cost ?? entry.totalCost ?? entry.total ?? entry.value ?? 0);
+    const dateLabel = entry.date ? new Date(entry.date).toLocaleDateString() : '—';
+    return `
+      <tr>
+        <td>${dateLabel}</td>
+        <td>${entry.supplier || '—'}</td>
+        <td>${entry.item || entry.itemName || '—'}</td>
+        <td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td>
+        <td class="u-text-right">${formatCurrency(amount)}</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function savePurchaseEntry() {
+  const supplier = document.getElementById('purchaseSupplier')?.value?.trim() || 'Unknown Supplier';
+  const dateValue = document.getElementById('purchaseDate')?.value || new Date().toISOString().split('T')[0];
+  const item = document.getElementById('purchaseItem')?.value?.trim();
+  const qty = Number(document.getElementById('purchaseQty')?.value || 0);
+  const cost = Number(document.getElementById('purchaseCost')?.value || 0);
+
+  if (!item) {
+    showAppAlert('Please enter an item name for the purchase.', 'Purchase Required');
+    return;
+  }
+
+  const entry = {
+    id: `purchase-${Date.now()}`,
+    date: dateValue,
+    supplier,
+    item,
+    qty,
+    cost,
+    purchaseAmount: cost * (Number.isFinite(qty) && qty > 0 ? qty : 1),
+    amount: cost * (Number.isFinite(qty) && qty > 0 ? qty : 1)
+  };
+
+  purchaseHistory.unshift(entry);
+  if (purchaseHistory.length > 100) purchaseHistory.pop();
+  renderPurchaseHistory();
+  updateDashboard();
+  clearPurchaseForm();
+  showAppAlert('Purchase saved successfully.', 'Purchase Saved');
+}
+
 function renderRestockHistoryTable() {
   const tbody = document.getElementById('restockHistoryBody');
   if (!tbody) return;
@@ -11415,6 +11494,7 @@ function refreshCurrentView() {
     'customerTab': renderCustomerList,
     'settingsTab': () => { loadSettings(); },
     'stockTab': () => { renderInventoryReport(); renderStockListTable(); renderUnitList(); renderRestockHistoryTable(); },
+    'purchaseTab': () => { renderPurchaseHistory(); },
     'reportsTab': () => { populateReportFilters(); renderReport(); }
   };
   if (renderMap[activeTab.id]) renderMap[activeTab.id]();
@@ -11824,6 +11904,7 @@ async function mainInit() {
           dishCategories = [];
           customers = [];
           restockHistory = [];
+          purchaseHistory = [];
           settings = { ...defaultSettings };
 
           // Close IndexedDB connection without deleting local business data
