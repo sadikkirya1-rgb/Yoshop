@@ -13267,10 +13267,9 @@ function showUpdateNotification() {
 
 function playNotificationSound() {
   try {
-    const AudioContext = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContext) return;
+    const ctx = unlockAudioContext();
+    if (!ctx) return;
 
-    const ctx = new AudioContext();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -13980,30 +13979,42 @@ function printDishLabel(index) {
 
 // ===== Sound Effects (Web Audio API — Shared Context for Mobile/PWA) =====
 let _sharedAudioCtx = null;
+let _audioContextUnlocked = false;
+
+function createAudioContext() {
+  if (_sharedAudioCtx) return _sharedAudioCtx;
+
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextCtor) return null;
+
+  _sharedAudioCtx = new AudioContextCtor();
+  return _sharedAudioCtx;
+}
 
 function getSharedAudioContext() {
-  if (!_sharedAudioCtx) {
-    _sharedAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  }
-  if (_sharedAudioCtx.state === 'suspended') {
-    _sharedAudioCtx.resume().catch(e => console.warn("AudioContext resume failed:", e));
-  }
-  return _sharedAudioCtx;
+  if (!_audioContextUnlocked) return null;
+  return createAudioContext();
 }
 
 // Automatically unlock AudioContext on user gesture (essential for iOS Safari, mobile Chrome, PWA)
 function unlockAudioContext() {
-  const ctx = getSharedAudioContext();
-  if (ctx && ctx.state === 'suspended') {
+  const ctx = createAudioContext();
+  if (!ctx) return null;
+
+  _audioContextUnlocked = true;
+  if (ctx.state === 'suspended') {
     ctx.resume().catch(e => console.warn("AudioContext unlock failed:", e));
   }
+  return ctx;
 }
 window.addEventListener('click', unlockAudioContext, { once: false });
 window.addEventListener('touchstart', unlockAudioContext, { once: false });
+window.addEventListener('keydown', unlockAudioContext, { once: false });
+window.addEventListener('pointerdown', unlockAudioContext, { once: false });
 
 function playQtyChangeSound(isIncrement) {
   try {
-    const ctx = getSharedAudioContext();
+    const ctx = unlockAudioContext() || getSharedAudioContext();
     if (!ctx) return;
 
     const osc = ctx.createOscillator();
