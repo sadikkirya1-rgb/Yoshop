@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -1919,6 +1919,7 @@ let transactions = [];
 let staff = [];
 let dishCategories = [];
 let customers = [];
+let expenses = [];
 let restockHistory = [];
 let lastKnownDishImages = {}; // Cache the last valid image URL for each product name
 
@@ -3320,6 +3321,10 @@ async function saveData(syncToCloud = true, options = {}) {
         allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
       }),
       saveState('units', units || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('expenses', expenses || [], {
         enqueueSync: syncToCloud,
         allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
       }),
@@ -8489,6 +8494,30 @@ function getFilteredDashboardTransactions() {
   });
 }
 
+function getFilteredDashboardExpenses() {
+  const { startDate, endDate } = getDashboardDateRange();
+  const sourceExpenses = Array.isArray(expenses) ? expenses : [];
+
+  return sourceExpenses.filter(expense => {
+    if (!expense || typeof expense !== 'object') return false;
+
+    const dateValue = expense.date
+      || expense.createdAt
+      || expense.timestamp
+      || expense.created_at
+      || expense.expenseDate
+      || expense.expense_date;
+
+    if (!dateValue) return true;
+
+    const expenseDate = new Date(dateValue);
+    if (Number.isNaN(expenseDate.getTime())) return false;
+    if (startDate && expenseDate < startDate) return false;
+    if (endDate && expenseDate > endDate) return false;
+    return true;
+  });
+}
+
 function initializeDashboardFilters() {
   updateQuickFilterButtons(dashboardDateFilterMode);
 }
@@ -8498,10 +8527,12 @@ function updateDashboard() {
   // This ensures the dashboard always shows cards with 0 values
   if (!menu) menu = [];
   if (!transactions) transactions = [];
+  if (!expenses) expenses = [];
 
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
   transactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
   const filteredTransactions = getFilteredDashboardTransactions();
+  const filteredExpenses = getFilteredDashboardExpenses();
   const allProducts = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
   const categoriesForDashboard = new Set([
     ...allProducts.map(d => d && d.category).filter(Boolean),
@@ -8526,8 +8557,10 @@ function updateDashboard() {
     return sum + transactionCost;
   }, 0);
 
-  const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalCost) / totalRevenue) * 100 : 0;
-  const netProfit = totalRevenue - totalCost;
+  const totalExpenses = calculateTotalExpenses(filteredExpenses);
+  const netProfit = totalRevenue - totalCost - totalExpenses;
+  const expensesCardAmount = totalRevenue - netProfit;
+  const profitMargin = totalRevenue > 0 ? ((totalRevenue - totalCost - totalExpenses) / totalRevenue) * 100 : 0;
   const totalBills = filteredTransactions.length;
   const debtSummary = summarizeDebtInvoices({
     customers: Array.isArray(customers) ? customers : [],
@@ -8542,6 +8575,7 @@ function updateDashboard() {
   document.getElementById('netProfit').textContent = formatCurrency(netProfit);
   document.getElementById('totalRevenue').textContent = formatCurrency(totalRevenue);
   document.getElementById('totalBills').textContent = totalBills;
+  document.getElementById('totalExpenses').textContent = formatCurrency(expensesCardAmount);
   document.getElementById('outstandingDebt').textContent = formatCurrency(outstandingDebt);
   document.getElementById('pendingInvoices').textContent = pendingInvoices;
   const avgOrderValue = totalBills > 0 ? totalRevenue / totalBills : 0;
@@ -11429,6 +11463,7 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
     loadState('dishCategories'),
     loadState('customers'),
     loadState('units'),
+    loadState('expenses'),
     loadState('restockHistory'),
     loadState('appAdminSettings'),
     loadState('auditTrail')
@@ -11459,12 +11494,13 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
     { full: 'Pint', short: 'pt' },
     { full: 'Pound', short: 'lb' }
   ]);
-  restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[8] || []);
+  expenses = Array.isArray(localData[8]) ? localData[8] : [];
+  restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[9] || []);
   appAdminSettings = {
     ...defaultAppAdminSettings,
-    ...(localData[9] || {})
+    ...(localData[10] || {})
   };
-  auditTrail = Array.isArray(localData[10]) ? localData[10] : [];
+  auditTrail = Array.isArray(localData[11]) ? localData[11] : [];
 
   settings = normalizeSettings(settings, defaultSettings);
   applyTheme();
@@ -11539,6 +11575,7 @@ async function mainInit() {
       loadState('dishCategories'),
       loadState('customers'),
       loadState('units'),
+      loadState('expenses'),
       loadState('restockHistory'),
       loadState('appAdminSettings'),
       loadState('auditTrail')
@@ -11578,12 +11615,13 @@ async function mainInit() {
       { full: 'Pint', short: 'pt' },
       { full: 'Pound', short: 'lb' }
     ]);
-    restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[8] || []);
+    expenses = Array.isArray(localData[8]) ? localData[8] : [];
+    restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[9] || []);
     appAdminSettings = {
       ...defaultAppAdminSettings,
-      ...(localData[9] || {})
+      ...(localData[10] || {})
     };
-    auditTrail = Array.isArray(localData[10]) ? localData[10] : [];
+    auditTrail = Array.isArray(localData[11]) ? localData[11] : [];
 
     // START UI IMMEDIATELY
     settings = normalizeSettings(settings, defaultSettings);

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses } from '../invoice-utils.mjs';
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [
@@ -76,6 +76,20 @@ test('buildInvoiceListItems includes fully paid account invoices even without an
   assert.equal(rows.length, 1);
   assert.equal(rows[0].invoiceNumber, 'INV-UNKNOWN');
   assert.equal(rows[0].balance, 0);
+});
+
+test('calculateTotalExpenses sums expense records with flexible amount fields', () => {
+  const expenses = [
+    { amount: 15 },
+    { total: 25 },
+    { cost: 10 },
+    { amount: '7.50' },
+    { note: 'skip me' },
+    null,
+    { amount: -5 }
+  ];
+
+  assert.equal(calculateTotalExpenses(expenses), 52.5);
 });
 
 test('summarizeDebtInvoices matches pending invoice totals from transaction balances', () => {

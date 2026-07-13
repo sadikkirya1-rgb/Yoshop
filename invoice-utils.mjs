@@ -275,6 +275,15 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
+export function calculateTotalExpenses(expenses = []) {
+  const expenseList = Array.isArray(expenses) ? expenses : [];
+  return expenseList.reduce((sum, expense) => {
+    if (!expense || typeof expense !== 'object') return sum;
+    const amount = Number(expense.amount ?? expense.total ?? expense.cost ?? expense.value ?? 0);
+    return sum + (Number.isFinite(amount) ? amount : 0);
+  }, 0);
+}
+
 export function summarizeDebtInvoices({ customers = [], transactions = [] } = {}) {
   const invoiceRows = buildInvoiceListItems({ customers, transactions });
   const outstandingDebt = invoiceRows.reduce((sum, row) => {
