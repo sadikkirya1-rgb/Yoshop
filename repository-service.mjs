@@ -14,6 +14,8 @@ const DEFAULT_ENTITY_MAPPINGS = {
   notifications: { entityType: 'notifications', id: 'notifications' },
   customers: { entityType: 'customers', id: 'customers' },
   suppliers: { entityType: 'suppliers', id: 'suppliers' },
+  purchaseHistory: { entityType: 'purchaseOrders', id: 'purchaseHistory' },
+  wastageLossHistory: { entityType: 'expenses', id: 'wastageLossHistory' },
   purchaseOrders: { entityType: 'purchaseOrders', id: 'purchaseOrders' },
   purchaseItems: { entityType: 'purchaseItems', id: 'purchaseItems' },
   expenses: { entityType: 'expenses', id: 'expenses' },

@@ -1124,6 +1124,8 @@ const enterpriseStateMap = {
   auditTrail: { entityType: 'auditLog', id: 'auditTrail' },
   notifications: { entityType: 'notifications', id: 'notifications' },
   suppliers: { entityType: 'suppliers', id: 'suppliers' },
+  purchaseHistory: { entityType: 'purchaseOrders', id: 'purchaseHistory' },
+  wastageLossHistory: { entityType: 'expenses', id: 'wastageLossHistory' },
   purchaseOrders: { entityType: 'purchaseOrders', id: 'purchaseOrders' },
   purchaseItems: { entityType: 'purchaseItems', id: 'purchaseItems' },
   expenses: { entityType: 'expenses', id: 'expenses' },
@@ -1181,6 +1183,11 @@ function getCloudPayloadForSyncAction(action) {
     case 'units': return { units: Array.isArray(value) ? value : [] };
     case 'customers': return { customers: Array.isArray(value) ? value : [] };
     case 'suppliers': return { suppliers: Array.isArray(value) ? value : [] };
+    case 'purchaseOrders': return { purchaseHistory: Array.isArray(value) ? value : [] };
+    case 'expenses':
+      return action.payload?.id === 'wastageLossHistory'
+        ? { wastageLossHistory: Array.isArray(value) ? value : [] }
+        : { expenses: Array.isArray(value) ? value : [] };
     case 'inventoryHistory': return { restockHistory: Array.isArray(value) ? value : [] };
     case 'dashboardCache': return { activeOrders: value || {} };
     case 'settings': return { settings: value || {} };
@@ -1196,9 +1203,12 @@ const PROTECTED_EMPTY_OVERWRITE_FIELDS = [
   'menu',
   'staff',
   'customers',
+  'suppliers',
   'dishCategories',
   'units',
-  'restockHistory'
+  'restockHistory',
+  'purchaseHistory',
+  'wastageLossHistory'
 ];
 
 function isNonEmptyArray(value) {
@@ -3328,6 +3338,18 @@ async function saveData(syncToCloud = true, options = {}) {
         allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
       }),
       saveState('expenses', expenses || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('suppliers', supplierList || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('purchaseHistory', purchaseHistory || [], {
+        enqueueSync: syncToCloud,
+        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+      }),
+      saveState('wastageLossHistory', wastageLossHistory || [], {
         enqueueSync: syncToCloud,
         allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
       }),
@@ -11116,7 +11138,7 @@ function savePurchaseEntry() {
       return;
     }
 
-    const stockItem = (Array.isArray(menu) ? menu : []).find(entry => entry && entry.name === item && entry.stock !== undefined);
+    let stockItem = (Array.isArray(menu) ? menu : []).find(entry => entry && entry.name === item && entry.stock !== undefined);
     const unitCost = Number.isFinite(cost) && cost >= 0 ? cost : Number(stockItem?.costPrice || 0);
     purchaseAmount = calculatePurchaseAmount(parsedQty, unitCost);
     displayItem = item;
@@ -11286,7 +11308,7 @@ function saveWastageLossEntry() {
     return;
   }
 
-  const stockItem = (Array.isArray(menu) ? menu : []).find(entry => entry && entry.name === item && entry.stock !== undefined);
+  let stockItem = (Array.isArray(menu) ? menu : []).find(entry => entry && entry.name === item && entry.stock !== undefined);
   if (!stockItem) {
     showAppAlert('The selected item is not available in stock.', 'Stock Item Missing');
     return;
@@ -11391,6 +11413,7 @@ function saveSupplierEntry() {
     address
   });
   if (supplierList.length > 100) supplierList.pop();
+  saveData().catch(() => {});
   renderSupplierList();
   populatePurchaseFormOptions();
   clearSupplierForm();
@@ -11450,6 +11473,9 @@ function getCloudDataHash(data) {
     settings: normalizeCloudHashValue(data.settings || {}),
     staff: normalizeCloudHashValue(Array.isArray(data.staff) ? data.staff : []),
     customers: normalizeCloudHashValue(Array.isArray(data.customers) ? data.customers : []),
+    suppliers: normalizeCloudHashValue(Array.isArray(data.suppliers) ? data.suppliers : []),
+    purchaseHistory: normalizeCloudHashValue(Array.isArray(data.purchaseHistory) ? data.purchaseHistory : []),
+    wastageLossHistory: normalizeCloudHashValue(Array.isArray(data.wastageLossHistory) ? data.wastageLossHistory : []),
     categories: normalizeCloudHashValue(getCloudCategoryList(data)),
     units: normalizeCloudHashValue(Array.isArray(data.units) ? data.units : []),
     restockHistory: normalizeCloudHashValue(Array.isArray(data.restockHistory) ? data.restockHistory : []),
@@ -11787,6 +11813,9 @@ function setupRealTimeSync(uid) {
                 dishCategories: safeArray(getCloudCategoryList(cloudData), dishCategories),
                 customers: hydrateEnterpriseRecords('customers', safeArray(cloudData.customers, customers)),
                 units: hydrateEnterpriseRecords('units', safeArray(cloudData.units, units)),
+                suppliers: hydrateEnterpriseRecords('suppliers', safeArray(cloudData.suppliers, supplierList)),
+                purchaseHistory: hydrateEnterpriseRecords('purchaseOrders', safeArray(cloudData.purchaseHistory, purchaseHistory)),
+                wastageLossHistory: hydrateEnterpriseRecords('expenses', safeArray(cloudData.wastageLossHistory, wastageLossHistory)),
                 restockHistory: hydrateEnterpriseRecords('inventoryHistory', safeArray(cloudData.restockHistory, restockHistory)),
                 appAdminSettings: pickNewestSettingsRecord(appAdminSettings, cloudData.appAdminSettings, defaultAppAdminSettings)
               };
@@ -11885,6 +11914,9 @@ function setupRealTimeSync(uid) {
                   dishCategories = updateData.dishCategories;
                   customers = updateData.customers;
                   units = updateData.units;
+                  supplierList = updateData.suppliers;
+                  purchaseHistory = updateData.purchaseHistory;
+                  wastageLossHistory = updateData.wastageLossHistory;
                   restockHistory = updateData.restockHistory;
                   appAdminSettings = updateData.appAdminSettings;
 
@@ -11984,6 +12016,7 @@ function refreshCurrentView() {
     'settingsTab': () => { loadSettings(); },
     'stockTab': () => { renderInventoryReport(); renderStockListTable(); renderUnitList(); renderRestockHistoryTable(); },
     'purchaseTab': () => { renderPurchaseHistory(); },
+    'supplierTab': () => { renderSupplierList(); populatePurchaseFormOptions(); },
     'wastageLossTab': () => { renderWastageLossHistory(); },
     'reportsTab': () => { populateReportFilters(); renderReport(); }
   };
@@ -12034,6 +12067,9 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
     loadState('customers'),
     loadState('units'),
     loadState('expenses'),
+    loadState('suppliers'),
+    loadState('purchaseHistory'),
+    loadState('wastageLossHistory'),
     loadState('restockHistory'),
     loadState('appAdminSettings'),
     loadState('auditTrail')
@@ -12065,12 +12101,15 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
     { full: 'Pound', short: 'lb' }
   ]);
   expenses = Array.isArray(localData[8]) ? localData[8] : [];
-  restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[9] || []);
+  supplierList = hydrateEnterpriseRecords('suppliers', localData[9] || []);
+  purchaseHistory = hydrateEnterpriseRecords('purchaseOrders', localData[10] || []);
+  wastageLossHistory = hydrateEnterpriseRecords('expenses', localData[11] || []);
+  restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[12] || []);
   appAdminSettings = {
     ...defaultAppAdminSettings,
-    ...(localData[10] || {})
+    ...(localData[13] || {})
   };
-  auditTrail = Array.isArray(localData[11]) ? localData[11] : [];
+  auditTrail = Array.isArray(localData[14]) ? localData[14] : [];
 
   settings = normalizeSettings(settings, defaultSettings);
   applyTheme();
@@ -12090,6 +12129,10 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
     renderStaffList();
     renderUnitList();
     renderRestockHistoryTable();
+    renderSupplierList();
+    renderPurchaseHistory();
+    renderWastageLossHistory();
+    populatePurchaseFormOptions();
     populateCategoryDropdown();
     populateCategoryFilter();
     populateReportFilters();
@@ -12146,6 +12189,9 @@ async function mainInit() {
       loadState('customers'),
       loadState('units'),
       loadState('expenses'),
+      loadState('suppliers'),
+      loadState('purchaseHistory'),
+      loadState('wastageLossHistory'),
       loadState('restockHistory'),
       loadState('appAdminSettings'),
       loadState('auditTrail')
@@ -12186,12 +12232,15 @@ async function mainInit() {
       { full: 'Pound', short: 'lb' }
     ]);
     expenses = Array.isArray(localData[8]) ? localData[8] : [];
-    restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[9] || []);
+    supplierList = hydrateEnterpriseRecords('suppliers', localData[9] || []);
+    purchaseHistory = hydrateEnterpriseRecords('purchaseOrders', localData[10] || []);
+    wastageLossHistory = hydrateEnterpriseRecords('expenses', localData[11] || []);
+    restockHistory = hydrateEnterpriseRecords('inventoryHistory', localData[12] || []);
     appAdminSettings = {
       ...defaultAppAdminSettings,
-      ...(localData[10] || {})
+      ...(localData[13] || {})
     };
-    auditTrail = Array.isArray(localData[11]) ? localData[11] : [];
+    auditTrail = Array.isArray(localData[14]) ? localData[14] : [];
 
     // START UI IMMEDIATELY
     settings = normalizeSettings(settings, defaultSettings);
