@@ -4768,6 +4768,36 @@ function toggleNav(forceState) {
   }
 }
 
+window.productViewMode = localStorage.getItem('productViewMode') || 'grid';
+
+function setProductViewMode(mode) {
+  window.productViewMode = mode === 'list' ? 'list' : 'grid';
+  try {
+    localStorage.setItem('productViewMode', window.productViewMode);
+  } catch (e) {}
+
+  const gridBtn = document.getElementById('viewModeGridBtn');
+  const listBtn = document.getElementById('viewModeListBtn');
+  if (gridBtn && listBtn) {
+    if (window.productViewMode === 'list') {
+      gridBtn.classList.remove('active');
+      listBtn.classList.add('active');
+    } else {
+      listBtn.classList.remove('active');
+      gridBtn.classList.add('active');
+    }
+  }
+
+  const grids = document.querySelectorAll('.menu-grid');
+  grids.forEach(g => {
+    if (window.productViewMode === 'list') {
+      g.classList.add('list-view');
+    } else {
+      g.classList.remove('list-view');
+    }
+  });
+}
+
 // ===== Menu =====
 function renderMenu() {
   const container = document.getElementById('menuCategories');
@@ -4795,7 +4825,7 @@ function renderMenu() {
       catDiv.innerHTML = `<h4>${cat}</h4>`;
     }
     const grid = document.createElement('div');
-    grid.className = 'menu-grid';
+    grid.className = 'menu-grid' + (window.productViewMode === 'list' ? ' list-view' : '');
     filteredMenu
       .filter(d => (d.category || "Uncategorized") === cat)
       .forEach((dish, i) => {
@@ -11065,6 +11095,11 @@ function renderPurchaseHistory() {
         <td>${entry.item || entry.itemName || '—'}</td>
         <td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td>
         <td class="u-text-right">${formatCurrency(amount)}</td>
+        <td class="u-nowrap">
+          <button class="icon-btn" onclick="previewPurchaseEntry('${entry.id}')" title="Preview">👁️</button>
+          <button class="icon-btn" onclick="editPurchaseEntry('${entry.id}')" title="Edit">✏️</button>
+          <button class="icon-btn" onclick="deletePurchaseEntry('${entry.id}')" title="Delete">🗑️</button>
+        </td>
       </tr>
     `;
   }).join('');
@@ -11291,6 +11326,11 @@ function renderWastageLossHistory() {
         <td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td>
         <td class="u-text-right">${formatCurrency(amount)}</td>
         <td>${entry.note || '—'}</td>
+        <td class="u-nowrap">
+          <button class="icon-btn" onclick="previewWastageLossEntry('${entry.id}')" title="Preview">👁️</button>
+          <button class="icon-btn" onclick="editWastageLossEntry('${entry.id}')" title="Edit">✏️</button>
+          <button class="icon-btn" onclick="deleteWastageLossEntry('${entry.id}')" title="Delete">🗑️</button>
+        </td>
       </tr>
     `;
   }).join('');
@@ -11418,6 +11458,90 @@ function saveSupplierEntry() {
   populatePurchaseFormOptions();
   clearSupplierForm();
   showAppAlert('Supplier saved successfully.', 'Supplier Saved');
+}
+
+function editWastageLossEntry(id) {
+  showAppAlert('Edit functionality coming soon. Please delete and re-add the entry to make changes.', 'Edit Waste/Loss');
+}
+
+function deleteWastageLossEntry(id) {
+  if (!id) return;
+  wastageLossHistory = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).filter(e => e.id !== id);
+  saveData().catch(() => {});
+  renderWastageLossHistory();
+  updateDashboard();
+  showAppAlert('Waste/loss entry deleted.', 'Deleted');
+}
+
+function editPurchaseEntry(id) {
+  showAppAlert('Edit functionality coming soon. Please delete and re-add the entry to make changes.', 'Edit Purchase');
+}
+
+function deletePurchaseEntry(id) {
+  if (!id) return;
+  purchaseHistory = (Array.isArray(purchaseHistory) ? purchaseHistory : []).filter(e => e.id !== id);
+  saveData().catch(() => {});
+  renderPurchaseHistory();
+  updateDashboard();
+  showAppAlert('Purchase entry deleted.', 'Deleted');
+}
+
+function editSupplierEntry(id) {
+  showAppAlert('Edit functionality coming soon. Please delete and re-add the supplier to make changes.', 'Edit Supplier');
+}
+
+function deleteSupplierEntry(id) {
+  if (!id) return;
+  supplierList = (Array.isArray(supplierList) ? supplierList : []).filter(e => e.id !== id);
+  saveData().catch(() => {});
+  renderSupplierList();
+  showAppAlert('Supplier deleted.', 'Deleted');
+}
+
+function clearTableFilters() {
+  document.querySelectorAll('table input[type="text"], table select').forEach(el => {
+    el.value = '';
+  });
+  renderPurchaseHistory();
+  renderWastageLossHistory();
+  renderSupplierList();
+}
+
+function previewPurchaseEntry(id) {
+  const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(record => record.id === id);
+  if (!entry) return;
+  const amount = Number(entry.purchaseAmount ?? entry.amount ?? entry.cost ?? entry.totalCost ?? entry.total ?? entry.value ?? 0);
+  const dateLabel = entry.date ? new Date(entry.date).toLocaleString() : '—';
+  const html = `
+    <div style="text-align: left; font-size: 0.95rem; line-height: 1.6;">
+      <p><strong>Purchase ID:</strong> ${entry.id || '—'}</p>
+      <p><strong>Date:</strong> ${dateLabel}</p>
+      <p><strong>Supplier:</strong> ${entry.supplier || '—'}</p>
+      <p><strong>Item / Service:</strong> ${entry.item || entry.itemName || '—'}</p>
+      <p><strong>Type:</strong> ${entry.purchaseType || 'stock'}</p>
+      <p><strong>Quantity:</strong> ${entry.qty ?? entry.quantity ?? 0}</p>
+      <p><strong>Total Amount:</strong> ${formatCurrency(amount)}</p>
+    </div>
+  `;
+  showAppAlert(html, 'Purchase Record Details');
+}
+
+function previewWastageLossEntry(id) {
+  const entry = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).find(record => record.id === id);
+  if (!entry) return;
+  const amount = Number(entry.amount ?? entry.total ?? entry.cost ?? entry.value ?? 0);
+  const dateLabel = entry.date ? new Date(entry.date).toLocaleString() : '—';
+  const html = `
+    <div style="text-align: left; font-size: 0.95rem; line-height: 1.6;">
+      <p><strong>Record ID:</strong> ${entry.id || '—'}</p>
+      <p><strong>Date:</strong> ${dateLabel}</p>
+      <p><strong>Stock Item:</strong> ${entry.item || entry.itemName || '—'}</p>
+      <p><strong>Quantity:</strong> ${entry.qty ?? entry.quantity ?? 0}</p>
+      <p><strong>Cost / Loss Amount:</strong> ${formatCurrency(amount)}</p>
+      <p><strong>Note:</strong> ${entry.note || '—'}</p>
+    </div>
+  `;
+  showAppAlert(html, 'Waste / Loss Record Details');
 }
 
 function renderRestockHistoryTable() {
@@ -14675,7 +14799,7 @@ Object.assign(window, {
   addSplitBill, removeSplitBill, moveItemToFirstBill, moveItemToUnassigned,
   processSplitPayments, addToOrder, decreaseQty, processBill, clearCurrentOrder, updatePaymentTotals,
   toggleCashPaymentFields, calculateChange, finalizePayment, printDishLabel, getCurrentServerName,
-  deleteMarkedProducts, deleteItem, previewOrder, downloadCurrentReceiptAsPDF, shareReceipt, convertToProduct, openReportPreview,
+  deleteMarkedProducts, deleteItem, previewOrder, downloadCurrentReceiptAsPDF, shareReceipt, convertToProduct, openReportPreview, closeReportPreview, setProductViewMode, previewWastageLossEntry, previewPurchaseEntry, editWastageLossEntry, deleteWastageLossEntry, editPurchaseEntry, deletePurchaseEntry, editSupplierEntry, deleteSupplierEntry, clearTableFilters,
   printReceipt, connectUSBScanner, connectBluetoothScanner,
   connectUSBPrinter, connectBluetoothPrinter, disconnectPrinter, testPrint,
   directPrint, renderTransactions, downloadBillAsPDF, deleteTransaction, handleChangePassword,

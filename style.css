@@ -770,6 +770,75 @@ section>h3 {
   }
 }
 
+/* List View Styles for Shop Menu Products */
+.menu-grid.list-view {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+  width: 100% !important;
+}
+
+.menu-grid.list-view .menu-item {
+  max-width: 100% !important;
+  width: 100% !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  padding: 8px 12px !important;
+  text-align: left !important;
+  gap: 12px !important;
+}
+
+.menu-grid.list-view .menu-item img {
+  width: 60px !important;
+  height: 60px !important;
+  min-width: 60px !important;
+  border-radius: 6px !important;
+  object-fit: cover !important;
+}
+
+.menu-grid.list-view .menu-item-body {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  width: 100% !important;
+  gap: 12px !important;
+  padding: 0 !important;
+}
+
+.menu-grid.list-view .menu-item-header {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  flex: 1 !important;
+  min-width: 120px !important;
+}
+
+.menu-grid.list-view .menu-item h4 {
+  margin: 0 !important;
+  font-size: 0.95em !important;
+}
+
+.menu-grid.list-view .menu-item p {
+  margin: 2px 0 0 0 !important;
+}
+
+.menu-grid.list-view .stock-status {
+  min-width: 90px !important;
+  margin: 0 !important;
+  text-align: center !important;
+}
+
+.menu-grid.list-view .item-controls {
+  margin: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+}
+
+.view-btn.active {
+  background-color: var(--primary) !important;
+  color: white !important;
+}
+
 @media (max-width: 600px) {
   .menu-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3119,6 +3188,201 @@ body.dark-mode #reportOutput table tfoot tr {
 }
 
 /* Hide standard browser spinner buttons on number inputs for cleaner UI */
+/* Success Celebration Modal Specifics */
+.sale-success-card {
+  max-width: 400px;
+  text-align: center;
+  align-items: center;
+}
+
+.celebration-animation-wrapper {
+  position: relative;
+  width: 100px;
+  height: 100px;
+  margin: 10px auto 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Success checkmark animation */
+.success-icon-ring {
+  position: absolute;
+  width: 80px;
+  height: 80px;
+  border: 4px solid rgba(40, 167, 69, 0.2);
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.success-icon-checkmark {
+  font-size: 48px;
+  color: #28a745;
+  font-weight: bold;
+  animation: checkmarkGrow 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+  transform: scale(0);
+}
+
+@keyframes checkmarkGrow {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  10% {
+    transform: scale(0);
+    opacity: 0;
+  }
+
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* Confetti particles */
+.confetti-particle {
+  position: absolute;
+  pointer-events: none;
+  animation: confettiFly 1.2s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+  z-index: 10;
+}
+
+@keyframes confettiFly {
+  0% {
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+
+  100% {
+    transform: translate(calc(-50% + var(--tx)), calc(-50% + var(--ty))) scale(0.3) rotate(360deg);
+    opacity: 0;
+  }
+}
+
+.success-title {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #28a745;
+}
+
+.success-message {
+  margin: 0 0 20px;
+  color: var(--text);
+  opacity: 0.8;
+  font-size: 0.95rem;
+}
+
+.success-details-box {
+  background: var(--bg);
+  border-radius: 12px;
+  padding: 16px;
+  width: 100%;
+  margin-bottom: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  box-sizing: border-box;
+}
+
+.success-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.95rem;
+}
+
+.success-row strong {
+  font-size: 1.1rem;
+}
+
+.payment-badge {
+  background: var(--primary);
+  color: white;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-size: 0.8em;
+  font-weight: bold;
+}
+
+.success-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+}
+
+.success-actions .btn {
+  margin: 0;
+  width: 100%;
+  padding: 12px;
+  font-weight: bold;
+  border-radius: 10px;
+}
+
+@media (max-width: 480px) {
+
+  /* Reduce font sizes and spacings inside paymentItemsEditor on small screens */
+  #paymentItemsEditor>div {
+    min-width: 270px !important;
+    padding: 4px 4px !important;
+  }
+
+  .payment-item-header-row,
+  .payment-item-row {
+    grid-template-columns: 1fr 22px 34px 52px 34px 1fr 18px !important;
+    gap: 4px !important;
+    width: 100% !important;
+  }
+
+  /* Reset all nth-child margin hacks - gap handles spacing now */
+  .payment-item-header-row>*,
+  .payment-item-row>* {
+    margin-left: 0 !important;
+    padding-right: 0 !important;
+  }
+
+  .payment-item-header-row {
+    font-size: 0.58rem !important;
+  }
+
+  .payment-item-row {
+    font-size: 0.66rem !important;
+    padding: 4px 0 !important;
+  }
+
+  .payment-item-row>div:nth-child(2) {
+    font-size: 0.62rem !important;
+  }
+
+  .payment-item-row input {
+    font-size: 0.66rem !important;
+    padding: 2px 0 !important;
+    height: 20px !important;
+  }
+
+  .payment-item-row button {
+    width: 16px !important;
+    height: 16px !important;
+    font-size: 9px !important;
+  }
+}
+
+/* Styles for manual quantity input inside shop products cards */
+.item-controls .qty-input {
+  width: 38px !important;
+  text-align: center;
+  font-weight: bold;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  padding: 2px 0;
+  height: 24px;
+  font-size: 0.85rem;
+  box-sizing: border-box;
+}
+
+/* Hide standard browser spinner buttons on number inputs for cleaner UI */
 .item-controls .qty-input::-webkit-outer-spin-button,
 .item-controls .qty-input::-webkit-inner-spin-button {
   -webkit-appearance: none;
@@ -3126,4 +3390,5 @@ body.dark-mode #reportOutput table tfoot tr {
 }
 .item-controls .qty-input {
   -moz-appearance: textfield;
+  appearance: textfield;
 }
