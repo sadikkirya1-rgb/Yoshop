@@ -847,6 +847,7 @@ section>h3 {
   margin: 0 !important;
   display: flex !important;
   align-items: center !important;
+  flex-shrink: 0 !important;
 }
 
 .view-btn.active {
@@ -3406,4 +3407,64 @@ body.dark-mode #reportOutput table tfoot tr {
 .item-controls .qty-input {
   -moz-appearance: textfield;
   appearance: textfield;
+}
+
+@media (max-width: 600px) {
+  .menu-search-row {
+    flex-wrap: wrap;
+  }
+  #menuHeaderContainer {
+    position: relative;
+  }
+  .view-mode-toggle {
+    position: absolute;
+    right: 5px;
+    bottom: -36px;
+    background: var(--bg, #fff);
+    padding: 2px 4px;
+    border-radius: 6px;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    z-index: 10;
+  }
+}
+
+/* Extreme small screen safeguards for list view so + buttons and inputs don't disappear */
+@media (max-width: 480px) {
+  .menu-grid.list-view .menu-item {
+    padding: 6px !important;
+    gap: 6px !important;
+  }
+  .menu-grid.list-view .menu-item img {
+    width: 50px !important;
+    min-width: 50px !important;
+    height: 50px !important;
+  }
+  .menu-grid.list-view .menu-item-body {
+    gap: 4px !important;
+  }
+  .menu-grid.list-view .menu-item-header {
+    min-width: 0 !important; 
+    overflow: hidden !important;
+  }
+  .menu-grid.list-view .menu-item h4 {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    font-size: 0.85em !important;
+  }
+  .menu-grid.list-view .stock-status {
+    min-width: 60px !important;
+    font-size: 0.7em !important;
+    padding: 2px 4px !important;
+  }
+  .item-controls .qty-input {
+    width: 32px !important;
+    padding: 0 !important;
+  }
+  .item-controls button {
+    width: 28px !important;
+    height: 28px !important;
+    line-height: 26px !important;
+    font-size: 16px !important;
+  }
 }
