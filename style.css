@@ -3412,19 +3412,27 @@ body.dark-mode #reportOutput table tfoot tr {
 @media (max-width: 600px) {
   .menu-search-row {
     flex-wrap: wrap;
+    gap: 8px;
   }
-  #menuHeaderContainer {
-    position: relative;
+  #categoryFilter,
+  #menuSearch {
+    flex: 1 1 40%;
+    min-width: 100px;
+    margin: 0 !important;
+  }
+  .camera-scan-btn,
+  .manual-barcode-btn {
+    flex: 0 0 auto;
+    margin: 0 4px 0 0 !important;
   }
   .view-mode-toggle {
-    position: absolute;
-    right: 5px;
-    bottom: -36px;
-    background: var(--bg, #fff);
-    padding: 2px 4px;
-    border-radius: 6px;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
-    z-index: 10;
+    position: static;
+    margin-left: auto;
+    background: transparent;
+    padding: 0;
+    box-shadow: none;
+    display: flex;
+    align-items: center;
   }
 }
 
