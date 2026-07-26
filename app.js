@@ -8541,7 +8541,7 @@ let staffRevenueChartInstance;
 let reportProfitChartInstance;
 let monthlyRevenueChartInstance;
 
-let dashboardDateFilterMode = 'all';
+let dashboardDateFilterMode = 'today';
 
 function updateQuickFilterButtons(selected) {
   document.querySelectorAll('.dashboard-filter-buttons button').forEach(btn => {
@@ -8640,8 +8640,39 @@ function getFilteredDashboardExpenses() {
   });
 }
 
+
+function getFilteredPurchaseHistory() {
+  const { startDate, endDate } = getDashboardDateRange();
+  const src = Array.isArray(purchaseHistory) ? purchaseHistory : [];
+  if (!startDate && !endDate) return src;
+  return src.filter(e => {
+    if (!e || !e.date) return true;
+    const d = new Date(e.date);
+    if (Number.isNaN(d.getTime())) return true;
+    if (startDate && d < startDate) return false;
+    if (endDate && d > endDate) return false;
+    return true;
+  });
+}
+
+function getFilteredWastageLossHistory() {
+  const { startDate, endDate } = getDashboardDateRange();
+  const src = Array.isArray(wastageLossHistory) ? wastageLossHistory : [];
+  if (!startDate && !endDate) return src;
+  return src.filter(e => {
+    if (!e || !e.date) return true;
+    const d = new Date(e.date);
+    if (Number.isNaN(d.getTime())) return true;
+    if (startDate && d < startDate) return false;
+    if (endDate && d > endDate) return false;
+    return true;
+  });
+}
+
 function initializeDashboardFilters() {
-  updateQuickFilterButtons(dashboardDateFilterMode);
+
+  // Always default to today on app load
+  setDashboardFilter('today');
 }
 
 function updateDashboard() {
@@ -8680,7 +8711,9 @@ function updateDashboard() {
   }, 0);
 
   const totalExpenses = calculateTotalExpenses(filteredExpenses);
-  const purchaseSummary = summarizePurchaseImpact(Array.isArray(purchaseHistory) ? purchaseHistory : []);
+  // Use date-filtered purchase list for purchaseSummary so service expense
+  // and internalRevenueDeduction are scoped to the selected date range
+  const purchaseSummary = summarizePurchaseImpact(getFilteredPurchaseHistory());
   const effectiveRevenue = totalRevenue - purchaseSummary.internalRevenueDeduction;
   const netProfit = effectiveRevenue - totalCost - totalExpenses;
   const expensesCardAmount = effectiveRevenue - netProfit;
@@ -8694,9 +8727,23 @@ function updateDashboard() {
   const pendingInvoices = debtSummary.pendingInvoices;
   const totalPurchases = purchaseSummary.totalPurchases;
   const totalServiceExpense = purchaseSummary.serviceExpense;
-  const totalWastageLoss = calculateTotalWastageLoss(Array.isArray(wastageLossHistory) ? wastageLossHistory : []);
+  // Use date-filtered wastage/purchase for dashboard cards
+  const filteredWastage = getFilteredWastageLossHistory();
+  const filteredPurchaseList = getFilteredPurchaseHistory();
+  const totalWastageLoss = calculateTotalWastageLoss(filteredWastage);
+  const filteredPurchasesTotal = filteredPurchaseList.reduce((sum, e) => {
+    return sum + Number(e.purchaseAmount ?? e.amount ?? e.cost ?? e.totalCost ?? e.total ?? e.value ?? 0);
+  }, 0);
   const stockValueIncrease = purchaseSummary.stockValueIncrease;
   const effectiveStockValue = totalStockValue + stockValueIncrease;
+
+  // Total stock quantity (sum of all inventory item stock units)
+  const totalStockQty = (Array.isArray(menu) ? menu : [])
+    .filter(item => item && item.stock !== undefined)
+    .reduce((sum, item) => sum + Number(item.stock || 0), 0);
+
+  // Adjusted Amounts = total wastage/loss amounts in the filtered period
+  const adjustedAmounts = totalWastageLoss;
 
   // Always update dashboard cards (even with 0 values)
   document.getElementById('stockValue').textContent = formatCurrency(effectiveStockValue);
@@ -8704,7 +8751,7 @@ function updateDashboard() {
   document.getElementById('netProfit').textContent = formatCurrency(netProfit);
   document.getElementById('totalRevenue').textContent = formatCurrency(effectiveRevenue);
   document.getElementById('totalBills').textContent = totalBills;
-  document.getElementById('totalPurchases').textContent = formatCurrency(totalPurchases);
+  document.getElementById('totalPurchases').textContent = formatCurrency(filteredPurchasesTotal);
   document.getElementById('totalExpenses').textContent = formatCurrency(expensesCardAmount);
   document.getElementById('totalServiceExpense').textContent = formatCurrency(totalServiceExpense);
   document.getElementById('totalWastageLoss').textContent = formatCurrency(totalWastageLoss);
@@ -8712,6 +8759,10 @@ function updateDashboard() {
   document.getElementById('pendingInvoices').textContent = pendingInvoices;
   const avgOrderValue = totalBills > 0 ? totalRevenue / totalBills : 0;
   document.getElementById('avgOrderValue').textContent = formatCurrency(avgOrderValue);
+  const stockQtyEl = document.getElementById('totalStockQty');
+  if (stockQtyEl) stockQtyEl.textContent = Math.round(totalStockQty);
+  const adjustedEl = document.getElementById('adjustedAmounts');
+  if (adjustedEl) adjustedEl.textContent = formatCurrency(adjustedAmounts);
 
   updateCurrencyDisplay();
 
@@ -11095,8 +11146,7 @@ function renderPurchaseHistory() {
         <td>${entry.item || entry.itemName || '—'}</td>
         <td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td>
         <td class="u-text-right">${formatCurrency(amount)}</td>
-        <td class="u-nowrap">
-          <button class="icon-btn" onclick="previewPurchaseEntry('${entry.id}')" title="Preview">👁️</button>
+        <td class="u-nowrap" style="text-align:center;">
           <button class="icon-btn" onclick="editPurchaseEntry('${entry.id}')" title="Edit">✏️</button>
           <button class="icon-btn" onclick="deletePurchaseEntry('${entry.id}')" title="Delete">🗑️</button>
         </td>
@@ -11326,8 +11376,7 @@ function renderWastageLossHistory() {
         <td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td>
         <td class="u-text-right">${formatCurrency(amount)}</td>
         <td>${entry.note || '—'}</td>
-        <td class="u-nowrap">
-          <button class="icon-btn" onclick="previewWastageLossEntry('${entry.id}')" title="Preview">👁️</button>
+        <td class="u-nowrap" style="text-align:center;">
           <button class="icon-btn" onclick="editWastageLossEntry('${entry.id}')" title="Edit">✏️</button>
           <button class="icon-btn" onclick="deleteWastageLossEntry('${entry.id}')" title="Delete">🗑️</button>
         </td>
@@ -11461,7 +11510,56 @@ function saveSupplierEntry() {
 }
 
 function editWastageLossEntry(id) {
-  showAppAlert('Edit functionality coming soon. Please delete and re-add the entry to make changes.', 'Edit Waste/Loss');
+  const entry = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).find(e => e.id === id);
+  if (!entry) return;
+  const modal = document.getElementById('editWastageModal');
+  if (!modal) return;
+  document.getElementById('editWastageId').value = id;
+  document.getElementById('editWastageDate').value = entry.date || new Date().toISOString().split('T')[0];
+  document.getElementById('editWastageItem').value = entry.item || entry.itemName || '';
+  document.getElementById('editWastageQty').value = entry.qty ?? entry.quantity ?? 0;
+  document.getElementById('editWastageCost').value = entry.cost ?? 0;
+  document.getElementById('editWastageNote').value = entry.note || '';
+  updateEditWastageTotal();
+  modal.style.display = 'flex';
+}
+
+function closeWastageEditModal() {
+  const modal = document.getElementById('editWastageModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function updateEditWastageTotal() {
+  const qty = Number(document.getElementById('editWastageQty')?.value || 0);
+  const cost = Number(document.getElementById('editWastageCost')?.value || 0);
+  const total = qty * cost;
+  const el = document.getElementById('editWastageTotalDisplay');
+  if (el) el.textContent = `Total: ${formatCurrency(total)}`;
+}
+
+function saveWastageEdit() {
+  const id = document.getElementById('editWastageId')?.value;
+  if (!id) return;
+  const idx = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).findIndex(e => e.id === id);
+  if (idx === -1) return;
+  const qty = Number(document.getElementById('editWastageQty')?.value || 0);
+  const cost = Number(document.getElementById('editWastageCost')?.value || 0);
+  const amount = qty * cost;
+  wastageLossHistory[idx] = {
+    ...wastageLossHistory[idx],
+    date: document.getElementById('editWastageDate')?.value || wastageLossHistory[idx].date,
+    item: document.getElementById('editWastageItem')?.value?.trim() || wastageLossHistory[idx].item,
+    qty,
+    cost,
+    amount,
+    total: amount,
+    note: document.getElementById('editWastageNote')?.value?.trim() || ''
+  };
+  saveData().catch(() => {});
+  renderWastageLossHistory();
+  updateDashboard();
+  closeWastageEditModal();
+  showAppAlert('Waste/loss entry updated.', 'Updated');
 }
 
 function deleteWastageLossEntry(id) {
@@ -11474,7 +11572,57 @@ function deleteWastageLossEntry(id) {
 }
 
 function editPurchaseEntry(id) {
-  showAppAlert('Edit functionality coming soon. Please delete and re-add the entry to make changes.', 'Edit Purchase');
+  const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(e => e.id === id);
+  if (!entry) return;
+  const modal = document.getElementById('editPurchaseModal');
+  if (!modal) return;
+  document.getElementById('editPurchaseId').value = id;
+  document.getElementById('editPurchaseDate').value = entry.date || new Date().toISOString().split('T')[0];
+  document.getElementById('editPurchaseSupplier').value = entry.supplier || '';
+  document.getElementById('editPurchaseItem').value = entry.item || entry.itemName || '';
+  document.getElementById('editPurchaseQty').value = entry.qty ?? entry.quantity ?? 0;
+  document.getElementById('editPurchaseCost').value = entry.cost ?? 0;
+  updateEditPurchaseTotal();
+  modal.style.display = 'flex';
+}
+
+function closePurchaseEditModal() {
+  const modal = document.getElementById('editPurchaseModal');
+  if (modal) modal.style.display = 'none';
+}
+
+function updateEditPurchaseTotal() {
+  const qty = Number(document.getElementById('editPurchaseQty')?.value || 0);
+  const cost = Number(document.getElementById('editPurchaseCost')?.value || 0);
+  const total = qty * cost;
+  const el = document.getElementById('editPurchaseTotalDisplay');
+  if (el) el.textContent = `Total: ${formatCurrency(total)}`;
+}
+
+function savePurchaseEdit() {
+  const id = document.getElementById('editPurchaseId')?.value;
+  if (!id) return;
+  const idx = (Array.isArray(purchaseHistory) ? purchaseHistory : []).findIndex(e => e.id === id);
+  if (idx === -1) return;
+  const qty = Number(document.getElementById('editPurchaseQty')?.value || 0);
+  const cost = Number(document.getElementById('editPurchaseCost')?.value || 0);
+  const purchaseAmount = qty * cost;
+  purchaseHistory[idx] = {
+    ...purchaseHistory[idx],
+    date: document.getElementById('editPurchaseDate')?.value || purchaseHistory[idx].date,
+    supplier: document.getElementById('editPurchaseSupplier')?.value?.trim() || purchaseHistory[idx].supplier,
+    item: document.getElementById('editPurchaseItem')?.value?.trim() || purchaseHistory[idx].item,
+    qty,
+    cost,
+    purchaseAmount,
+    amount: purchaseAmount,
+    total: purchaseAmount
+  };
+  saveData().catch(() => {});
+  renderPurchaseHistory();
+  updateDashboard();
+  closePurchaseEditModal();
+  showAppAlert('Purchase entry updated.', 'Updated');
 }
 
 function deletePurchaseEntry(id) {
@@ -12374,6 +12522,7 @@ async function mainInit() {
 
     // CRITICAL: Render dashboard FIRST while other tabs are hidden
     // This ensures charts initialize on visible canvas elements
+    initializeDashboardFilters();
     updateDashboard();
 
     renderDishesTable();
@@ -14800,6 +14949,7 @@ Object.assign(window, {
   processSplitPayments, addToOrder, decreaseQty, processBill, clearCurrentOrder, updatePaymentTotals,
   toggleCashPaymentFields, calculateChange, finalizePayment, printDishLabel, getCurrentServerName,
   deleteMarkedProducts, deleteItem, previewOrder, downloadCurrentReceiptAsPDF, shareReceipt, convertToProduct, openReportPreview, closeReportPreview, setProductViewMode, previewWastageLossEntry, previewPurchaseEntry, editWastageLossEntry, deleteWastageLossEntry, editPurchaseEntry, deletePurchaseEntry, editSupplierEntry, deleteSupplierEntry, clearTableFilters,
+  closeWastageEditModal, saveWastageEdit, updateEditWastageTotal, closePurchaseEditModal, savePurchaseEdit, updateEditPurchaseTotal,
   printReceipt, connectUSBScanner, connectBluetoothScanner,
   connectUSBPrinter, connectBluetoothPrinter, disconnectPrinter, testPrint,
   directPrint, renderTransactions, downloadBillAsPDF, deleteTransaction, handleChangePassword,

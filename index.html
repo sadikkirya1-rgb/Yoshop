@@ -710,30 +710,31 @@
           </div>
         </div>
         <div class="dashboard-grid">
-          <div class="dashboard-card" data-dashboard-card-key="products">
-            <h4>Products</h4>
-            <p id="menuCount">0</p>
-          </div>
-          <div class="dashboard-card" data-dashboard-card-key="stock">
-            <h4>Stock Value</h4>
-            <p><span class="currency-symbol">$</span><span id="stockValue">0.00</span></p>
-          </div>
-          <div class="dashboard-card" data-dashboard-card-key="profit">
-            <h4>Profit Margin</h4>
-            <p><span id="profitPercentage">0.00</span>%</p>
-          </div>
-          <div class="dashboard-card" data-dashboard-card-key="categories">
-            <h4>Categories</h4>
-            <p id="uniqueCategoriesCount">0</p>
+          <!-- Revenue / Sales Metrics -->
+          <div class="dashboard-card" data-dashboard-card-key="transactions">
+            <h4>Total Sales</h4>
+            <p id="totalBills">0</p>
           </div>
           <div class="dashboard-card" data-dashboard-card-key="revenue">
             <h4>Total Revenue</h4>
             <p><span class="currency-symbol">$</span><span id="totalRevenue">0.00</span></p>
           </div>
-          <div class="dashboard-card" data-dashboard-card-key="transactions">
-            <h4>Total Sales</h4>
-            <p id="totalBills">0</p>
+          <div class="dashboard-card" data-dashboard-card-key="avgOrderValue">
+            <h4>Average Order Value</h4>
+            <p><span class="currency-symbol">$</span><span id="avgOrderValue">0.00</span></p>
           </div>
+
+          <!-- Profitability -->
+          <div class="dashboard-card" data-dashboard-card-key="profit">
+            <h4>Net Profit</h4>
+            <p><span class="currency-symbol">$</span><span id="netProfit">0.00</span></p>
+          </div>
+          <div class="dashboard-card" data-dashboard-card-key="profit-margin">
+            <h4>Profit Margin</h4>
+            <p><span id="profitPercentage">0.00</span>%</p>
+          </div>
+
+          <!-- Expenses / Costs -->
           <div class="dashboard-card" data-dashboard-card-key="purchases">
             <h4>Total Purchases</h4>
             <p><span class="currency-symbol">$</span><span id="totalPurchases">0.00</span></p>
@@ -750,21 +751,37 @@
             <h4>Wastage/Loss</h4>
             <p><span class="currency-symbol">$</span><span id="totalWastageLoss">0.00</span></p>
           </div>
+          <div class="dashboard-card" data-dashboard-card-key="adjustedAmounts" style="border-bottom:4px solid #e67e22;">
+            <h4>Adjusted Amounts</h4>
+            <p><span class="currency-symbol">$</span><span id="adjustedAmounts">0.00</span></p>
+          </div>
+
+          <!-- Debt / Payables -->
           <div class="dashboard-card" data-dashboard-card-key="debt">
             <h4>Outstanding Debt</h4>
             <p><span class="currency-symbol">$</span><span id="outstandingDebt">0.00</span></p>
-          </div>
-          <div class="dashboard-card" data-dashboard-card-key="profit">
-            <h4>Net Profit</h4>
-            <p><span class="currency-symbol">$</span><span id="netProfit">0.00</span></p>
           </div>
           <div class="dashboard-card" data-dashboard-card-key="invoices">
             <h4>Pending Invoices</h4>
             <p id="pendingInvoices">0</p>
           </div>
-          <div class="dashboard-card" data-dashboard-card-key="avgOrderValue">
-            <h4>Average Order Value</h4>
-            <p><span class="currency-symbol">$</span><span id="avgOrderValue">0.00</span></p>
+
+          <!-- Inventory / Catalog -->
+          <div class="dashboard-card" data-dashboard-card-key="products">
+            <h4>Products</h4>
+            <p id="menuCount">0</p>
+          </div>
+          <div class="dashboard-card" data-dashboard-card-key="categories">
+            <h4>Categories</h4>
+            <p id="uniqueCategoriesCount">0</p>
+          </div>
+          <div class="dashboard-card" data-dashboard-card-key="stockQty" style="border-bottom:4px solid #20c997;">
+            <h4>Total Stock Qty</h4>
+            <p id="totalStockQty">0</p>
+          </div>
+          <div class="dashboard-card" data-dashboard-card-key="stock">
+            <h4>Stock Value</h4>
+            <p><span class="currency-symbol">$</span><span id="stockValue">0.00</span></p>
           </div>
         </div>
         <div class="charts-container">
@@ -933,6 +950,7 @@
                   <th>Item</th>
                   <th class="u-text-right">Qty</th>
                   <th class="u-text-right">Cost</th>
+                  <th style="text-align:center;">Actions</th>
                 </tr>
               </thead>
               <tbody id="purchaseHistoryBody"></tbody>
@@ -1023,6 +1041,7 @@
                   <th class="u-text-right">Qty</th>
                   <th class="u-text-right">Cost</th>
                   <th>Note</th>
+                  <th style="text-align:center;">Actions</th>
                 </tr>
               </thead>
               <tbody id="wastageLossHistoryBody"></tbody>
@@ -1030,6 +1049,76 @@
           </div>
         </div>
       </section>
+
+      <!-- Edit Purchase Modal -->
+      <div id="editPurchaseModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;" onclick="if(event.target===this) closePurchaseEditModal()">
+        <div style="background:var(--card); border-radius:16px; padding:24px; width:min(440px,95vw); max-height:90vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+          <h4 style="margin:0 0 16px;">✏️ Edit Purchase</h4>
+          <input type="hidden" id="editPurchaseId">
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Date</label>
+            <input type="date" id="editPurchaseDate" class="u-flex-grow-1">
+          </div>
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Supplier</label>
+            <input type="text" id="editPurchaseSupplier" placeholder="Supplier" class="u-flex-grow-1">
+          </div>
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Item</label>
+            <input type="text" id="editPurchaseItem" placeholder="Item / Service" class="u-flex-grow-1">
+          </div>
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Qty</label>
+            <input type="number" id="editPurchaseQty" placeholder="0" min="0" step="1" class="u-flex-grow-1" oninput="updateEditPurchaseTotal()">
+          </div>
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Unit Cost</label>
+            <input type="number" id="editPurchaseCost" placeholder="0.00" min="0" step="0.01" class="u-flex-grow-1" oninput="updateEditPurchaseTotal()">
+          </div>
+          <div class="input-row u-mb-16" style="justify-content:flex-end;">
+            <span id="editPurchaseTotalDisplay" style="font-weight:bold; color:var(--primary);">Total: $0.00</span>
+          </div>
+          <div class="input-row" style="justify-content:flex-end; gap:8px;">
+            <button class="btn btn-secondary" onclick="closePurchaseEditModal()">Cancel</button>
+            <button class="btn" onclick="savePurchaseEdit()">💾 Save Changes</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Edit Wastage/Loss Modal -->
+      <div id="editWastageModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:9999; align-items:center; justify-content:center;" onclick="if(event.target===this) closeWastageEditModal()">
+        <div style="background:var(--card); border-radius:16px; padding:24px; width:min(440px,95vw); max-height:90vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,0.3);">
+          <h4 style="margin:0 0 16px;">✏️ Edit Waste / Loss</h4>
+          <input type="hidden" id="editWastageId">
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Date</label>
+            <input type="date" id="editWastageDate" class="u-flex-grow-1">
+          </div>
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Item</label>
+            <input type="text" id="editWastageItem" placeholder="Stock item" class="u-flex-grow-1">
+          </div>
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Qty</label>
+            <input type="number" id="editWastageQty" placeholder="0" min="0" step="1" class="u-flex-grow-1" oninput="updateEditWastageTotal()">
+          </div>
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Unit Cost</label>
+            <input type="number" id="editWastageCost" placeholder="0.00" min="0" step="0.01" class="u-flex-grow-1" oninput="updateEditWastageTotal()">
+          </div>
+          <div class="input-row u-mb-10">
+            <label style="min-width:80px;">Note</label>
+            <input type="text" id="editWastageNote" placeholder="Note" class="u-flex-grow-1">
+          </div>
+          <div class="input-row u-mb-16" style="justify-content:flex-end;">
+            <span id="editWastageTotalDisplay" style="font-weight:bold; color:var(--primary);">Total: $0.00</span>
+          </div>
+          <div class="input-row" style="justify-content:flex-end; gap:8px;">
+            <button class="btn btn-secondary" onclick="closeWastageEditModal()">Cancel</button>
+            <button class="btn" onclick="saveWastageEdit()">💾 Save Changes</button>
+          </div>
+        </div>
+      </div>
 
       <!-- Transactions -->
       <section id="transactionsTab">
