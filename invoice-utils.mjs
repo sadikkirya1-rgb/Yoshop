@@ -334,6 +334,38 @@ export function calculateTotalWastageLoss(records = []) {
   }, 0);
 }
 
+export function calculateDashboardRevenueMetrics({ transactions = [], menu = [] } = {}) {
+  const transactionList = Array.isArray(transactions) ? transactions : [];
+  const menuList = Array.isArray(menu) ? menu : [];
+
+  const totals = transactionList.reduce((summary, transaction) => {
+    if (!transaction || typeof transaction !== 'object') return summary;
+
+    const total = Number(transaction.total || 0);
+    const amountPaid = Number(transaction.amountPaid ?? transaction.totalPaid ?? transaction.paidAmount ?? transaction.total ?? 0);
+    const settledRevenue = Math.max(0, Math.min(total, Number.isFinite(amountPaid) ? amountPaid : total));
+
+    const transactionCost = (Array.isArray(transaction.items) ? transaction.items : []).reduce((itemSum, item) => {
+      const dish = menuList.find(d => d.name === item.name);
+      const qty = Number(item?.qty || 0);
+      const unitCost = Number(dish?.costPrice || 0);
+      return itemSum + (unitCost * qty);
+    }, 0);
+
+    const costShare = total > 0 ? (settledRevenue / total) : 0;
+    const realizedCost = transactionCost * costShare;
+
+    summary.totalRevenue += settledRevenue;
+    summary.totalCost += realizedCost;
+    return summary;
+  }, { totalRevenue: 0, totalCost: 0 });
+
+  return {
+    ...totals,
+    netProfit: totals.totalRevenue - totals.totalCost
+  };
+}
+
 export function summarizeDebtInvoices({ customers = [], transactions = [] } = {}) {
   const invoiceRows = buildInvoiceListItems({ customers, transactions });
   const outstandingDebt = invoiceRows.reduce((sum, row) => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics } from '../invoice-utils.mjs';
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [
@@ -110,6 +110,35 @@ test('calculatePurchaseAmount uses quantity and unit cost to compute the total p
   assert.equal(calculatePurchaseAmount(4, 2.5), 10);
   assert.equal(calculatePurchaseAmount(0, 5), 5);
   assert.equal(calculatePurchaseAmount('3', '1.25'), 3.75);
+});
+
+test('calculateDashboardRevenueMetrics excludes outstanding balances from dashboard revenue and profit', () => {
+  const menu = [
+    { name: 'Burger', costPrice: 5 }
+  ];
+
+  const transactions = [
+    {
+      date: '2024-10-01T10:00:00.000Z',
+      total: 100,
+      amountPaid: 40,
+      balance: -60,
+      items: [{ name: 'Burger', qty: 1, price: 100 }]
+    },
+    {
+      date: '2024-10-02T10:00:00.000Z',
+      total: 80,
+      amountPaid: 80,
+      balance: 0,
+      items: [{ name: 'Burger', qty: 1, price: 80 }]
+    }
+  ];
+
+  const summary = calculateDashboardRevenueMetrics({ transactions, menu });
+
+  assert.equal(summary.totalRevenue, 120);
+  assert.equal(summary.totalCost, 7);
+  assert.equal(summary.netProfit, 113);
 });
 
 test('summarizePurchaseImpact separates purchase totals, internal deductions, stock value impact, and service expense', () => {

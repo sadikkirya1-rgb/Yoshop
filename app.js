@@ -18,7 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -6466,25 +6466,41 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const source = transactionData || {};
   const invoiceNumber = normalizeInvoiceNumber(source.invoiceNumber || source.invoiceNo || getInvoiceNumber(source)) || 'INV-UNKNOWN';
   const invoiceDate = source.date ? new Date(source.date).toLocaleString() : new Date().toLocaleString();
-  const customerName = source.customerName || source.customer?.name || 'Walk-in Customer';
-  const customerPhone = source.customerPhone || source.customer?.phone || '';
-  const customerAddress = source.customerAddress || source.customer?.address || '';
+  const customerName = source.customerName || source.customer?.name || source.customerNameReal || 'Walk-in Customer';
+  const customerPhone = source.customerPhone || source.customerContact || source.contact || source.customer?.phone || source.phone || '';
+  const customerAddress = source.customerAddress || source.address || source.customer?.address || '';
   const paymentMethod = source.paymentMethod || source.payment?.method || 'Cash';
-  const paymentStatus = source.paymentStatus || source.payment?.status || source.status || 'PAID';
+  const receiptType = source.receiptType || source.type || 'transaction';
+  const tableNo = source.tableNo || source.table || 'Shop';
+  const amountPaid = Number(source.amountPaid ?? source.totalPaid ?? source.paidAmount ?? 0);
+  const discountAmount = Number(source.discount?.amount ?? source.discountAmount ?? 0);
+  const paymentStatus = source.paymentStatus || source.payment?.status || source.status || (Number.isFinite(Number(source.balance)) && Number(source.balance) !== 0 ? 'PENDING' : 'PAID');
   const cashier = source.cashier || source.staffName || source.servedBy || 'Admin';
   const note = source.note || 'Please keep this invoice for warranty and return purposes.';
   const currencySymbol = getCurrencySymbol();
   const storeName = settings?.name || 'YO SHOP';
   const storeAddress = settings?.address || 'Smart POS & Inventory System';
   const logoUrl = sanitizeLogoUrl(settings?.logo);
+  const safeStoreName = escapeHtml(storeName);
+  const safeCustomerName = escapeHtml(customerName);
+  const safeCustomerPhone = escapeHtml(customerPhone);
+  const safeCustomerAddress = escapeHtml(customerAddress);
+  const safePaymentMethod = escapeHtml(paymentMethod);
+  const safePaymentStatus = escapeHtml(paymentStatus);
+  const safeCashier = escapeHtml(cashier);
+  const safeNote = escapeHtml(note);
+  const safeTableNo = escapeHtml(tableNo);
+  const safeReceiptType = escapeHtml(receiptType === 'customerAdjustment' ? 'Customer Adjustment' : receiptType === 'customerDebtInvoice' ? 'Customer Debt Invoice' : 'Transaction Invoice');
   const logoHtml = logoUrl
     ? `<img src="${logoUrl}" alt="Store Logo" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" style="width:70px;height:70px;object-fit:contain;border-radius:50%;"><div class="logo-circle" style="display:none;">${(storeName || 'Y').charAt(0).toUpperCase()}</div>`
     : `<div class="logo-circle">${(storeName || 'Y').charAt(0).toUpperCase()}</div>`;
 
   const rawItems = Array.isArray(source.items) ? source.items : [];
-  let subtotal = 0;
+  let subtotal = Number(source.subtotal ?? source.subTotal ?? 0);
+  let grandTotal = Number(source.total ?? source.grandTotal ?? source.amount ?? 0);
+  let balance = Number(source.balance ?? source.outstandingBalance ?? 0);
   const itemsHtml = rawItems.length > 0 ? rawItems.map((item, index) => {
-    const name = item?.name || item?.productName || item?.itemName || 'Item';
+    const name = escapeHtml(item?.name || item?.productName || item?.itemName || 'Item');
     const qty = Number(item?.qty || item?.quantity || 1);
     const price = Number(item?.price || item?.unitPrice || item?.cost || 0);
     const total = qty * price;
@@ -6503,10 +6519,33 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
       </tr>`;
 
   const taxAmount = Number(source.taxAmount ?? source.tax ?? source.vatAmount ?? source.vat ?? 0);
-  const grandTotal = subtotal + taxAmount;
+  if (!subtotal && rawItems.length > 0) {
+    subtotal = rawItems.reduce((sum, item) => sum + (Number(item?.price || item?.unitPrice || item?.cost || 0) * Number(item?.qty || item?.quantity || 1)), 0);
+  }
+  if (!grandTotal || grandTotal === 0) {
+    grandTotal = subtotal + taxAmount - discountAmount;
+  }
+  if (!balance && amountPaid) {
+    balance = amountPaid - grandTotal;
+  }
+  const adjustmentsArr = Array.isArray(source.adjustments) && source.adjustments.length
+    ? source.adjustments
+    : (source.lastAdjustment ? [source.lastAdjustment] : []);
+  const adjustmentRowsHtml = adjustmentsArr.map((adj) => {
+    const methodLabel = adj?.method ? String(adj.method) : 'On Account';
+    const adjAmount = Number(adj?.amount || 0);
+    const adjDate = adj?.date ? new Date(adj.date).toLocaleDateString() : '';
+    return `<tr><td>Adjusted (${methodLabel})${adjDate ? ` <small>(${adjDate})</small>` : ''}</td><td align="right">-${currencySymbol}${formatCurrency(adjAmount)}</td></tr>`;
+  }).join('');
   const subtotalText = `${currencySymbol}${formatCurrency(subtotal)}`;
+  const discountText = `${currencySymbol}${formatCurrency(discountAmount)}`;
   const taxText = `${currencySymbol}${formatCurrency(taxAmount)}`;
+  const paidText = `${currencySymbol}${formatCurrency(amountPaid)}`;
+  const balanceText = `${currencySymbol}${formatCurrency(balance)}`;
   const grandText = `${currencySymbol}${formatCurrency(grandTotal)}`;
+  const transactionId = String(source.id || source.transactionId || source.recordId || source.invoiceNumber || source.date || '').trim();
+  const barcodeImgUrl = getBarcodeDataUrl(transactionId || invoiceNumber);
+  const barcodeHtml = barcodeImgUrl ? `<div style="text-align:center; margin: 18px 0 8px;"><img src="${barcodeImgUrl}" style="width: 85%; max-height: 60px;"></div>` : '';
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -6518,7 +6557,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     :root { --primary-light: #ff6b35; --primary-hover-light: #ff854f; --bg-light: #f0f2f5; --card-light: #fff; --text-light: #333; --border-light: #eee; --primary-dark: #ff854f; --primary-hover-dark: #ff6b35; --primary: #ff6b35; --primary-hover: #ff854f; --secondary:#10b981; --light:#f8fafc; --border:#dbe4ee; --text:#334155; }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', Arial, sans-serif; }
     body { background:#edf2f7; padding:30px; color:var(--text); }
-    .invoice { width:210mm; height:297mm; background:white; margin:auto; border-radius:14px; overflow:hidden; box-shadow:0 15px 35px rgba(0,0,0,.15); }
+    .invoice { width:210mm; min-height:297mm; background:white; margin:auto; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(0,0,0,.15); }
     .header { background:linear-gradient(135deg,#2563eb,#1d4ed8,#10b981); color:white; padding:30px; display:flex; justify-content:space-between; align-items:center; }
     .logo { display:flex; align-items:center; gap:15px; }
     .logo-circle { width:70px; height:70px; background:white; color:#2563eb; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:34px; font-weight:bold; }
@@ -6526,21 +6565,24 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .logo p { opacity:.9; }
     .invoice-title { text-align:right; }
     .invoice-title h2 { font-size:38px; }
-    .content { padding:30px; }
-    .cards { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:25px; }
-    .card { background:#f8fafc; border-left:5px solid var(--primary); padding:18px; border-radius:10px; }
-    .card h3 { color:var(--primary); margin-bottom:10px; }
+    .content { padding:28px; }
+    .cards { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:22px; }
+    .card { background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%); border:1px solid #dbe4ee; border-left:5px solid var(--primary); padding:18px; border-radius:12px; box-shadow:0 6px 16px rgba(15,23,42,0.04); }
+    .card h3 { color:var(--primary); margin-bottom:10px; font-size:1rem; text-transform:uppercase; letter-spacing:0.05em; }
+    .card p { margin:6px 0; line-height:1.45; color:#475569; }
     .badge { display:inline-block; padding:6px 14px; background:#10b981; color:white; border-radius:30px; font-size:13px; font-weight:bold; }
-    table { width:100%; border-collapse:collapse; margin-top:20px; }
-    thead { background:var(--primary); color:white; }
-    th { padding:14px; }
-    td { padding:13px; border-bottom:1px solid #eee; }
+    table { width:100%; border-collapse:collapse; margin-top:18px; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
+    thead { background:linear-gradient(135deg,#ff7b42,#ff6b35); color:white; }
+    th { padding:14px; font-size:0.9rem; text-transform:uppercase; letter-spacing:0.03em; }
+    td { padding:13px; border-bottom:1px solid #e5e7eb; }
     tbody tr:nth-child(even) { background:#f8fafc; }
-    .summary { margin-top:30px; width:360px; margin-left:auto; }
-    .summary td { padding:12px; border:none; }
-    .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:22px; font-weight:bold; border-radius:8px; }
-    .footer { margin-top:40px; text-align:center; }
-    .note { margin-top:20px; padding:18px; background:#eff6ff; border-left:5px solid var(--primary); border-radius:8px; color:#555; }
+    .summary { margin-top:26px; width:380px; margin-left:auto; background:#f8fafc; border:1px solid #dbe4ee; border-radius:14px; padding:10px; box-shadow:0 8px 18px rgba(15,23,42,0.05); }
+    .summary table { margin-top:0; border:none; }
+    .summary td { padding:11px 12px; border:none; }
+    .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:20px; font-weight:bold; border-radius:10px; }
+    .footer { margin-top:30px; text-align:center; }
+    .footer p { font-size:1rem; }
+    .note { margin-top:18px; padding:16px 18px; background:linear-gradient(135deg,#eff6ff,#f8fafc); border-left:5px solid var(--primary); border-radius:10px; color:#475569; font-size:0.94rem; }
     .actions { display:flex; justify-content:center; gap:12px; margin:25px auto; }
     .preview-controls { position:sticky; top:0; z-index:100; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; row-gap:8px; padding:10px 12px; width:100%; max-width:100%; box-sizing:border-box; background:rgba(255,255,255,0.95); border-bottom:1px solid #ddd; backdrop-filter:blur(6px); }
     .preview-controls .zoom-group,
@@ -6671,15 +6713,19 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
           <div class="cards">
             <div class="card">
               <h3>Customer</h3>
-              <p>${customerName}</p>
-              <p>${customerPhone || ''}</p>
-              <p>${customerAddress || ''}</p>
+              <p>${safeCustomerName}</p>
+              <p>${safeCustomerPhone || '—'}</p>
+              <p>${safeCustomerAddress || '—'}</p>
             </div>
             <div class="card">
               <h3>Payment</h3>
-              <p>Method: <b>${paymentMethod}</b></p>
-              <p>Status: <span class="badge">${paymentStatus}</span></p>
-              <p>Cashier: <b>${cashier}</b></p>
+              <p>Invoice Type: <b>${safeReceiptType}</b></p>
+              <p>Table/Account: <b>${safeTableNo}</b></p>
+              <p>Method: <b>${safePaymentMethod}</b></p>
+              <p>Status: <span class="badge">${safePaymentStatus}</span></p>
+              <p>Cashier: <b>${safeCashier}</b></p>
+              <p>Amount Paid: <b>${paidText}</b></p>
+              <p>Balance: <b>${balanceText}</b></p>
             </div>
           </div>
           <table>
@@ -6697,14 +6743,19 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
           <div class="summary">
             <table>
               <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
+              <tr><td>Discount</td><td align="right">${discountText}</td></tr>
               <tr><td>VAT</td><td align="right">${taxText}</td></tr>
+              ${adjustmentRowsHtml}
+              <tr><td>Amount Paid</td><td align="right">${paidText}</td></tr>
+              <tr><td>Balance</td><td align="right">${balanceText}</td></tr>
               <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
             </table>
           </div>
           <div class="footer">
-            <p><b>Thank you for shopping with ${storeName} ❤️</b></p>
+            <p><b>Thank you for shopping with ${safeStoreName} ❤️</b></p>
           </div>
-          <div class="note">${note}</div>
+          ${barcodeHtml}
+          <div class="note">${safeNote}</div>
         </div>
       </div>
     </div>
@@ -8700,15 +8751,13 @@ function updateDashboard() {
     .filter(item => item.stock !== undefined) // Filter for items with a stock property (raw ingredients)
     .reduce((sum, item) => sum + (item.stock * (item.costPrice || 0)), 0);
 
-  // Calculate total revenue and total cost of goods sold (COGS) from filtered transactions
-  const totalRevenue = filteredTransactions.reduce((sum, t) => sum + (t.total || 0), 0);
-  const totalCost = filteredTransactions.reduce((sum, t) => {
-    const transactionCost = (t.items || []).reduce((itemSum, item) => {
-      const dish = menu.find(d => d.name === item.name);
-      return itemSum + ((dish ? dish.costPrice : 0) * (item.qty || 0));
-    }, 0);
-    return sum + transactionCost;
-  }, 0);
+  const dashboardRevenueMetrics = calculateDashboardRevenueMetrics({
+    transactions: filteredTransactions,
+    menu
+  });
+
+  const totalRevenue = dashboardRevenueMetrics.totalRevenue;
+  const totalCost = dashboardRevenueMetrics.totalCost;
 
   const totalExpenses = calculateTotalExpenses(filteredExpenses);
   // Use date-filtered purchase list for purchaseSummary so service expense
