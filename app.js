@@ -481,17 +481,29 @@ function getEnterpriseMirrorSignature() {
 }
 
 async function mirrorEnterpriseRecordsToLocalStores(options = {}) {
-  if (!localRepositoryReady || !localRepository || typeof localRepository.saveEntity !== 'function') {
+  if (!localRepositoryReady || !localRepository) {
+    return;
+  }
+
+  const saveEntity = localRepository?.saveEntity;
+  const getMetadata = localRepository?.getMetadata;
+  const setMetadata = localRepository?.setMetadata;
+
+  if (typeof saveEntity !== 'function') {
     return;
   }
 
   const signature = getEnterpriseMirrorSignature();
   const metadataKey = 'enterpriseRecordMirrorSignature';
 
-  if (!options.force && typeof localRepository.getMetadata === 'function') {
-    const previousSignature = await localRepository.getMetadata(metadataKey);
-    if (previousSignature === signature) {
-      return;
+  if (!options.force && typeof getMetadata === 'function') {
+    try {
+      const previousSignature = await getMetadata(metadataKey);
+      if (previousSignature === signature) {
+        return;
+      }
+    } catch (error) {
+      console.warn('[MIGRATION] Unable to read mirror metadata:', error);
     }
   }
 
@@ -510,15 +522,19 @@ async function mirrorEnterpriseRecordsToLocalStores(options = {}) {
   await Promise.allSettled(
     mirrorJobs
       .filter(([, record]) => record && typeof record === 'object')
-      .map(([entityType, record]) => localRepository.saveEntity(entityType, record, {
+      .map(([entityType, record]) => saveEntity.call(localRepository, entityType, record, {
         enqueueSync: false,
         preserveVersion: true
       }))
   );
 
-  if (typeof localRepository.setMetadata === 'function') {
-    await localRepository.setMetadata(metadataKey, signature);
-    await localRepository.setMetadata('enterpriseRecordMirrorLastRunAt', new Date().toISOString());
+  if (typeof setMetadata === 'function') {
+    try {
+      await setMetadata(metadataKey, signature);
+      await setMetadata('enterpriseRecordMirrorLastRunAt', new Date().toISOString());
+    } catch (error) {
+      console.warn('[MIGRATION] Unable to write mirror metadata:', error);
+    }
   }
 }
 
@@ -10100,49 +10116,6 @@ function renderInvoices() {
   const filteredRows = filterInvoiceRowsByStatus(dateFilteredRows, currentInvoiceFilter);
 
   const currencySymbol = getCurrencySymbol();
-  const rowsHtml = filteredRows.map((row, idx) => {
-    const balance = Number(row.balance || 0);
-    const total = Number(row.total || 0);
-    const amountPaid = Number(row.amountPaid || 0);
-    const customer = row.customer;
-    const previewData = row.previewData;
-    const invoiceNumber = row.invoiceNumber || 'INV-UNKNOWN';
-    const previewDataJson = previewData ? JSON.stringify(previewData).replace(/'/g, "\\'") : 'null';
-    const lastDate = row.date ? new Date(row.date).toLocaleString() : new Date().toLocaleString();
-    const allAdjustments = Array.isArray(previewData?.adjustments) ? previewData.adjustments : [];
-    const lastAdjustment = previewData?.lastAdjustment || (allAdjustments.length > 0 ? allAdjustments[allAdjustments.length - 1] : null);
-    const adjAmount = lastAdjustment ? (parseFloat(lastAdjustment.amount) || 0) : 0;
-    const adjMethod = lastAdjustment ? (lastAdjustment.method || '') : '';
-    const adjustedHtml = lastAdjustment ? `${adjMethod ? adjMethod + ' ' : ''}${currencySymbol}${formatCurrency(adjAmount)}` : '-';
-
-    const isPaid = Math.abs(balance) === 0;
-    const adjustDisabledAttr = isPaid || !customer?.id ? 'disabled' : '';
-    const adjustStyle = isPaid || !customer?.id ? 'opacity:0.45; pointer-events:none;' : '';
-    const statusBadge = isPaid
-      ? `<span style="margin-left:8px; padding:4px 8px; background:#28a745; color:#fff; border-radius:6px; font-size:0.85em;">Cleared</span>`
-      : `<span style="margin-left:8px; padding:4px 8px; background:#ffc107; color:#212529; border-radius:6px; font-size:0.85em;">Pending</span>`;
-
-    return `<tr class="u-cursor-pointer">
-      <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('invoiceListBody','selectAllInvoiceRows')"></td>
-      <td>${idx + 1}</td>
-      <td>${lastDate}</td>
-      <td>${row.customerName || 'Unknown Customer'}</td>
-      <td>${invoiceNumber}</td>
-      <td style="text-align: right;"><strong><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(total)}</strong></td>
-      <td style="text-align: right;"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(amountPaid)}</td>
-      <td style="text-align: right; color:${balance < 0 ? '#dc3545' : '#28a745'}; font-weight:bold;">${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}</td>
-      <td style="text-align: right;">${adjustedHtml}</td>
-      <td style="text-align: right; white-space: nowrap;">
-        <div class="invoice-action-group" style="display:inline-flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; align-items:center; min-width:0;">
-          <button class="btn invoice-action-btn" type="button" ${adjustDisabledAttr} style="${adjustStyle}" onclick='showInvoiceAdjustmentPrompt(${JSON.stringify(String(row.transaction?.id || row.transaction?.invoiceNumber || ''))}); event.stopPropagation();'>Adjust</button>
-          <button class="btn invoice-action-btn" type="button" title="BC Print" onclick='previewOrder(${previewDataJson}); event.stopPropagation();'>BC🖨️</button>
-          <button class="btn invoice-action-btn" type="button" title="A4 Print" onclick='openA4InvoicePreview(${previewDataJson}); event.stopPropagation();'>A4🖨️</button>
-          ${statusBadge}
-        </div>
-      </td>
-    </tr>`;
-  }).join('');
-
   const invoiceCountEl = document.getElementById('invoiceCountInfo');
   if (invoiceCountEl) {
     invoiceCountEl.textContent = `Showing ${filteredRows.length} of ${invoiceRows.length} debt invoices`;
@@ -10159,7 +10132,142 @@ function renderInvoices() {
 
   const tbody = document.getElementById('invoiceListBody');
   if (tbody) {
-    tbody.innerHTML = rowsHtml || '<tr><td colspan="10" class="u-text-center">No debt invoices found.</td></tr>';
+    tbody.innerHTML = '';
+
+    if (filteredRows.length === 0) {
+      const emptyRow = document.createElement('tr');
+      const emptyCell = document.createElement('td');
+      emptyCell.colSpan = 10;
+      emptyCell.className = 'u-text-center';
+      emptyCell.textContent = 'No debt invoices found.';
+      emptyRow.appendChild(emptyCell);
+      tbody.appendChild(emptyRow);
+    } else {
+      filteredRows.forEach((row, idx) => {
+        const balance = Number(row.balance || 0);
+        const total = Number(row.total || 0);
+        const amountPaid = Number(row.amountPaid || 0);
+        const customer = row.customer;
+        const previewData = row.previewData;
+        const invoiceNumber = row.invoiceNumber || 'INV-UNKNOWN';
+        const lastDate = row.date ? new Date(row.date).toLocaleString() : new Date().toLocaleString();
+        const allAdjustments = Array.isArray(previewData?.adjustments) ? previewData.adjustments : [];
+        const lastAdjustment = previewData?.lastAdjustment || (allAdjustments.length > 0 ? allAdjustments[allAdjustments.length - 1] : null);
+        const adjAmount = lastAdjustment ? (parseFloat(lastAdjustment.amount) || 0) : 0;
+        const adjMethod = lastAdjustment ? (lastAdjustment.method || '') : '';
+        const adjustedText = lastAdjustment ? `${adjMethod ? adjMethod + ' ' : ''}${currencySymbol}${formatCurrency(adjAmount)}` : '-';
+
+        const isPaid = Math.abs(balance) === 0;
+        const adjustDisabled = isPaid || !customer?.id;
+        const adjustButton = document.createElement('button');
+        adjustButton.className = 'btn invoice-action-btn';
+        adjustButton.type = 'button';
+        adjustButton.textContent = 'Adjust';
+        adjustButton.disabled = adjustDisabled;
+        adjustButton.style.cssText = adjustDisabled ? 'opacity:0.45; pointer-events:none;' : '';
+        adjustButton.addEventListener('click', event => {
+          event.stopPropagation();
+          showInvoiceAdjustmentPrompt(row.transaction?.id || row.transaction?.invoiceNumber || '');
+        });
+
+        const bcButton = document.createElement('button');
+        bcButton.className = 'btn invoice-action-btn';
+        bcButton.type = 'button';
+        bcButton.title = 'BC Print';
+        bcButton.textContent = 'BC🖨️';
+        bcButton.addEventListener('click', event => {
+          event.stopPropagation();
+          previewOrder(previewData);
+        });
+
+        const a4Button = document.createElement('button');
+        a4Button.className = 'btn invoice-action-btn';
+        a4Button.type = 'button';
+        a4Button.title = 'A4 Print';
+        a4Button.textContent = 'A4🖨️';
+        a4Button.addEventListener('click', event => {
+          event.stopPropagation();
+          openA4InvoicePreview(previewData);
+        });
+
+        const statusBadge = document.createElement('span');
+        statusBadge.style.marginLeft = '8px';
+        statusBadge.style.padding = '4px 8px';
+        statusBadge.style.borderRadius = '6px';
+        statusBadge.style.fontSize = '0.85em';
+        statusBadge.style.display = 'inline-block';
+        if (isPaid) {
+          statusBadge.style.background = '#28a745';
+          statusBadge.style.color = '#fff';
+          statusBadge.textContent = 'Cleared';
+        } else {
+          statusBadge.style.background = '#ffc107';
+          statusBadge.style.color = '#212529';
+          statusBadge.textContent = 'Pending';
+        }
+
+        const actionWrapper = document.createElement('div');
+        actionWrapper.className = 'invoice-action-group';
+        actionWrapper.style.cssText = 'display:inline-flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; align-items:center; min-width:0;';
+        actionWrapper.appendChild(adjustButton);
+        actionWrapper.appendChild(bcButton);
+        actionWrapper.appendChild(a4Button);
+        actionWrapper.appendChild(statusBadge);
+
+        const rowElement = document.createElement('tr');
+        rowElement.className = 'u-cursor-pointer';
+
+        const checkboxTd = document.createElement('td');
+        checkboxTd.style.textAlign = 'center';
+        const checkbox = document.createElement('input');
+        checkbox.type = 'checkbox';
+        checkbox.className = 'table-row-select';
+        checkbox.addEventListener('change', () => updateSelectAllHeader('invoiceListBody', 'selectAllInvoiceRows'));
+        checkboxTd.appendChild(checkbox);
+
+        const cells = [
+          checkboxTd,
+          idx + 1,
+          lastDate,
+          row.customerName || 'Unknown Customer',
+          invoiceNumber,
+          `${currencySymbol}${formatCurrency(total)}`,
+          `${currencySymbol}${formatCurrency(amountPaid)}`,
+          `${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}`,
+          adjustedText
+        ];
+
+        const textCellStyles = [
+          null,
+          null,
+          null,
+          null,
+          null,
+          'text-align: right;',
+          'text-align: right;',
+          `text-align: right; color:${balance < 0 ? '#dc3545' : '#28a745'}; font-weight:bold;`,
+          'text-align: right;'
+        ];
+
+        cells.forEach((value, index) => {
+          if (index === 0) return;
+          const cell = document.createElement('td');
+          if (textCellStyles[index]) cell.style.cssText = textCellStyles[index];
+          cell.textContent = value;
+          rowElement.appendChild(cell);
+        });
+
+        const actionTd = document.createElement('td');
+        actionTd.style.cssText = 'text-align: right; white-space: nowrap;';
+        actionTd.appendChild(actionWrapper);
+        rowElement.appendChild(actionTd);
+
+        // Append the checkbox cell at the beginning of the row.
+        rowElement.insertBefore(checkboxTd, rowElement.firstChild);
+
+        tbody.appendChild(rowElement);
+      });
+    }
   }
 }
 
