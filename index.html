@@ -76,7 +76,7 @@
     </button>
     <div class="header-actions">
       <button id="header-sync-status" class="icon-btn" onclick="syncNow()" title="Cloud Sync" aria-label="Cloud Sync">
-        <span class="header-sync-icon">☁️</span>
+        <span class="header-sync-icon">🔴</span>
         <span id="connectivity-status" class="header-sync-text" aria-hidden="true"></span>
         <span id="sync-badge" class="sync-badge" style="display:none;">Pending</span>
       </button>
@@ -1170,6 +1170,8 @@
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllSales" onchange="toggleSelectAllRows('transactionHistoryBody', this.checked); updateSelectAllHeader('transactionHistoryBody','selectAllSales')"></th>
                 <th>#</th>
                 <th>Date</th>
+                <th>Type</th>
+                <th>Status</th>
                 <th style="text-align: right;">Total</th>
                 <th style="text-align: right;">Action</th>
               </tr>

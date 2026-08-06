@@ -3828,17 +3828,25 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
   const statusEl = document.getElementById('connectivity-status');
   const syncBadgeEl = document.getElementById('sync-badge');
   const syncBtn = document.getElementById('header-sync-status');
+  const syncIcon = syncBtn ? syncBtn.querySelector('.header-sync-icon') : null;
+  const shouldPulse = /syncing/i.test(String(title || '')) || state === '🔄' || isSyncing === true;
 
   if (statusEl) {
     statusEl.textContent = '';
     statusEl.title = title;
-    statusEl.classList.toggle('sync-pulse', /syncing/i.test(String(title || '')) || state === '🔄' || isSyncing === true);
+    statusEl.classList.toggle('sync-pulse', false);
   }
 
   if (syncBtn) {
     syncBtn.title = title;
     syncBtn.setAttribute('data-tooltip', title);
     syncBtn.setAttribute('aria-label', title);
+    syncBtn.classList.toggle('sync-pulse', shouldPulse);
+  }
+
+  if (syncIcon) {
+    syncIcon.textContent = state || '🔴';
+    syncIcon.classList.toggle('sync-pulse', shouldPulse);
   }
 
   if (syncBadgeEl) {
@@ -4884,7 +4892,6 @@ function renderMenu() {
                   <h4>${dish.name}</h4>
                   <p><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(dish.price)}</p>
                 </div>
-                ${dish.type === 'service' ? '<div style="font-size:0.8rem; margin-top:6px; color:#0d6efd;">Service item</div>' : ''}
                 ${stockStatusHtml}
                 <div class="item-controls">
                   <button onclick="decreaseQty('${CART_ID}', '${escapeJsString(dish.name)}')" ${quantity === 0 ? 'disabled' : ''}>-</button>
@@ -4923,9 +4930,12 @@ function isStockTrackingEnabled() {
 
 function getOrderStatusLabel(status = 'pending') {
   const normalized = String(status || 'pending').toLowerCase();
+  if (normalized === 'pending') return 'Pending';
+  if (normalized === 'in_progress' || normalized === 'in progress') return 'In Progress';
   if (normalized === 'ready') return 'Ready';
   if (normalized === 'completed') return 'Completed';
-  return 'Pending';
+  if (normalized === 'canceled' || normalized === 'cancelled') return 'Canceled';
+  return String(status).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
 }
 
 function getOrderStatusBadge(status = 'pending') {
@@ -6278,7 +6288,9 @@ async function finalizePayment(isSplit = false) {
       },
       itemCount: serviceItemCount,
       
-      // Integrate customer debt/credit details:
+      customerContact: customer ? (customer.contact || customer.phone || customer.mobile || customer.whatsapp || '') : '',
+      customerPhone: customer ? (customer.phone || customer.mobile || customer.whatsapp || customer.contact || '') : '',
+      customerWhatsApp: customer ? customer.whatsapp || '' : '',
       customerId: customer ? customer.id || customer.recordId : null,
       customerNameReal: customer ? customer.name : 'Walk-in Customer',
       amountPaid: amountPaid,
@@ -6549,7 +6561,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const invoiceNumber = normalizeInvoiceNumber(source.invoiceNumber || source.invoiceNo || getInvoiceNumber(source)) || 'INV-UNKNOWN';
   const invoiceDate = source.date ? new Date(source.date).toLocaleString() : new Date().toLocaleString();
   const customerName = source.customerName || source.customer?.name || source.customerNameReal || 'Walk-in Customer';
-  const customerPhone = source.customerPhone || source.customerContact || source.contact || source.customer?.phone || source.phone || '';
+  const customerPhone = source.customerPhone || source.customerContact || source.contact || source.customer?.phone || source.customer?.mobile || source.customer?.whatsapp || source.phone || '';
   const customerAddress = source.customerAddress || source.address || source.customer?.address || '';
   const paymentMethod = source.paymentMethod || source.payment?.method || 'Cash';
   const receiptType = source.receiptType || source.type || 'transaction';
@@ -6561,7 +6573,9 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const servedByName = source.servedBy || source.cashier || source.staffName || source.customerName || 'Staff';
   const serviceOrder = source.serviceOrder || {};
   const cashier = source.cashier || source.staffName || source.servedBy || 'Admin';
-  const showServiceModeStatus = settings.serviceMode === true;
+  const isServiceTransaction = source.orderType === 'service' || (source.serviceOrder && Object.values(source.serviceOrder).some(value => value));
+  const showServiceModeStatus = isServiceTransaction;
+  const serviceTypeHtml = showServiceModeStatus ? `<p>Type: <b>${safeOrderType}</b></p>` : '';
   const note = source.note || 'Please keep this invoice for warranty and return purposes.';
   const currencySymbol = getCurrencySymbol();
   const storeName = settings?.name || 'YO SHOP';
@@ -6812,13 +6826,14 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
               <p>Table/Account: <b>${safeTableNo}</b></p>
               <p>Method: <b>${safePaymentMethod}</b></p>
               <p>Status: <span class="badge">${safePaymentStatus}</span></p>
-              ${showServiceModeStatus ? `<p>Order Status: <b>${safeOrderStatus}</b></p>` : ''}
               <p>Served By: <b>${safeServedBy}</b></p>
+              ${showServiceModeStatus ? `<p>Order Status: <b>${safeOrderStatus}</b></p>` : ''}
+              ${serviceTypeHtml}
               <p>Cashier: <b>${safeCashier}</b></p>
               <p>Amount Paid: <b>${paidText}</b></p>
               <p>Balance: <b>${balanceText}</b></p>
             </div>
-            ${showServiceModeStatus && (source.orderType === 'service' || serviceOrder.pickupDate || serviceOrder.dropoffDate || serviceOrder.duration || serviceOrder.notes) ? `<div class="card"><h3>Service Order</h3><p>Type: <b>${safeOrderType}</b></p>${serviceOrder.pickupDate ? `<p>Pickup: <b>${escapeHtml(serviceOrder.pickupDate)}</b></p>` : ''}${serviceOrder.dropoffDate ? `<p>Dropoff: <b>${escapeHtml(serviceOrder.dropoffDate)}</b></p>` : ''}${serviceOrder.duration ? `<p>Duration: <b>${escapeHtml(serviceOrder.duration)}</b></p>` : ''}${serviceOrder.notes ? `<p>Notes: <b>${escapeHtml(serviceOrder.notes)}</b></p>` : ''}</div>` : ''}
+            ${showServiceModeStatus ? `<div class="card"><h3>Service Order</h3>${serviceTypeHtml}${serviceOrder.pickupDate ? `<p>Pickup: <b>${escapeHtml(serviceOrder.pickupDate)}</b></p>` : ''}${serviceOrder.dropoffDate ? `<p>Dropoff: <b>${escapeHtml(serviceOrder.dropoffDate)}</b></p>` : ''}${serviceOrder.duration ? `<p>Duration: <b>${escapeHtml(serviceOrder.duration)}</b></p>` : ''}${serviceOrder.notes ? `<p>Notes: <b>${escapeHtml(serviceOrder.notes)}</b></p>` : ''}</div>` : ''}
           </div>
           <table>
             <thead>
@@ -6883,7 +6898,7 @@ function previewOrder(transactionData = null) {
 
   if (transactionData) {
     currentTransaction = transactionData;
-    // Store the historical transaction data on the modal itself for the print function to use
+    // Store the historical transaction data on the modal itself for the print/share functions to use
     receiptModal._transactionData = transactionData;
   } else {
     const currentOrder = activeOrders[CART_ID];
@@ -6909,8 +6924,8 @@ function previewOrder(transactionData = null) {
           notes: document.getElementById('serviceNotes')?.value.trim() || null
         }
       };
-      // Clear any previously stored historical transaction
-      receiptModal._transactionData = null;
+      // Store the active order preview data for sharing and printing
+      receiptModal._transactionData = currentTransaction;
     }
   }
 
@@ -7066,28 +7081,55 @@ async function downloadCurrentReceiptAsJPG() {
 
 function buildReceiptShareText(transaction = null) {
   const receiptModal = document.getElementById('receiptModal');
-  const tx = transaction || (receiptModal && receiptModal._transactionData) || null;
+  let tx = transaction || (receiptModal && receiptModal._transactionData) || null;
+  const activeOrder = (typeof activeOrders !== 'undefined' && activeOrders[CART_ID]) ? activeOrders[CART_ID] : null;
+  if (!tx && activeOrder) {
+    const totals = calculateTransactionTotals(activeOrder.items || []);
+    tx = {
+      date: new Date().toISOString(),
+      customerName: getCurrentServerName(),
+      orderType: settings.serviceMode ? 'service' : 'product',
+      serviceOrder: {
+        pickupDate: document.getElementById('pickupDate')?.value || null,
+        dropoffDate: document.getElementById('dropoffDate')?.value || null,
+        duration: document.getElementById('serviceDuration')?.value.trim() || null,
+        notes: document.getElementById('serviceNotes')?.value.trim() || null
+      },
+      items: [...(activeOrder.items || [])],
+      total: totals.total,
+      orderStatus: document.getElementById('orderStatusSelect')?.value || 'pending'
+    };
+  }
+
   const storeName = settings?.name || 'YoShop';
   const currencySymbol = getCurrencySymbol();
-  const invoiceNumber = normalizeInvoiceNumber(tx?.invoiceNumber || tx?.invoiceNo || getInvoiceNumber(tx)) || 'INV-UNKNOWN';
-  const date = tx?.date ? new Date(tx.date).toLocaleString() : new Date().toLocaleString();
-  const customerName = tx?.customerName || tx?.customer?.name || 'Walk-in Customer';
-  const total = Number(tx?.total ?? tx?.grandTotal ?? tx?.subtotal ?? 0);
-  const items = Array.isArray(tx?.items) ? tx.items : [];
+  const safeTx = tx || { items: [], total: 0, orderStatus: 'pending' };
+  const invoiceNumber = normalizeInvoiceNumber(safeTx.invoiceNumber || safeTx.invoiceNo || (tx ? getInvoiceNumber(tx) : 'INV-UNKNOWN')) || 'INV-UNKNOWN';
+  const date = safeTx.date ? new Date(safeTx.date).toLocaleString() : new Date().toLocaleString();
+  const customerName = safeTx.customerName || safeTx.customer?.name || safeTx.customerNameReal || 'Walk-in Customer';
+  const total = Number(safeTx.total ?? safeTx.grandTotal ?? safeTx.subtotal ?? 0);
+  const items = Array.isArray(safeTx.items) ? safeTx.items : [];
   const itemSummary = items.slice(0, 4).map(item => {
     const name = item?.name || item?.productName || item?.itemName || 'Item';
     const qty = Number(item?.qty || item?.quantity || 1);
     const price = Number(item?.price || item?.unitPrice || item?.cost || 0);
     return `${name} x${qty} (${currencySymbol}${formatCurrency(price)})`;
   }).join(' | ');
+  const isServiceOrder = tx?.orderType === 'service' || (tx?.serviceOrder && Object.values(tx.serviceOrder).some(value => value));
+  const orderType = isServiceOrder ? 'Service Order' : 'Product Sale';
+  const orderStatus = getOrderStatusLabel(tx?.orderStatus || tx?.status || 'pending');
+  const pickup = tx?.serviceOrder?.pickupDate ? `Pickup: ${tx.serviceOrder.pickupDate}` : '';
+  const dropoff = tx?.serviceOrder?.dropoffDate ? `Dropoff: ${tx.serviceOrder.dropoffDate}` : '';
+  const duration = tx?.serviceOrder?.duration ? `Duration: ${tx.serviceOrder.duration}` : '';
+  const serviceNotes = tx?.serviceOrder?.notes ? `Notes: ${tx.serviceOrder.notes}` : '';
 
-  return `Invoice ${invoiceNumber}\nStore: ${storeName}\nDate: ${date}\nCustomer: ${customerName}\nTotal: ${currencySymbol}${formatCurrency(total)}\nItems: ${itemSummary || 'No items listed'}`;
+  return `Invoice ${invoiceNumber}\nStore: ${storeName}\nDate: ${date}\nCustomer: ${customerName}\nType: ${orderType}\nStatus: ${orderStatus}\nTotal: ${currencySymbol}${formatCurrency(total)}\nItems: ${itemSummary || 'No items listed'}${pickup ? `\n${pickup}` : ''}${dropoff ? `\n${dropoff}` : ''}${duration ? `\n${duration}` : ''}${serviceNotes ? `\n${serviceNotes}` : ''}`;
 }
 
 function getReceiptSharePhone(transaction = null) {
   const receiptModal = document.getElementById('receiptModal');
   const tx = transaction || (receiptModal && receiptModal._transactionData) || null;
-  const phone = tx?.customerPhone || tx?.customer?.phone || tx?.phone || '';
+  const phone = tx?.customerWhatsApp || tx?.customerPhone || tx?.customerContact || tx?.customer?.whatsapp || tx?.customer?.phone || tx?.customer?.mobile || tx?.phone || '';
   if (!phone) return '';
   const digitsOnly = String(phone).replace(/\D/g, '');
   return digitsOnly ? digitsOnly : '';
@@ -7545,7 +7587,7 @@ function directPrint() {
 
 // ===== Transactions =====
 function renderTransactions() {
-  const startDate = document.getElementById('transactionStartDate')?.value;
+  const startDate = document.getElementById('transactionStartDate')?.value || document.getElementById('transactionFilterDate')?.value;
   const endDate = document.getElementById('transactionEndDate')?.value;
 
   const normalizedTransactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
@@ -7568,6 +7610,12 @@ function renderTransactions() {
   const sourceArray = (startDate || endDate) ? filteredTransactions : normalizedTransactions;
   console.log('renderTransactions called — transactions length:', Array.isArray(normalizedTransactions) ? normalizedTransactions.length : typeof normalizedTransactions, 'sourceArray length:', Array.isArray(sourceArray) ? sourceArray.length : typeof sourceArray, 'startDate:', startDate, 'endDate:', endDate);
 
+  const serviceOrderCount = sourceArray.filter(tx => String(tx.orderType || '').toLowerCase() === 'service').length;
+  const transactionCountInfo = document.getElementById('transactionCountInfo');
+  if (transactionCountInfo) {
+    transactionCountInfo.textContent = `Showing ${sourceArray.length} bill${sourceArray.length === 1 ? '' : 's'}${serviceOrderCount ? ` · Service orders: ${serviceOrderCount}` : ''}`;
+  }
+
   const tableRows = sourceArray.map((t, i) => {
     const txIndex = normalizedTransactions.indexOf(t);
     const tr = document.createElement('tr');
@@ -7588,6 +7636,7 @@ function renderTransactions() {
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('transactionHistoryBody','selectAllSales')"></td>
         <td>${i + 1}</td>
         <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}${(t.duplicateCount || 0) > 0 ? ' <span class="duplicate-sale-badge">Duplicate</span>' : ''}</td>
+        <td class="u-fs-08 u-nowrap">${escapeHtml(String(t.orderType === 'service' ? 'Service' : 'Product'))}</td>
         <td>${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
         <td class="u-text-right u-fs-08 u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
         <td class="u-text-right">
@@ -7625,7 +7674,7 @@ function renderTransactions() {
   tbody.innerHTML = ''; // Clear existing rows
 
   if (tableRows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" class="u-text-center">No transactions found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="7" class="u-text-center">No transactions found.</td></tr>';
     return;
   }
 
@@ -7640,7 +7689,7 @@ function renderTransactions() {
     const showMoreRow = document.createElement('tr');
     // Use an IIFE in the onclick to safely reveal hidden rows regardless of class removal order
     showMoreRow.innerHTML = `
-        <td colspan="3" style="text-align: center; padding: 20px;">
+        <td colspan="7" style="text-align: center; padding: 20px;">
           <button class="btn btn-info" onclick="(function(btn){ const tbody = btn.closest('tbody'); const hidden = Array.from(tbody.querySelectorAll('tr.txn-row-hidden')); hidden.forEach(r => { r.classList.remove('txn-row-hidden'); r.style.display = ''; }); btn.closest('tr').style.display = 'none'; })(this);" style="padding: 8px 20px;">
             Show ${remainingRows.length} More Transactions
           </button>
@@ -7716,11 +7765,13 @@ function populateReceiptContent(transaction) {
   const currencySymbol = getCurrencySymbol();
   const effectiveOrderStatus = orderStatus || transaction.status || 'pending';
   const effectiveServedBy = servedBy || transaction.cashier || transaction.staffName || customerName || 'Staff';
-  const showServiceModeStatus = settings.serviceMode === true;
-  const servicePickupLine = serviceOrder?.pickupDate ? `<div class="summary-line"><span>Pickup</span> <span>${escapeHtml(serviceOrder.pickupDate)}</span></div>` : '';
-  const serviceDropoffLine = serviceOrder?.dropoffDate ? `<div class="summary-line"><span>Dropoff</span> <span>${escapeHtml(serviceOrder.dropoffDate)}</span></div>` : '';
-  const serviceDurationLine = serviceOrder?.duration ? `<div class="summary-line"><span>Duration</span> <span>${escapeHtml(serviceOrder.duration)}</span></div>` : '';
-  const serviceNotesLine = serviceOrder?.notes ? `<div class="summary-line"><span>Service Notes</span> <span>${escapeHtml(serviceOrder.notes)}</span></div>` : '';
+  const isServiceTransaction = orderType === 'service' || (serviceOrder && Object.values(serviceOrder).some(value => value));
+  const showServiceModeStatus = isServiceTransaction;
+  const serviceTypeLine = showServiceModeStatus ? `<div class="summary-line"><span>Order Type</span> <span>${escapeHtml(orderType === 'service' ? 'Service' : 'Product')}</span></div>` : '';
+  const servicePickupLine = showServiceModeStatus && serviceOrder?.pickupDate ? `<div class="summary-line"><span>Pickup</span> <span>${escapeHtml(serviceOrder.pickupDate)}</span></div>` : '';
+  const serviceDropoffLine = showServiceModeStatus && serviceOrder?.dropoffDate ? `<div class="summary-line"><span>Dropoff</span> <span>${escapeHtml(serviceOrder.dropoffDate)}</span></div>` : '';
+  const serviceDurationLine = showServiceModeStatus && serviceOrder?.duration ? `<div class="summary-line"><span>Duration</span> <span>${escapeHtml(serviceOrder.duration)}</span></div>` : '';
+  const serviceNotesLine = showServiceModeStatus && serviceOrder?.notes ? `<div class="summary-line"><span>Service Notes</span> <span>${escapeHtml(serviceOrder.notes)}</span></div>` : '';
   const servedByLine = `<div class="summary-line"><span>Served By</span> <span>${escapeHtml(effectiveServedBy)}</span></div>`;
   const orderStatusLine = showServiceModeStatus ? `<div class="summary-line"><span>Order Status</span> <span>${getOrderStatusBadge(effectiveOrderStatus)}</span></div>` : '';
 
@@ -7813,6 +7864,7 @@ function populateReceiptContent(transaction) {
           ${customerLine}
           ${customerContactLine}
           ${customerAddressLine}
+          ${serviceTypeLine}
           ${servedByLine}
           ${orderStatusLine}
           ${servicePickupLine}
@@ -9556,7 +9608,7 @@ function showAdminNoticesOverlay(notices = []) {
 
 function applyServiceModeUI(enabled) {
   const banner = document.getElementById('serviceModeBanner');
-  if (banner) banner.style.display = 'none';
+  if (banner) banner.style.display = enabled ? 'block' : 'none';
 
   const stockElements = [
     document.getElementById('lowStockThreshold'),

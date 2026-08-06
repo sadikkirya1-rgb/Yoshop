@@ -1804,7 +1804,13 @@ section#menuTab.active {
   display: none !important;
 }
 #header-sync-status .header-sync-icon {
-  font-size: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 999px;
+  font-size: 0.9rem;
   line-height: 1;
 }
 #serviceModeBanner,
@@ -1831,9 +1837,9 @@ section#menuTab.active {
     box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
   }
 
-  70% {
-    transform: scale(1.2);
-    box-shadow: 0 0 0 10px rgba(255, 255, 255, 0);
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 0 8px rgba(255, 255, 255, 0);
   }
 
   100% {
@@ -1843,7 +1849,7 @@ section#menuTab.active {
 }
 
 .sync-pulse {
-  animation: sync-pulse 0.6s ease-in-out;
+  animation: sync-pulse 1.2s ease-in-out infinite;
 }
 
 .spinner {
