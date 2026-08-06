@@ -66,6 +66,9 @@
   </div>
 
   <header>
+    <div id="serviceModeBanner" class="service-mode-banner" style="display:none; text-align:center; padding:10px; background:#fff4e5; color:#975a16; border-bottom:1px solid #f7d7ac; font-weight:700;">
+      SERVICE MODE ACTIVE — Stock tracking disabled. This app is now optimized for service workflows like laundry, repairs, and appointments.
+    </div>
     <button id="menu-toggle" class="icon-btn" onclick="toggleNav()">&#9776;</button>
     <span class="header-logo">🖨️</span>
     <button id="header-printer-status" class="icon-btn" title="Printer Connected">
@@ -178,6 +181,34 @@
           <select id="paymentCustomerSelect" onchange="onPaymentCustomerChange()" class="payment-customer-select">
             <option value="">Walk-in Customer</option>
           </select>
+        </div>
+        <div class="input-row">
+          <label for="orderStatusSelect">Order Status:</label>
+          <select id="orderStatusSelect" class="payment-method-select">
+            <option value="pending">Pending</option>
+            <option value="in_progress">In Progress</option>
+            <option value="ready">Ready</option>
+            <option value="completed">Completed</option>
+            <option value="canceled">Canceled</option>
+          </select>
+        </div>
+        <div id="serviceOrderFields" style="display:none; flex-direction:column; gap:10px; margin-top:8px; padding:12px; background:rgba(235,246,255,0.8); border-radius:10px;">
+          <div class="input-row">
+            <label for="pickupDate">Pickup Date:</label>
+            <input type="date" id="pickupDate" class="payment-method-select">
+          </div>
+          <div class="input-row">
+            <label for="dropoffDate">Dropoff Date:</label>
+            <input type="date" id="dropoffDate" class="payment-method-select">
+          </div>
+          <div class="input-row">
+            <label for="serviceDuration">Duration / Turnaround:</label>
+            <input type="text" id="serviceDuration" class="payment-method-select" placeholder="e.g. 2 days, 48 hrs">
+          </div>
+          <div class="input-row">
+            <label for="serviceNotes">Service Notes:</label>
+            <textarea id="serviceNotes" placeholder="Enter notes for laundry, repairs, pickup/dropoff preferences" style="width:100%; min-height:72px; padding:8px; border-radius:8px; border:1px solid #cbd5e1;"></textarea>
+          </div>
         </div>
         <div id="paymentCustomerBalanceRow" style="display:none; justify-content:space-between; margin-bottom:10px; padding:8px; background:rgba(0,0,0,0.05); border-radius:6px; font-size:0.9em;">
           <span>Current Account Balance:</span>
@@ -389,6 +420,7 @@
         <div id="menuHeaderContainer">
           <div id="menuOrderSummary" class="menu-summary">
             <div class="total">Total: <span class="currency-symbol">$</span> <span id="menuTotal">0.00</span></div>
+              <div id="menuItemCountLabel" class="menu-item-count" style="font-size:0.95rem; color:#334155; margin-top:4px;">Items: 0</div>
             <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
               <button class="btn btn-danger" onclick="clearCurrentOrder()" title="Clear Order" style="margin: 0;">X</button>
               <button class="btn" onclick="previewOrder()" style="margin: 0;">Preview</button>
@@ -451,6 +483,10 @@
                 title="Generate Random Barcode">🎲</button>
             </div>
             <select id="dishCategory" class="u-flex-grow-1"></select>
+            <select id="dishTypeSelect" class="u-flex-grow-1" title="Select whether this item is a product or service">
+              <option value="product">Product</option>
+              <option value="service">Service</option>
+            </select>
             <input type="number" id="dishLowStockThreshold" placeholder="Low-stock level" min="0" step="0.01"
               class="u-flex-grow-05" title="Alert level for this product. Leave empty to use the default stock setting.">
             <input type="file" id="dishImage" accept="image/*" onchange="previewDishImage(this)" class="u-flex-grow-1"
@@ -626,6 +662,7 @@
               <input type="text" id="customerNameInput" placeholder="Customer Name" class="u-flex-2">
               <input type="text" id="customerContactInput" placeholder="Contact (Phone/Email)" class="u-flex-2">
             </div>
+            <div class="input-row"><input type="text" id="customerWhatsAppInput" placeholder="WhatsApp Number" class="u-flex-2"></div>
             <div class="input-row"><input type="text" id="customerAddressInput" placeholder="Address"></div>
             <div class="input-row" style="justify-content: flex-end;">
               <button class="btn" id="saveCustomerBtn" onclick="addCustomer()">Save Customer</button>
@@ -643,6 +680,7 @@
                 <th>#</th>
                 <th>Name</th>
                 <th>Contact</th>
+                <th>WhatsApp</th>
                 <th>Address</th>
                 <th>Outstanding</th>
                 <th style="text-align: right;">Actions</th>
@@ -1219,6 +1257,13 @@
             <div class="input-row">
               <label for="taxRate">Tax Rate (%):</label>
               <input type="number" id="taxRate" placeholder="e.g., 16" min="0" step="0.01">
+            </div>
+            <div class="input-row">
+              <label for="serviceMode">Service Business Mode:</label>
+              <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                <input type="checkbox" id="serviceMode" onchange="toggleServiceMode()">
+                <span>Disable stock tracking and use service workflow states</span>
+              </label>
             </div>
             <div class="input-row">
               <label for="promoMessage">Promo Message:</label>

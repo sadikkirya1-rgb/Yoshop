@@ -1962,7 +1962,8 @@ const defaultSettings = {
   defaultMarkup: 200, // Default 200% markup
   lowStockThreshold: 10,
   taxRate: 0,
-  ShopAdminPIN: "1234" // Default ShopAdmin PIN
+  ShopAdminPIN: "1234", // Default ShopAdmin PIN
+  serviceMode: false
 };
 let settings = { ...defaultSettings };
 const defaultStaff = [];
@@ -4565,6 +4566,7 @@ window.downloadCurrentReceiptAsJPG = downloadCurrentReceiptAsJPG;
 window.shareReceipt = shareReceipt;
 window.printReceipt = printReceipt;
 window.directPrint = directPrint;
+window.toggleServiceMode = toggleServiceMode;
 window.closeReceiptModal = closeReceiptModal;
 
 async function handleChangePassword() {
@@ -4856,8 +4858,8 @@ function renderMenu() {
 
         const quantity = currentOrder.items.find(o => o.name === dish.name && !o.notes)?.qty || 0;
         const totalStock = calculateDishStock(dish, true);
-        const availableStock = Math.max(0, totalStock - totalInCarts);
-        const isOutOfStock = totalStock <= 0 || availableStock <= 0;
+        const availableStock = isStockTrackingEnabled() ? Math.max(0, totalStock - totalInCarts) : Infinity;
+        const isOutOfStock = isStockTrackingEnabled() ? (totalStock <= 0 || availableStock <= 0) : false;
 
         let itemClasses = 'menu-item';
         if (totalInCarts > 0) itemClasses += ' active';
@@ -4879,6 +4881,7 @@ function renderMenu() {
         }
         cacheDishImage(dish.name, dish.image);
 
+        const stockLabel = isStockTrackingEnabled() ? `Available: ${availableStock}` : 'Service Mode: stock not tracked';
         item.innerHTML = `
               <img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.src='https://placehold.co/100';">
               <div class="menu-item-body">
@@ -4886,7 +4889,8 @@ function renderMenu() {
                   <h4>${dish.name}</h4>
                   <p><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(dish.price)}</p>
                 </div>
-                <p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">Available: ${availableStock}</p>
+                ${dish.type === 'service' ? '<div style="font-size:0.8rem; margin-top:6px; color:#0d6efd;">Service item</div>' : ''}
+                <p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">${stockLabel}</p>
                 <div class="item-controls">
                   <button onclick="decreaseQty('${CART_ID}', '${escapeJsString(dish.name)}')" ${quantity === 0 ? 'disabled' : ''}>-</button>
                   <input type="number" class="qty-input" min="0" value="${quantity}" oninput="updateMenuItemQuantity('${escapeJsString(dish.name)}', this.value)" onchange="updateMenuItemQuantity('${escapeJsString(dish.name)}', this.value)" />
@@ -4916,6 +4920,41 @@ function renderMenu() {
 
 function escapeJsString(str) {
   return (str || '').replace(/'/g, "\\'").replace(/"/g, '\\"');
+}
+
+function isStockTrackingEnabled() {
+  return settings?.serviceMode !== true;
+}
+
+function getOrderStatusLabel(status = 'pending') {
+  const normalized = String(status || 'pending').toLowerCase();
+  if (normalized === 'ready') return 'Ready';
+  if (normalized === 'completed') return 'Completed';
+  return 'Pending';
+}
+
+function getOrderStatusBadge(status = 'pending') {
+  const normalized = String(status || 'pending').toLowerCase();
+  const styles = {
+    pending: 'background:#ffc107; color:#212529;',
+    in_progress: 'background:#fff9c4; color:#f57f17;',
+    ready: 'background:#0d6efd; color:#fff;',
+    completed: 'background:#28a745; color:#fff;',
+    canceled: 'background:#f8d7da; color:#842029;'
+  };
+  return `<span class="status-badge" style="font-size:0.75rem; padding:4px 8px; border-radius:999px; display:inline-flex; align-items:center; gap:4px; ${styles[normalized] || styles.pending}">${getOrderStatusLabel(normalized)}</span>`;
+}
+
+function toggleServiceMode() {
+  const serviceModeCheckbox = document.getElementById('serviceMode');
+  if (!serviceModeCheckbox) return;
+  settings.serviceMode = serviceModeCheckbox.checked;
+  saveData();
+  applyServiceModeUI(settings.serviceMode === true);
+  renderMenu();
+  renderTransactions();
+  renderStockListTable();
+  renderCustomerList();
 }
 
 function updateMenuItemQuantity(name, value) {
@@ -5029,8 +5068,8 @@ function updateMenuUI() {
 
     const quantity = currentOrder.items.find(o => o.name === name && !o.notes)?.qty || 0;
     const totalStock = calculateDishStock(dish, true);
-    const availableStock = Math.max(0, totalStock - totalInCarts);
-    const isOutOfStock = availableStock <= 0;
+    const availableStock = isStockTrackingEnabled() ? Math.max(0, totalStock - totalInCarts) : Infinity;
+    const isOutOfStock = isStockTrackingEnabled() ? availableStock <= 0 : false;
 
     card.classList.toggle('active', totalInCarts > 0);
     card.classList.toggle('out-of-stock', isOutOfStock);
@@ -5065,6 +5104,7 @@ async function addDish(buttonElement) {
   const name = document.getElementById('dishName').value.trim();
   const barcode = document.getElementById('dishBarcode').value.trim();
   const category = document.getElementById('dishCategory').value;
+  const type = document.getElementById('dishTypeSelect')?.value || 'product';
   const imageInput = document.getElementById('dishImage');
 
   if (!name) {
@@ -5124,6 +5164,7 @@ async function addDish(buttonElement) {
       let dishData = enrichEnterpriseRecord('products', {
         ...menu[index],
         name, barcode, category, recipe, costPrice, price, image: imageToSave,
+        type,
         lowStockThreshold: Number.isFinite(lowStockThreshold) && lowStockThreshold >= 0 ? lowStockThreshold : undefined
       }, menu[index]);
 
@@ -5161,6 +5202,7 @@ async function addDish(buttonElement) {
         name,
         barcode,
         category,
+        type,
         recipe,
         costPrice,
         price,
@@ -5215,6 +5257,8 @@ function editDish(index) {
   document.getElementById('dishName').value = dish.name;
   document.getElementById('dishBarcode').value = dish.barcode || '';
   document.getElementById('dishCategory').value = dish.category;
+  const typeSelect = document.getElementById('dishTypeSelect');
+  if (typeSelect) typeSelect.value = dish.type || 'product';
 
   document.getElementById('dishImageBase64').value = isValidMenuImage(dish.image) ? dish.image : ''; // Store current image
   document.getElementById('dishImagePreview').src = isValidMenuImage(dish.image) ? dish.image : PLACEHOLDER_IMAGE; // Show current image in preview
@@ -5613,7 +5657,7 @@ async function addToOrder(cartId, name, notes = null) {
     .filter(item => item.name === name)
     .reduce((sum, item) => sum + item.qty, 0);
 
-  if (totalInCarts + 1 > totalStock) {
+  if (isStockTrackingEnabled() && totalInCarts + 1 > totalStock) {
     await showAppAlert(`Cannot add more "${name}". Only ${totalStock} units available in stock, and ${totalInCarts} are already in carts.`, "Out of Stock");
     return;
   }
@@ -5792,8 +5836,8 @@ function getPaymentItemStockInfo(item = {}) {
   const currentOrderQty = Array.isArray(currentOrder.items)
     ? currentOrder.items.filter(cartItem => cartItem.name === item.name).reduce((itemSum, cartItem) => itemSum + (parseInt(cartItem.qty, 10) || 0), 0)
     : 0;
-  const availableStock = Number.isFinite(stockValue) ? Math.max(0, Math.floor(stockValue) - otherCartsQty - currentOrderQty) : null;
-  const maxAllowedQty = Number.isFinite(stockValue) ? Math.max(0, Math.floor(stockValue) - otherCartsQty) : null;
+  const availableStock = isStockTrackingEnabled() ? (Number.isFinite(stockValue) ? Math.max(0, Math.floor(stockValue) - otherCartsQty - currentOrderQty) : null) : null;
+  const maxAllowedQty = isStockTrackingEnabled() ? (Number.isFinite(stockValue) ? Math.max(0, Math.floor(stockValue) - otherCartsQty) : null) : null;
 
   return {
     dish,
@@ -6166,6 +6210,12 @@ async function finalizePayment(isSplit = false) {
   const customerIndex = isCustomerSelected ? parseInt(paymentSelect.value, 10) : -1;
   const customer = isCustomerSelected ? customers[customerIndex] : null;
 
+  const pickupDate = document.getElementById('pickupDate')?.value || null;
+  const dropoffDate = document.getElementById('dropoffDate')?.value || null;
+  const serviceDuration = document.getElementById('serviceDuration')?.value.trim() || null;
+  const serviceNotes = document.getElementById('serviceNotes')?.value.trim() || null;
+  const serviceItemCount = currentOrder.items.reduce((sum, item) => sum + (parseInt(item.qty, 10) || 0), 0);
+
   let amountPaid = finalTotal;
   if (isNaN(amountTendered) || amountTendered < 0) {
     await showAppAlert("Please enter a valid amount tendered.", "Invalid Amount");
@@ -6187,12 +6237,14 @@ async function finalizePayment(isSplit = false) {
   setPaymentProcessingState(true, navigator.onLine ? 'Processing payment…' : 'Offline mode: saving your sale locally and syncing it when the connection returns.', navigator.onLine ? 'info' : 'success');
 
   try {
-    currentOrder.items.forEach(orderItem => {
-      const dish = menu.find(d => d.name === orderItem.name);
-      if (dish && dish.name) {
-        deductStock(dish.name, orderItem.qty);
-      }
-    });
+    if (isStockTrackingEnabled()) {
+      currentOrder.items.forEach(orderItem => {
+        const dish = menu.find(d => d.name === orderItem.name);
+        if (dish && dish.name) {
+          deductStock(dish.name, orderItem.qty);
+        }
+      });
+    }
 
     const balanceChange = isCustomerSelected ? (amountPaid - finalTotal) : 0;
 
@@ -6211,6 +6263,15 @@ async function finalizePayment(isSplit = false) {
       tax: totals.tax,
       paymentMethod: paymentMethod,
       discount: { value: discountInput, type: 'fixed', amount: discountAmount },
+      orderStatus: document.getElementById('orderStatusSelect')?.value || 'pending',
+      orderType: settings.serviceMode ? 'service' : 'product',
+      serviceOrder: {
+        pickupDate,
+        dropoffDate,
+        duration: serviceDuration,
+        notes: serviceNotes
+      },
+      itemCount: serviceItemCount,
       
       // Integrate customer debt/credit details:
       customerId: customer ? customer.id || customer.recordId : null,
@@ -6387,7 +6448,7 @@ function renderDishesTable() {
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('dishesTableBody','selectAllProducts'); updateDeleteMarkedButtonVisibility('dishesTableBody','deleteMarkedProductsBtn')"></td>
         <td>${rowIndex + 1}</td>
         <td><img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.removeAttribute('crossorigin'); this.src='https://placehold.co/100';"></td>
-        <td>${dish.name}</td> 
+        <td>${dish.name}${dish.type === 'service' ? ' <small style="font-size:0.75rem; color:#0d6efd;">(Service)</small>' : ''}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(sellingPrice)}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(profitValue)}</td>
@@ -7503,6 +7564,7 @@ function renderTransactions() {
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('transactionHistoryBody','selectAllSales')"></td>
         <td>${i + 1}</td>
         <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}${(t.duplicateCount || 0) > 0 ? ' <span class="duplicate-sale-badge">Duplicate</span>' : ''}</td>
+        <td>${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
         <td class="u-text-right u-fs-08 u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
         <td class="u-text-right">
           <button class="btn u-fs-08 row-preview-btn" data-tx-index="${txIndex}" style="display: inline-block; padding: 6px 8px; margin: 0 2px; background: #17a2b8;"> 
@@ -9208,6 +9270,7 @@ async function saveSettings() {
   settings.lowStockThreshold = isNaN(lowStockThresholdVal) ? 10 : lowStockThresholdVal;
   settings.defaultMarkup = parseFloat(document.getElementById('defaultMarkup').value) || 200;
   settings.taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
+  settings.serviceMode = Boolean(document.getElementById('serviceMode')?.checked);
   settings.promoMessage = document.getElementById('promoMessage').value.trim();
   settings.ShopAdminPIN = pin;
 
@@ -9435,6 +9498,8 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('promoMessage', settings.promoMessage || '');
   setVal('ShopAdminPIN', settings.ShopAdminPIN || "");
   setVal('confirmShopAdminPIN', settings.ShopAdminPIN || "");
+  const serviceModeCheckbox = document.getElementById('serviceMode');
+  if (serviceModeCheckbox) serviceModeCheckbox.checked = settings.serviceMode === true;
 
   const logoPreview = document.getElementById('logoPreview');
   const logoUrl = sanitizeLogoUrl(settings.logo);
@@ -9445,7 +9510,45 @@ function showAdminNoticesOverlay(notices = []) {
     logoPreview.src = '';
     logoPreview.style.display = 'none';
   }
+
+  applyServiceModeUI(settings.serviceMode === true);
   checkNotificationStatus();
+}
+
+function applyServiceModeUI(enabled) {
+  const banner = document.getElementById('serviceModeBanner');
+  if (banner) banner.style.display = enabled ? 'block' : 'none';
+
+  const stockElements = [
+    document.getElementById('lowStockThreshold'),
+    document.getElementById('stockTab'),
+    document.getElementById('purchaseStockFields'),
+    document.getElementById('stockAdjustmentFormContainer'),
+    document.getElementById('newStockItemFormContainer'),
+    document.getElementById('stockListBody'),
+    document.getElementById('stockSearchInput')
+    , document.getElementById('dishLowStockThreshold')
+  ];
+
+  stockElements.forEach(el => {
+    if (!el) return;
+    el.style.display = enabled ? 'none' : '';
+  });
+
+  const stockTabButton = document.querySelector('nav button[onclick*="stockTab"]');
+  if (stockTabButton) {
+    stockTabButton.style.display = enabled ? 'none' : '';
+  }
+
+  const stockTabSection = document.getElementById('stockTab');
+  if (stockTabSection) {
+    stockTabSection.style.display = enabled ? 'none' : stockTabSection.classList.contains('active') ? 'block' : 'none';
+  }
+
+  const serviceFields = document.getElementById('serviceOrderFields');
+  if (serviceFields) {
+    serviceFields.style.display = enabled ? 'flex' : 'none';
+  }
 }
 
 function togglePINVisibility(inputId = 'ShopAdminPIN') {
@@ -9981,6 +10084,7 @@ function toggleAddCustomerForm(show) {
     if (toggleButton) toggleButton.style.display = 'none'; // Hide the 'Add New' button
     document.getElementById('customerNameInput').value = '';
     document.getElementById('customerContactInput').value = '';
+    document.getElementById('customerWhatsAppInput').value = '';
     document.getElementById('customerAddressInput').value = '';
   } else {
     formContainer.style.display = 'none';
@@ -10013,14 +10117,18 @@ function renderCustomerList() {
       ? `${currencySymbol}0`
       : `<span style="${outstandingBalance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${outstandingBalance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(outstandingBalance))}</span>`;
 
+    const whatsappCell = customer.whatsapp ? `<a href="https://wa.me/${encodeURIComponent(customer.whatsapp.replace(/\s+/g, ''))}" target="_blank" rel="noreferrer" style="color:#25D366; text-decoration:none; font-weight:600;">${escapeHtml(customer.whatsapp)}</a>` : '<span style="color:#888;">N/A</span>';
+    const whatsappAction = customer.whatsapp ? `<button class="icon-btn" title="WhatsApp Customer" onclick="window.open('https://wa.me/${encodeURIComponent(customer.whatsapp.replace(/\s+/g, ''))}', '_blank'); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.52 3.48A11.89 11.89 0 0 0 12.01.01C5.4.01-.1 5.51-.1 12.11a11.9 11.9 0 0 0 2.02 6.43L.1 24l5.66-1.48a11.92 11.92 0 0 0 6.25 1.64h.01c6.62 0 12.02-5.4 12.02-12.03a12.04 12.04 0 0 0-1.44-5.65Zm-8.51 16.79a9.57 9.57 0 0 1-5.12-1.42l-.37-.23-3.35.88.9-3.27-.24-.38a9.56 9.56 0 0 1 1.44-10.84 9.5 9.5 0 0 1 12.9-.93 9.55 9.55 0 0 1 2.74 8.18 9.58 9.58 0 0 1-9.4 7.02Zm5.46-6.66c-.3-.15-1.78-.87-2.05-.97-.28-.1-.48-.15-.68.15-.2.3-.78.97-.96 1.17-.17.2-.34.22-.63.08-.3-.15-1.28-.47-2.44-1.5-.9-.8-1.51-1.8-1.69-2.1-.17-.28 0-.43.12-.57.12-.12.27-.31.4-.47.13-.16.17-.28.26-.47.09-.2.05-.37-.03-.52-.1-.15-.68-1.65-.93-2.26-.24-.58-.49-.5-.68-.51-.17-.01-.37-.01-.57-.01-.2 0-.52.07-.8.37-.28.3-1.08 1.05-1.08 2.56s1.11 2.97 1.26 3.18c.15.22 2.18 3.34 5.28 4.68.74.32 1.32.51 1.77.65.74.24 1.42.21 1.96.13.6-.09 1.78-.73 2.03-1.44.25-.71.25-1.32.18-1.45-.08-.12-.28-.2-.58-.34Z"/></svg></button>` : '<span style="color:#888;">—</span>';
     const tr = document.createElement('tr');
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
                         <td>${i + 1}</td>
-                        <td>${customer.name}</td>
-                        <td>${customer.contact || customer.phone || customer.mobile || ''}</td>
-                        <td>${customer.address || ''}</td>
+                        <td>${escapeHtml(customer.name)}</td>
+                        <td>${escapeHtml(customer.contact || customer.phone || customer.mobile || '')}</td>
+                        <td style="white-space:nowrap;">${whatsappCell}</td>
+                        <td>${escapeHtml(customer.address || '')}</td>
                         <td>${outstandingText}</td>
                         <td style="text-align: right; white-space: nowrap;">
+                          ${whatsappAction}
                           <button class="icon-btn" title="Edit Customer" onclick="editCustomer(${i}); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
                           <button class="icon-btn" title="Delete Customer" onclick="deleteCustomer(${i}); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
                         </td>`;
@@ -10584,9 +10692,11 @@ function addCustomer() {
   const parsedIndex = index !== '' ? parseInt(index, 10) : -1;
   const existingCustomer = parsedIndex >= 0 ? customers[parsedIndex] : null;
 
+  const whatsappInput = document.getElementById('customerWhatsAppInput');
   const customerData = enrichEnterpriseRecord('customers', {
     name: nameInput.value.trim(),
     contact: contactInput.value.trim(),
+    whatsapp: whatsappInput?.value.trim() || '',
     address: addressInput.value.trim(),
     balance: existingCustomer?.balance || 0,
     subtotalSales: existingCustomer?.subtotalSales || 0,
@@ -10616,6 +10726,7 @@ function editCustomer(index) {
   toggleAddCustomerForm(true);
   document.getElementById('customerNameInput').value = customer.name;
   document.getElementById('customerContactInput').value = customer.contact;
+  document.getElementById('customerWhatsAppInput').value = customer.whatsapp || '';
   document.getElementById('customerAddressInput').value = customer.address;
   document.getElementById('customerIndex').value = index;
   document.getElementById('saveCustomerBtn').textContent = 'Update Customer';
