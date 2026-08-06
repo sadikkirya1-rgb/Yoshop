@@ -289,7 +289,7 @@
       <div id="receiptContent" class="receipt-paper">
         <!-- Receipt content will be injected here -->
       </div>
-      <div class="receipt-actions">
+      <div class="receipt-actions" style="align-items:center; gap:8px; flex-wrap:wrap;">
         <button class="btn" onclick="downloadCurrentReceiptAsPDF()" class="save-pdf-btn">PDF</button>
         <button class="btn btn-info" onclick="downloadCurrentReceiptAsJPG()" class="save-jpg-btn">JPG</button>
         <button class="btn" onclick="shareReceipt()" class="share-btn">Share</button>
@@ -298,6 +298,30 @@
           Device</button>
         <button class="btn" onclick="closeReceiptModal()"
           class="close-modal-btn">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Invoice Status Update Modal -->
+  <div id="invoiceStatusModal" class="receipt-modal-overlay">
+    <div class="custom-modal-card app-popup-card invoice-status-card">
+      <h3>Update Service Invoice Status</h3>
+      <p>Select a service invoice below, then choose a new status.</p>
+      <div style="margin:16px 0;">
+        <label for="invoiceStatusInvoiceSelect" style="display:block; margin-bottom:8px; font-size:0.95rem; font-weight:600;">Invoice Number</label>
+        <select id="invoiceStatusInvoiceSelect" onchange="invoiceStatusSelectionChanged()" style="width:100%; padding:10px 12px; border-radius:12px; border:1px solid #d1d5db; background:#fff; font-size:0.95rem;">
+          <option value="">Select an invoice...</option>
+        </select>
+      </div>
+      <div class="invoice-status-button-list" style="display:flex; flex-direction:column; gap:10px; margin-bottom:18px;">
+        <button type="button" class="status-btn" data-status="pending" onclick="handleInvoiceStatusButtonClick('pending')">Pending</button>
+        <button type="button" class="status-btn" data-status="in_progress" onclick="handleInvoiceStatusButtonClick('in_progress')">In Progress</button>
+        <button type="button" class="status-btn" data-status="ready" onclick="handleInvoiceStatusButtonClick('ready')">Ready</button>
+        <button type="button" class="status-btn" data-status="completed" onclick="handleInvoiceStatusButtonClick('completed')">Completed</button>
+        <button type="button" class="status-btn" data-status="canceled" onclick="handleInvoiceStatusButtonClick('canceled')">Canceled</button>
+      </div>
+      <div class="receipt-actions app-popup-actions" style="justify-content:flex-end; gap:10px;">
+        <button class="btn cancel-btn" onclick="closeInvoiceStatusModal()">Close</button>
       </div>
     </div>
   </div>
@@ -667,9 +691,26 @@
               <button class="btn btn-secondary" onclick="toggleAddCustomerForm(false)">Cancel</button>
             </div>
           </div>
-          <div id="customerListHeader" style="display: flex; justify-content: space-between; align-items: center;">
+          <div id="customerListHeader" style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
             <h5 style="margin: 0;">All Customers</h5>
             <button class="btn" id="addCustomerBtn" onclick="toggleAddCustomerForm(true)">➕ Add New Customer</button>
+          </div>
+          <div class="input-row u-mt-10" style="gap: 10px; flex-wrap: wrap; align-items:flex-end;">
+            <div style="flex: 1 1 180px; min-width: 180px;">
+              <label for="customerStatusTemplateSelect" style="display:block; margin-bottom:4px; font-size:0.85rem;">Order Status</label>
+              <select id="customerStatusTemplateSelect" class="payment-method-select" style="width:100%;">
+                <option value="pending">Pending</option>
+                <option value="in_progress">In Progress</option>
+                <option value="ready">Ready</option>
+                <option value="completed">Completed</option>
+                <option value="canceled">Canceled</option>
+              </select>
+            </div>
+            <div style="flex: 2 1 320px; min-width: 220px;">
+              <label for="customerStatusMessageInput" style="display:block; margin-bottom:4px; font-size:0.85rem;">Status Message</label>
+              <input type="text" id="customerStatusMessageInput" placeholder="Optional custom message" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1;" />
+            </div>
+            <button class="btn btn-success" type="button" onclick="sendSelectedCustomersStatusNotification()" style="white-space: nowrap;">Send to Selected</button>
           </div>
           <table class="u-mt-15">
             <thead>
@@ -698,10 +739,11 @@
         </div>
         <div class="u-mb-10" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;">
           <div id="invoiceCountInfo">Showing 0 of 0 invoices</div>
-          <div class="button-group" style="gap:6px;">
+          <div class="button-group" style="gap:6px; align-items:center;">
             <button class="btn btn-secondary" type="button" data-invoice-filter="all" onclick="setInvoiceFilter('all')">All</button>
             <button class="btn btn-secondary" type="button" data-invoice-filter="pending" onclick="setInvoiceFilter('pending')">Pending</button>
             <button class="btn btn-secondary" type="button" data-invoice-filter="paid" onclick="setInvoiceFilter('paid')">Paid</button>
+            <button class="btn btn-primary" type="button" id="invoiceStatusUpdateBtn" onclick="openInvoiceStatusModal()">Update Status</button>
           </div>
         </div>
         <div class="u-overflow-x-auto">
@@ -713,6 +755,7 @@
                 <th>Date</th>
                 <th>Customer</th>
                 <th>Invoice #</th>
+                <th class="service-status-column" style="display:none;">Status</th>
                 <th style="text-align: right;">Subtotal</th>
                 <th style="text-align: right;">Paid</th>
                 <th style="text-align: right;">Balance</th>
@@ -1171,7 +1214,7 @@
                 <th>#</th>
                 <th>Date</th>
                 <th>Type</th>
-                <th>Status</th>
+                <th class="service-status-column" style="display:none;">Status</th>
                 <th style="text-align: right;">Total</th>
                 <th style="text-align: right;">Action</th>
               </tr>

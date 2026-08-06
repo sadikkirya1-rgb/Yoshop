@@ -4568,6 +4568,20 @@ window.printReceipt = printReceipt;
 window.directPrint = directPrint;
 window.toggleServiceMode = toggleServiceMode;
 window.closeReceiptModal = closeReceiptModal;
+window.sendCustomerStatusNotification = sendCustomerStatusNotification;
+window.sendSelectedCustomersStatusNotification = sendSelectedCustomersStatusNotification;
+window.sendOrderStatusNotification = sendOrderStatusNotification;
+window.promptAndUpdateOrderStatus = promptAndUpdateOrderStatus;
+window.updateReceiptOrderStatus = updateReceiptOrderStatus;
+window.updateTransactionStatusByIndex = updateTransactionStatusByIndex;
+window.openInvoiceStatusModal = openInvoiceStatusModal;
+window.closeInvoiceStatusModal = closeInvoiceStatusModal;
+window.handleInvoiceStatusButtonClick = handleInvoiceStatusButtonClick;
+window.invoiceStatusSelectionChanged = invoiceStatusSelectionChanged;
+window.getCustomerWhatsAppNumber = getCustomerWhatsAppNumber;
+window.getTransactionWhatsAppNumber = getTransactionWhatsAppNumber;
+window.buildCustomerStatusMessage = buildCustomerStatusMessage;
+window.buildOrderStatusMessage = buildOrderStatusMessage;
 
 async function handleChangePassword() {
   const isEmailUser = currentUser?.providerData.some(p => p.providerId === 'password');
@@ -6570,11 +6584,13 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const discountAmount = Number(source.discount?.amount ?? source.discountAmount ?? 0);
   const paymentStatus = source.paymentStatus || source.payment?.status || source.status || (Number.isFinite(Number(source.balance)) && Number(source.balance) !== 0 ? 'PENDING' : 'PAID');
   const orderStatus = source.orderStatus || source.status || 'pending';
-  const servedByName = source.servedBy || source.cashier || source.staffName || source.customerName || 'Staff';
+  const servedByName = source.servedBy || source.cashier || source.staffName || 'Staff';
   const serviceOrder = source.serviceOrder || {};
   const cashier = source.cashier || source.staffName || source.servedBy || 'Admin';
-  const isServiceTransaction = source.orderType === 'service' || (source.serviceOrder && Object.values(source.serviceOrder).some(value => value));
-  const showServiceModeStatus = isServiceTransaction;
+  const effectiveOrderType = source.orderType || ((serviceOrder && Object.values(serviceOrder).some(value => value)) ? 'service' : 'product');
+  const isServiceTransaction = effectiveOrderType === 'service';
+  const showServiceModeStatus = settings.serviceMode === true && isServiceTransaction;
+  const safeOrderType = escapeHtml(effectiveOrderType === 'service' ? 'Service' : 'Product');
   const serviceTypeHtml = showServiceModeStatus ? `<p>Type: <b>${safeOrderType}</b></p>` : '';
   const note = source.note || 'Please keep this invoice for warranty and return purposes.';
   const currencySymbol = getCurrencySymbol();
@@ -6582,7 +6598,6 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const storeAddress = settings?.address || 'Smart POS & Inventory System';
   const safeOrderStatus = escapeHtml(getOrderStatusLabel(orderStatus));
   const safeServedBy = escapeHtml(servedByName);
-  const safeOrderType = escapeHtml(source.orderType === 'service' ? 'Service' : 'Product');
   const logoUrl = sanitizeLogoUrl(settings?.logo);
   const safeStoreName = escapeHtml(storeName);
   const safeCustomerName = escapeHtml(customerName);
@@ -7637,12 +7652,13 @@ function renderTransactions() {
         <td>${i + 1}</td>
         <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}${(t.duplicateCount || 0) > 0 ? ' <span class="duplicate-sale-badge">Duplicate</span>' : ''}</td>
         <td class="u-fs-08 u-nowrap">${escapeHtml(String(t.orderType === 'service' ? 'Service' : 'Product'))}</td>
-        <td>${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
+        <td class="service-status-column">${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
         <td class="u-text-right u-fs-08 u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
         <td class="u-text-right">
           <button class="btn u-fs-08 row-preview-btn" data-tx-index="${txIndex}" style="display: inline-block; padding: 6px 8px; margin: 0 2px; background: #17a2b8;"> 
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; color: #fff;"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8z"></path><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z" fill="#fff"></path></svg>
           </button>
+          <button class="icon-btn" title="Send Order Status" onclick="sendOrderStatusNotification(${txIndex})" style="margin-right:4px;">📩</button>
           <button class="icon-btn" title="Re-Open Bill" onclick="reopenTransaction(${txIndex})">${iconReopen}</button>
           <button class="icon-btn" title="Download PDF" onclick="downloadBillAsPDF(${txIndex})">${iconDownload}</button>
           <button class="icon-btn" title="Delete Bill" onclick="deleteTransaction(${txIndex})">${iconDelete}</button>
@@ -7759,15 +7775,17 @@ function getReceiptPromoMessage() {
  * This is a helper for PDF generation.
  */
 function populateReceiptContent(transaction) {
-  const { date, customerName, tableNo, items, total, subtotal, tax, discount, receiptType, paymentMethod, note, amountPaid, orderStatus, servedBy, serviceOrder = {}, orderType } = transaction;
+  const { date, customerName, tableNo, items, total, subtotal, tax, discount, receiptType, paymentMethod, note, amountPaid, orderStatus, servedBy, customerNameReal, serviceOrder = {}, orderType } = transaction;
+  const displayCustomerName = customerNameReal || transaction.customer?.name || customerName || 'Walk-in Customer';
   const transactionId = new Date(date).getTime();
   const invoiceNumber = getInvoiceNumber(transaction);
   const currencySymbol = getCurrencySymbol();
   const effectiveOrderStatus = orderStatus || transaction.status || 'pending';
-  const effectiveServedBy = servedBy || transaction.cashier || transaction.staffName || customerName || 'Staff';
-  const isServiceTransaction = orderType === 'service' || (serviceOrder && Object.values(serviceOrder).some(value => value));
-  const showServiceModeStatus = isServiceTransaction;
-  const serviceTypeLine = showServiceModeStatus ? `<div class="summary-line"><span>Order Type</span> <span>${escapeHtml(orderType === 'service' ? 'Service' : 'Product')}</span></div>` : '';
+  const effectiveServedBy = servedBy || transaction.cashier || transaction.staffName || 'Staff';
+  const effectiveOrderType = orderType || ((serviceOrder && Object.values(serviceOrder).some(value => value)) ? 'service' : 'product');
+  const isServiceTransaction = effectiveOrderType === 'service';
+  const showServiceModeStatus = settings.serviceMode === true && isServiceTransaction;
+  const serviceTypeLine = showServiceModeStatus ? `<div class="summary-line"><span>Order Type</span> <span>${escapeHtml(effectiveOrderType === 'service' ? 'Service' : 'Product')}</span></div>` : '';
   const servicePickupLine = showServiceModeStatus && serviceOrder?.pickupDate ? `<div class="summary-line"><span>Pickup</span> <span>${escapeHtml(serviceOrder.pickupDate)}</span></div>` : '';
   const serviceDropoffLine = showServiceModeStatus && serviceOrder?.dropoffDate ? `<div class="summary-line"><span>Dropoff</span> <span>${escapeHtml(serviceOrder.dropoffDate)}</span></div>` : '';
   const serviceDurationLine = showServiceModeStatus && serviceOrder?.duration ? `<div class="summary-line"><span>Duration</span> <span>${escapeHtml(serviceOrder.duration)}</span></div>` : '';
@@ -7815,11 +7833,11 @@ function populateReceiptContent(transaction) {
   const isAdjustmentReceipt = receiptType === 'customerAdjustment';
   const isDebtReceipt = receiptType === 'customerDebtInvoice';
   const titleText = isAdjustmentReceipt ? 'CUSTOMER PAYMENT INVOICE' : isDebtReceipt ? 'CUSTOMER DEBT INVOICE' : 'TRANSACTION INVOICE';
-  const customerLine = customerName ? `<div class="summary-line"><span>Customer</span> <span>${customerName}</span></div>` : '';
-  const customerContactLine = (transaction.customerContact || transaction.contact) ? `<div class="summary-line"><span>Contact</span> <span>${transaction.customerContact || transaction.contact}</span></div>` : '';
-  const customerAddressLine = (transaction.customerAddress || transaction.address) ? `<div class="summary-line"><span>Address</span> <span>${transaction.customerAddress || transaction.address}</span></div>` : '';
-  const methodLine = paymentMethod ? `<div class="summary-line"><span>Method</span> <span>${paymentMethod}</span></div>` : '';
-  const noteLine = note ? `<div class="summary-line"><span>Note</span> <span>${note}</span></div>` : '';
+  const customerLine = displayCustomerName ? `<div class="summary-line"><span>Customer</span> <span>${escapeHtml(displayCustomerName)}</span></div>` : '';
+  const customerContactLine = (transaction.customerContact || transaction.contact || transaction.customer?.phone || transaction.customer?.mobile || transaction.customer?.whatsapp) ? `<div class="summary-line"><span>Contact</span> <span>${escapeHtml(transaction.customerContact || transaction.contact || transaction.customer?.phone || transaction.customer?.mobile || transaction.customer?.whatsapp)}</span></div>` : '';
+  const customerAddressLine = (transaction.customerAddress || transaction.address || transaction.customer?.address) ? `<div class="summary-line"><span>Address</span> <span>${escapeHtml(transaction.customerAddress || transaction.address || transaction.customer?.address)}</span></div>` : '';
+  const methodLine = paymentMethod ? `<div class="summary-line"><span>Method</span> <span>${escapeHtml(paymentMethod)}</span></div>` : '';
+  const noteLine = note ? `<div class="summary-line"><span>Note</span> <span>${escapeHtml(note)}</span></div>` : '';
   const paidLine = amountPaid !== undefined ? `<div class="summary-line"><span>Amount Paid</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(amountPaid)}</span></div>` : '';
   // show all adjustments (if any) for debt receipts or adjustments
   const adjustmentsArr = Array.isArray(transaction.adjustments) && transaction.adjustments.length
@@ -9640,6 +9658,15 @@ function applyServiceModeUI(enabled) {
   if (serviceFields) {
     serviceFields.style.display = enabled ? 'flex' : 'none';
   }
+
+  const invoiceStatusButton = document.getElementById('invoiceStatusUpdateBtn');
+  if (invoiceStatusButton) {
+    invoiceStatusButton.style.display = enabled ? '' : 'none';
+  }
+
+  document.querySelectorAll('.service-status-column').forEach(el => {
+    el.style.display = enabled ? '' : 'none';
+  });
 }
 
 function togglePINVisibility(inputId = 'ShopAdminPIN') {
@@ -10210,6 +10237,7 @@ function renderCustomerList() {
 
     const whatsappCell = customer.whatsapp ? `<a href="https://wa.me/${encodeURIComponent(customer.whatsapp.replace(/\s+/g, ''))}" target="_blank" rel="noreferrer" style="color:#25D366; text-decoration:none; font-weight:600;">${escapeHtml(customer.whatsapp)}</a>` : '<span style="color:#888;">N/A</span>';
     const whatsappAction = customer.whatsapp ? `<button class="icon-btn" title="WhatsApp Customer" onclick="window.open('https://wa.me/${encodeURIComponent(customer.whatsapp.replace(/\s+/g, ''))}', '_blank'); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.52 3.48A11.89 11.89 0 0 0 12.01.01C5.4.01-.1 5.51-.1 12.11a11.9 11.9 0 0 0 2.02 6.43L.1 24l5.66-1.48a11.92 11.92 0 0 0 6.25 1.64h.01c6.62 0 12.02-5.4 12.02-12.03a12.04 12.04 0 0 0-1.44-5.65Zm-8.51 16.79a9.57 9.57 0 0 1-5.12-1.42l-.37-.23-3.35.88.9-3.27-.24-.38a9.56 9.56 0 0 1 1.44-10.84 9.5 9.5 0 0 1 12.9-.93 9.55 9.55 0 0 1 2.74 8.18 9.58 9.58 0 0 1-9.4 7.02Zm5.46-6.66c-.3-.15-1.78-.87-2.05-.97-.28-.1-.48-.15-.68.15-.2.3-.78.97-.96 1.17-.17.2-.34.22-.63.08-.3-.15-1.28-.47-2.44-1.5-.9-.8-1.51-1.8-1.69-2.1-.17-.28 0-.43.12-.57.12-.12.27-.31.4-.47.13-.16.17-.28.26-.47.09-.2.05-.37-.03-.52-.1-.15-.68-1.65-.93-2.26-.24-.58-.49-.5-.68-.51-.17-.01-.37-.01-.57-.01-.2 0-.52.07-.8.37-.28.3-1.08 1.05-1.08 2.56s1.11 2.97 1.26 3.18c.15.22 2.18 3.34 5.28 4.68.74.32 1.32.51 1.77.65.74.24 1.42.21 1.96.13.6-.09 1.78-.73 2.03-1.44.25-.71.25-1.32.18-1.45-.08-.12-.28-.2-.58-.34Z"/></svg></button>` : '<span style="color:#888;">—</span>';
+    const sendStatusAction = customer.whatsapp ? `<button class="icon-btn" title="Send Order Status" onclick="sendCustomerStatusNotification(${i}); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7.5a.5.5 0 0 1-.777.416L10 8.101 4.777 11.916A.5.5 0 0 1 4 11.5V4z"/><path d="M2 3a1 1 0 0 0-1 1v7.5A1.5 1.5 0 0 0 2.5 13H4v1.5a.5.5 0 0 0 .8.4L8 12.101l3.2 2.799A.5.5 0 0 0 12 14.5V13h1.5A1.5 1.5 0 0 0 15 11.5V4a1 1 0 0 0-1-1H2z"/></svg></button>` : '<span style="color:#888;">—</span>';
     const tr = document.createElement('tr');
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
                         <td>${i + 1}</td>
@@ -10219,6 +10247,7 @@ function renderCustomerList() {
                         <td>${escapeHtml(customer.address || '')}</td>
                         <td>${outstandingText}</td>
                         <td style="text-align: right; white-space: nowrap;">
+                          ${sendStatusAction}
                           ${whatsappAction}
                           <button class="icon-btn" title="Edit Customer" onclick="editCustomer(${i}); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
                           <button class="icon-btn" title="Delete Customer" onclick="deleteCustomer(${i}); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
@@ -10228,6 +10257,203 @@ function renderCustomerList() {
   
   populateCustomerDropdowns();
   renderInvoices();
+}
+
+function getCustomerWhatsAppNumber(customer) {
+  if (!customer || typeof customer !== 'object') return '';
+  const phone = customer.whatsapp || customer.contact || customer.phone || customer.mobile || '';
+  return String(phone).replace(/\D/g, '');
+}
+
+function buildCustomerStatusMessage(customer, status = 'pending', customMessage = '') {
+  const storeName = settings?.name || 'YoShop';
+  const customerName = customer?.name || 'Customer';
+  const statusLabel = getOrderStatusLabel(status);
+  let message = `Hello ${customerName},\nYour order status is: ${statusLabel}.`;
+  if (customMessage) {
+    message += `\n${customMessage}`;
+  }
+  message += `\n\nThank you for choosing ${storeName}.`;
+  return message;
+}
+
+function sendCustomerStatusNotification(index) {
+  const customer = customers[index];
+  if (!customer) return showAppAlert('Customer not found.', 'Send Notification');
+
+  const status = document.getElementById('customerStatusTemplateSelect')?.value || 'pending';
+  const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
+  const whatsappNumber = getCustomerWhatsAppNumber(customer);
+
+  if (!whatsappNumber) {
+    return showAppAlert('This customer does not have a WhatsApp number.', 'Missing WhatsApp');
+  }
+
+  const text = buildCustomerStatusMessage(customer, status, customMessage);
+  const shareUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
+  window.open(shareUrl, '_blank', 'noopener,noreferrer');
+}
+
+function sendSelectedCustomersStatusNotification() {
+  const selectedRows = Array.from(document.querySelectorAll('.customer-row-select:checked'));
+  if (!selectedRows.length) {
+    return showAppAlert('Select at least one customer to send the status notification.', 'No Customer Selected');
+  }
+
+  const status = document.getElementById('customerStatusTemplateSelect')?.value || 'pending';
+  const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
+
+  selectedRows.forEach(checkbox => {
+    const index = parseInt(checkbox.value, 10);
+    const customer = customers[index];
+    if (!customer) return;
+    const whatsappNumber = getCustomerWhatsAppNumber(customer);
+    if (!whatsappNumber) return;
+    const text = buildCustomerStatusMessage(customer, status, customMessage);
+    const shareUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
+    window.open(shareUrl, '_blank', 'noopener,noreferrer');
+  });
+}
+
+function getTransactionWhatsAppNumber(transaction) {
+  if (!transaction || typeof transaction !== 'object') return '';
+  let phone = '';
+  const linkedCustomer = transaction.customerId
+    ? customers.find(c => c && (c.id === transaction.customerId || String(c.id) === String(transaction.customerId)))
+    : null;
+
+  if (linkedCustomer) {
+    phone = linkedCustomer.whatsapp || linkedCustomer.contact || linkedCustomer.phone || linkedCustomer.mobile || '';
+  } else {
+    phone = transaction.customerWhatsApp || transaction.customerPhone || transaction.customerContact || transaction.customer?.whatsapp || transaction.customer?.phone || transaction.customer?.mobile || transaction.whatsapp || transaction.phone || '';
+  }
+
+  return String(phone).replace(/\D/g, '');
+}
+
+function updateTransactionStatusByIndex(transactionIndex, status) {
+  if (!Array.isArray(transactions) || typeof transactionIndex !== 'number' || transactionIndex < 0 || transactionIndex >= transactions.length) {
+    return null;
+  }
+  const transaction = transactions[transactionIndex];
+  if (!transaction || typeof status !== 'string') return null;
+  const previousStatus = String(transaction.orderStatus || transaction.status || '').trim().toLowerCase();
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+  transaction.orderStatus = normalizedStatus;
+  transaction.lastUpdated = new Date().toISOString();
+  const shouldSendUpdate = previousStatus !== normalizedStatus;
+  if (transaction.customerId) {
+    const customer = customers.find(c => c && (c.id === transaction.customerId || String(c.id) === String(transaction.customerId)));
+    if (customer) {
+      customer.lastTransactionDate = transaction.date || customer.lastTransactionDate;
+      enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
+    }
+  }
+  saveData();
+  renderTransactions();
+  renderInvoices();
+  if (shouldSendUpdate) {
+    sendOrderStatusNotification(transactionIndex, normalizedStatus);
+  }
+  return transaction;
+}
+
+function promptAndUpdateOrderStatus(transactionIndex) {
+  const transaction = Array.isArray(transactions) ? transactions[transactionIndex] : null;
+  if (!transaction) {
+    return showAppAlert('Could not find the transaction to update.', 'Update Status');
+  }
+
+  const currentStatus = transaction.orderStatus || transaction.status || 'pending';
+  const newStatus = window.prompt('Enter new order status (pending, in_progress, ready, completed, canceled):', currentStatus);
+  if (!newStatus || typeof newStatus !== 'string') return;
+
+  const normalized = String(newStatus).trim().toLowerCase();
+  const validStatuses = ['pending', 'in_progress', 'ready', 'completed', 'canceled'];
+  if (!validStatuses.includes(normalized)) {
+    return showAppAlert('Invalid order status. Use pending, in_progress, ready, completed, or canceled.', 'Invalid Status');
+  }
+
+  const updatedTransaction = updateTransactionStatusByIndex(transactionIndex, normalized);
+  if (updatedTransaction) {
+    const receiptModal = document.getElementById('receiptModal');
+    if (receiptModal && receiptModal._transactionData && receiptModal._transactionData.invoiceNumber === updatedTransaction.invoiceNumber) {
+      receiptModal._transactionData.orderStatus = normalized;
+      populateReceiptContent(receiptModal._transactionData);
+      const receiptStatusSelect = document.getElementById('receiptStatusSelect');
+      if (receiptStatusSelect) receiptStatusSelect.value = normalized;
+    }
+    showAppAlert(`Order status updated to ${getOrderStatusLabel(normalized)}.`, 'Status Updated');
+  }
+}
+
+function updateReceiptOrderStatus() {
+  const receiptModal = document.getElementById('receiptModal');
+  const statusSelect = document.getElementById('receiptStatusSelect');
+  if (!receiptModal || !statusSelect) return;
+
+  const newStatus = statusSelect.value;
+  const receiptData = receiptModal._transactionData;
+  if (!receiptData) {
+    return showAppAlert('No receipt currently loaded.', 'Update Status');
+  }
+
+  if (receiptData.invoiceNumber) {
+    const transactionIndex = Array.isArray(transactions)
+      ? transactions.findIndex(tx => tx && normalizeInvoiceNumber(tx.invoiceNumber) === normalizeInvoiceNumber(receiptData.invoiceNumber))
+      : -1;
+    if (transactionIndex >= 0) {
+      updateTransactionStatusByIndex(transactionIndex, newStatus);
+      receiptModal._transactionData.orderStatus = newStatus;
+      populateReceiptContent(receiptModal._transactionData);
+      return showAppAlert(`Order status updated to ${getOrderStatusLabel(newStatus)}.`, 'Status Updated');
+    }
+  }
+
+  // If this is an unsaved active order preview, just update the modal preview
+  receiptModal._transactionData.orderStatus = newStatus;
+  populateReceiptContent(receiptModal._transactionData);
+  showAppAlert(`Preview order status updated to ${getOrderStatusLabel(newStatus)}.`, 'Status Updated');
+}
+
+function buildOrderStatusMessage(transaction, status = 'pending', customMessage = '') {
+  const storeName = settings?.name || 'YoShop';
+  const customerName = transaction?.customerNameReal || transaction?.customerName || transaction?.customer?.name || 'Customer';
+  const orderRef = transaction?.invoiceNumber || transaction?.id || transaction?.orderNumber || 'Order';
+  const orderType = transaction?.orderType ? String(transaction.orderType).replace(/_/g, ' ') : '';
+  const totalAmount = transaction?.total ? `${settings.currency || '$'}${formatCurrency(transaction.total)}` : '';
+  let message = `Hello ${customerName},\nYour order (${orderRef}) status is: ${getOrderStatusLabel(status)}.`;
+  if (orderType) {
+    message += `\nOrder Type: ${orderType}.`;
+  }
+  if (totalAmount) {
+    message += `\nTotal: ${totalAmount}.`;
+  }
+  if (customMessage) {
+    message += `\n\n${customMessage}`;
+  }
+  message += `\n\nThank you for choosing ${storeName}.`;
+  return message;
+}
+
+function sendOrderStatusNotification(index, overrideStatus) {
+  const tx = Array.isArray(transactions) ? transactions[index] : null;
+  if (!tx) {
+    return showAppAlert('Order not found.', 'Send Order Status');
+  }
+
+  const currentStatus = String(tx.orderStatus || tx.status || 'pending').trim().toLowerCase();
+  const status = String(overrideStatus || currentStatus).trim().toLowerCase();
+  const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
+  const whatsappNumber = getTransactionWhatsAppNumber(tx);
+
+  if (!whatsappNumber) {
+    return showAppAlert('No WhatsApp number is available for this order.', 'Missing WhatsApp');
+  }
+
+  const text = buildOrderStatusMessage(tx, status, customMessage);
+  const shareUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
+  window.open(shareUrl, '_blank', 'noopener,noreferrer');
 }
 
 function createCustomerDebtInvoice(customer) {
@@ -10284,6 +10510,7 @@ function createCustomerDebtInvoice(customer) {
 }
 
 let currentInvoiceFilter = 'all';
+let currentInvoiceTableRows = [];
 
 function setInvoiceFilter(filter = 'all') {
   currentInvoiceFilter = String(filter || 'all').toLowerCase();
@@ -10296,6 +10523,111 @@ function setInvoiceFilter(filter = 'all') {
 }
 
 window.setInvoiceFilter = setInvoiceFilter;
+
+function normalizeInvoiceValue(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim().toLowerCase();
+}
+
+function getServiceInvoiceRows() {
+  const invoiceRows = buildInvoiceListItems({
+    customers: Array.isArray(customers) ? customers : [],
+    transactions: Array.isArray(transactions) ? transactions : []
+  });
+
+  return invoiceRows.filter(row => {
+    const tx = row?.transaction || {};
+    const orderType = String(tx.orderType || '').toLowerCase();
+    const serviceOrderData = tx.serviceOrder || {};
+    const hasServiceOrder = Object.values(serviceOrderData).some(value => value !== undefined && value !== null && String(value).trim() !== '');
+    return orderType === 'service' || hasServiceOrder;
+  });
+}
+
+function populateInvoiceStatusModal() {
+  const select = document.getElementById('invoiceStatusInvoiceSelect');
+  if (!select) return;
+  select.innerHTML = '<option value="">Select an invoice...</option>';
+  const rows = Array.isArray(currentInvoiceTableRows) && currentInvoiceTableRows.length > 0
+    ? currentInvoiceTableRows
+    : getServiceInvoiceRows();
+
+  rows.forEach(row => {
+    const invoiceNumber = row.invoiceNumber || row.transaction?.invoiceNumber || row.transaction?.id || 'INV-UNKNOWN';
+    const label = `${row.customerName || 'Customer'} · ${invoiceNumber}`;
+    const option = document.createElement('option');
+    option.value = invoiceNumber;
+    option.textContent = label;
+    select.appendChild(option);
+  });
+}
+
+function openInvoiceStatusModal() {
+  if (!settings.serviceMode) {
+    return showAppAlert('Invoice status updates are available only while Service Mode is enabled.', 'Service Mode Required');
+  }
+  const modal = document.getElementById('invoiceStatusModal');
+  if (!modal) return;
+  populateInvoiceStatusModal();
+  const select = document.getElementById('invoiceStatusInvoiceSelect');
+  if (select) select.value = '';
+  modal.style.display = 'flex';
+  document.body.style.overflow = 'hidden';
+}
+
+function closeInvoiceStatusModal() {
+  const modal = document.getElementById('invoiceStatusModal');
+  if (!modal) return;
+  modal.style.display = 'none';
+  document.body.style.overflow = '';
+}
+
+function invoiceStatusSelectionChanged() {
+  const select = document.getElementById('invoiceStatusInvoiceSelect');
+  if (!select) return;
+  const selectedInvoiceNumber = select.value;
+  const buttons = document.querySelectorAll('#invoiceStatusModal .status-btn');
+  buttons.forEach(button => button.classList.remove('active'));
+
+  if (!selectedInvoiceNumber) return;
+  const txIndex = findTransactionIndexByInvoiceNumber(selectedInvoiceNumber);
+  if (txIndex < 0) return;
+  const transaction = transactions[txIndex] || {};
+  const currentStatus = (transaction.orderStatus || transaction.status || 'pending').toLowerCase();
+  buttons.forEach(button => {
+    button.classList.toggle('active', button.dataset.status === currentStatus);
+  });
+}
+
+function findTransactionIndexByInvoiceNumber(invoiceNumber) {
+  if (!Array.isArray(transactions) || !invoiceNumber) return -1;
+  const normalizedTarget = normalizeInvoiceValue(invoiceNumber);
+  return transactions.findIndex(tx => {
+    const normalizedInvoice = normalizeInvoiceValue(tx.invoiceNumber || tx.id || tx.transactionId || tx.recordId);
+    return normalizedInvoice && normalizedInvoice === normalizedTarget;
+  });
+}
+
+function handleInvoiceStatusButtonClick(status) {
+  if (!settings.serviceMode) {
+    return showAppAlert('Service Mode must be enabled to update invoice status.', 'Service Mode Required');
+  }
+  const select = document.getElementById('invoiceStatusInvoiceSelect');
+  if (!select) return;
+  const invoiceNumber = select.value;
+  if (!invoiceNumber) {
+    return showAppAlert('Please select a service invoice first.', 'Select Invoice');
+  }
+  const txIndex = findTransactionIndexByInvoiceNumber(invoiceNumber);
+  if (txIndex < 0) {
+    return showAppAlert('Service invoice not found. Check the invoice selection and try again.', 'Invoice Not Found');
+  }
+  const updatedTransaction = updateTransactionStatusByIndex(txIndex, status);
+  if (updatedTransaction) {
+    closeInvoiceStatusModal();
+    showAppAlert(`Service invoice status updated to ${getOrderStatusLabel(status)}.`, 'Status Updated');
+  }
+}
 
 function renderInvoices() {
   const startDate = document.getElementById('invoiceStartDate')?.value;
@@ -10313,6 +10645,7 @@ function renderInvoices() {
   });
 
   const filteredRows = filterInvoiceRowsByStatus(dateFilteredRows, currentInvoiceFilter);
+  currentInvoiceTableRows = filteredRows;
 
   const currencySymbol = getCurrencySymbol();
   const invoiceCountEl = document.getElementById('invoiceCountInfo');
@@ -10424,12 +10757,14 @@ function renderInvoices() {
         checkbox.addEventListener('change', () => updateSelectAllHeader('invoiceListBody', 'selectAllInvoiceRows'));
         checkboxTd.appendChild(checkbox);
 
+        const statusBadgeHtml = getOrderStatusBadge((row.transaction?.orderStatus || row.transaction?.status || 'pending'));
         const cells = [
           checkboxTd,
           idx + 1,
           lastDate,
           row.customerName || 'Unknown Customer',
           invoiceNumber,
+          statusBadgeHtml,
           `${currencySymbol}${formatCurrency(total)}`,
           `${currencySymbol}${formatCurrency(amountPaid)}`,
           `${balance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(balance))}`,
@@ -10437,6 +10772,7 @@ function renderInvoices() {
         ];
 
         const textCellStyles = [
+          null,
           null,
           null,
           null,
@@ -10452,7 +10788,12 @@ function renderInvoices() {
           if (index === 0) return;
           const cell = document.createElement('td');
           if (textCellStyles[index]) cell.style.cssText = textCellStyles[index];
-          cell.textContent = value;
+          if (index === 5) {
+            cell.classList.add('service-status-column');
+            cell.innerHTML = value;
+          } else {
+            cell.textContent = value;
+          }
           rowElement.appendChild(cell);
         });
 

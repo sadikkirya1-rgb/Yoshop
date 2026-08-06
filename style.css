@@ -1223,6 +1223,55 @@ body.dark-mode .app-popup-card p {
   flex-wrap: wrap;
 }
 
+.invoice-status-card {
+  min-width: 360px;
+  max-width: 460px;
+}
+
+.invoice-status-button-list .status-btn {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 14px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  color: #111;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.2s, border-color 0.2s, transform 0.1s;
+}
+
+.invoice-status-button-list .status-btn:hover {
+  background: #eef4fb;
+  transform: translateY(-1px);
+}
+
+.invoice-status-button-list .status-btn.active {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
+.invoice-status-button-list .status-btn[data-status="canceled"] {
+  border-color: #f87171;
+}
+
+.invoice-status-button-list .status-btn[data-status="completed"] {
+  border-color: #34d399;
+}
+
+.invoice-status-button-list .status-btn[data-status="ready"] {
+  border-color: #fbbf24;
+}
+
+.invoice-status-button-list .status-btn[data-status="in_progress"] {
+  border-color: #60a5fa;
+}
+
+.invoice-status-button-list .status-btn[data-status="pending"] {
+  border-color: #8b5cf6;
+}
+
 /* Cancel button – ghost style */
 .app-popup-btn-cancel {
   background: transparent !important;
