@@ -5742,6 +5742,14 @@ function updateOrders(cartId, shouldSave = true) {
   const totals = calculateTransactionTotals(currentOrder.items);
   document.getElementById('menuTotal').textContent = formatCurrency(totals.total);
 
+  const itemCount = Array.isArray(currentOrder.items)
+    ? currentOrder.items.reduce((sum, item) => sum + (parseInt(item.qty, 10) || 0), 0)
+    : 0;
+  const itemCountLabel = document.getElementById('menuItemCountLabel');
+  if (itemCountLabel) {
+    itemCountLabel.textContent = `Items: ${itemCount}`;
+  }
+
   // Update Preview and Checkout buttons to icons
   const previewBtn = document.querySelector('button[onclick*="previewOrder()"]');
   if (previewBtn) {
