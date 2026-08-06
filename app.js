@@ -3252,42 +3252,44 @@ function renderFooterClock() {
   clockEl.style.color = '#6c757d';
 }
 
-function renderSubscriptionFooterInfo() {
+function getFooterStatusText(syncStatus = {}) {
+  const subInfo = getSubscriptionInfo();
+  const footerParts = [];
+  const modeLabel = settings.serviceMode ? 'Service Mode' : 'Product Mode';
+  footerParts.push(modeLabel);
+
+  if (!isAppAdminRole()) {
+    if (subInfo.isPromoPlan) {
+      footerParts.push('Promo Plan');
+    } else if (subInfo.isExpired) {
+      footerParts.push('Subscription expired');
+    } else if (subInfo.subExpires) {
+      const planTypeLabel = subInfo.planType === 'yearly' ? 'Yearly Plan' : (subInfo.planType === 'monthly' ? 'Monthly Plan' : 'Subscription Plan');
+      footerParts.push(`${planTypeLabel} • ${formatSubscriptionCountdown(subInfo.subExpires.getTime() - Date.now())}`);
+    } else {
+      footerParts.push('Subscription active');
+    }
+  }
+
+  if (syncStatus.title) {
+    footerParts.push(syncStatus.title);
+  } else {
+    footerParts.push(navigator.onLine ? 'Online & synced' : 'Offline');
+  }
+
+  return footerParts.filter(Boolean).join(' • ');
+}
+
+function updateFooterStatus(syncStatus = {}) {
   const footerEl = document.getElementById('subscription-footer-status');
   if (!footerEl) return;
+  footerEl.textContent = getFooterStatusText(syncStatus);
+  footerEl.style.display = 'block';
+  footerEl.style.color = syncStatus.background || '#6c757d';
+}
 
-  if (currentUserRole === 'appAdmin') {
-    footerEl.textContent = '';
-    footerEl.style.display = 'none';
-    return;
-  }
-
-  const subInfo = getSubscriptionInfo();
-  const startedAtValue = userMetadata?.subscriptionStartedAt || userMetadata?.subscriptionStartDate || userMetadata?.startedAt || userMetadata?.createdAt || userMetadata?.lastLogin || userMetadata?.activationDate;
-  const startedAt = startedAtValue ? new Date(startedAtValue) : null;
-
-  if (subInfo.isPromoPlan || subInfo.label === 'PROMO PLAN') {
-    footerEl.textContent = 'Promo Plan';
-    footerEl.style.color = '#f59e0b';
-    return;
-  }
-
-  if (!subInfo.subExpires || !startedAt || !Number.isFinite(startedAt.getTime())) {
-    footerEl.textContent = 'Subscription plan active';
-    footerEl.style.color = '#6c757d';
-    return;
-  }
-
-  const remainingMs = subInfo.subExpires.getTime() - Date.now();
-  if (remainingMs <= 0) {
-    footerEl.textContent = 'Subscription expired';
-    footerEl.style.color = '#dc3545';
-    return;
-  }
-
-  const planLabel = subInfo.planType === 'yearly' ? 'Yearly Plan' : (subInfo.planType === 'monthly' ? 'Monthly Plan' : 'Subscription Plan');
-  footerEl.textContent = `${planLabel} • ${formatSubscriptionCountdown(remainingMs)}`;
-  footerEl.style.color = subInfo.isExpired ? '#dc3545' : '#28a745';
+function renderSubscriptionFooterInfo() {
+  updateFooterStatus();
 }
 
 /**
@@ -3828,28 +3830,22 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
   const syncBtn = document.getElementById('header-sync-status');
 
   if (statusEl) {
-    const isSyncVisual = /syncing/i.test(String(title || '')) || state === '🔄' || isSyncing === true;
-    if (isSyncVisual) {
-      statusEl.innerHTML = '🟢';
-      statusEl.title = title;
-      statusEl.classList.add('sync-pulse');
-    } else {
-      statusEl.classList.remove('sync-pulse');
-      statusEl.textContent = state;
-      statusEl.title = title;
-    }
+    statusEl.textContent = '';
+    statusEl.title = title;
+    statusEl.classList.toggle('sync-pulse', /syncing/i.test(String(title || '')) || state === '🔄' || isSyncing === true);
   }
 
   if (syncBtn) {
     syncBtn.title = title;
     syncBtn.setAttribute('data-tooltip', title);
+    syncBtn.setAttribute('aria-label', title);
   }
 
   if (syncBadgeEl) {
-    syncBadgeEl.textContent = label;
-    syncBadgeEl.style.display = showBadge ? 'inline-flex' : 'none';
-    syncBadgeEl.style.background = background;
+    syncBadgeEl.style.display = 'none';
   }
+
+  updateFooterStatus({ state, label, title, background, showBadge });
 }
 
 async function syncNow() {
@@ -3975,13 +3971,9 @@ function updateAuthUI(user) {
   authContainer.id = 'auth-header-container';
   authContainer.style.cssText = 'display: flex; align-items: center; gap: 4px; font-size: 0.8em; margin-left: 6px; flex-wrap: nowrap; overflow: hidden;';
 
-  const subInfo = getSubscriptionInfo();
-  const statusBadge = `<div class="header-status-badge" style="background: ${subInfo.color}; color: white; padding: 1px 6px; border-radius: 999px; font-size: 0.62em; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2); white-space: nowrap;">${subInfo.label}</div>`;
-
   if (user) {
     authContainer.innerHTML = `
         <div style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; min-width: 0;">
-          <div class="header-status-badge" style="background: ${subInfo.color}; color: white; padding: 1px 6px; border-radius: 999px; font-size: 0.62em; font-weight: bold; box-shadow: 0 1px 3px rgba(0,0,0,0.2); white-space: nowrap;">${subInfo.label}</div>
           <img src="${user.photoURL || 'https://placehold.co/30'}" style="width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; flex-shrink: 0;">
         </div>
       `;
@@ -4881,7 +4873,10 @@ function renderMenu() {
         }
         cacheDishImage(dish.name, dish.image);
 
-        const stockLabel = isStockTrackingEnabled() ? `Available: ${availableStock}` : 'Service Mode: stock not tracked';
+        const stockLabel = `Available: ${availableStock}`;
+        const stockStatusHtml = isStockTrackingEnabled() && dish.type !== 'service'
+          ? `<p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">${stockLabel}</p>`
+          : '';
         item.innerHTML = `
               <img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.src='https://placehold.co/100';">
               <div class="menu-item-body">
@@ -4890,7 +4885,7 @@ function renderMenu() {
                   <p><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(dish.price)}</p>
                 </div>
                 ${dish.type === 'service' ? '<div style="font-size:0.8rem; margin-top:6px; color:#0d6efd;">Service item</div>' : ''}
-                <p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">${stockLabel}</p>
+                ${stockStatusHtml}
                 <div class="item-controls">
                   <button onclick="decreaseQty('${CART_ID}', '${escapeJsString(dish.name)}')" ${quantity === 0 ? 'disabled' : ''}>-</button>
                   <input type="number" class="qty-input" min="0" value="${quantity}" oninput="updateMenuItemQuantity('${escapeJsString(dish.name)}', this.value)" onchange="updateMenuItemQuantity('${escapeJsString(dish.name)}', this.value)" />
@@ -6215,6 +6210,7 @@ async function finalizePayment(isSplit = false) {
   const serviceDuration = document.getElementById('serviceDuration')?.value.trim() || null;
   const serviceNotes = document.getElementById('serviceNotes')?.value.trim() || null;
   const serviceItemCount = currentOrder.items.reduce((sum, item) => sum + (parseInt(item.qty, 10) || 0), 0);
+  const currentServerName = getCurrentServerName();
 
   let amountPaid = finalTotal;
   if (isNaN(amountTendered) || amountTendered < 0) {
@@ -6250,7 +6246,8 @@ async function finalizePayment(isSplit = false) {
 
     const transaction = {
       date: new Date().toISOString(),
-      customerName: getCurrentServerName(), // This is the staff name for compatibility
+      customerName: currentServerName, // This is the staff name for compatibility
+      servedBy: currentServerName,
       tableNo: 'Shop',
       items: currentOrder.items
         .filter(item => (parseInt(item?.qty, 10) || 0) > 0)
@@ -6552,11 +6549,18 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const amountPaid = Number(source.amountPaid ?? source.totalPaid ?? source.paidAmount ?? 0);
   const discountAmount = Number(source.discount?.amount ?? source.discountAmount ?? 0);
   const paymentStatus = source.paymentStatus || source.payment?.status || source.status || (Number.isFinite(Number(source.balance)) && Number(source.balance) !== 0 ? 'PENDING' : 'PAID');
+  const orderStatus = source.orderStatus || source.status || 'pending';
+  const servedByName = source.servedBy || source.cashier || source.staffName || source.customerName || 'Staff';
+  const serviceOrder = source.serviceOrder || {};
   const cashier = source.cashier || source.staffName || source.servedBy || 'Admin';
+  const showServiceModeStatus = settings.serviceMode === true;
   const note = source.note || 'Please keep this invoice for warranty and return purposes.';
   const currencySymbol = getCurrencySymbol();
   const storeName = settings?.name || 'YO SHOP';
   const storeAddress = settings?.address || 'Smart POS & Inventory System';
+  const safeOrderStatus = escapeHtml(getOrderStatusLabel(orderStatus));
+  const safeServedBy = escapeHtml(servedByName);
+  const safeOrderType = escapeHtml(source.orderType === 'service' ? 'Service' : 'Product');
   const logoUrl = sanitizeLogoUrl(settings?.logo);
   const safeStoreName = escapeHtml(storeName);
   const safeCustomerName = escapeHtml(customerName);
@@ -6800,10 +6804,13 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
               <p>Table/Account: <b>${safeTableNo}</b></p>
               <p>Method: <b>${safePaymentMethod}</b></p>
               <p>Status: <span class="badge">${safePaymentStatus}</span></p>
+              ${showServiceModeStatus ? `<p>Order Status: <b>${safeOrderStatus}</b></p>` : ''}
+              <p>Served By: <b>${safeServedBy}</b></p>
               <p>Cashier: <b>${safeCashier}</b></p>
               <p>Amount Paid: <b>${paidText}</b></p>
               <p>Balance: <b>${balanceText}</b></p>
             </div>
+            ${showServiceModeStatus && (source.orderType === 'service' || serviceOrder.pickupDate || serviceOrder.dropoffDate || serviceOrder.duration || serviceOrder.notes) ? `<div class="card"><h3>Service Order</h3><p>Type: <b>${safeOrderType}</b></p>${serviceOrder.pickupDate ? `<p>Pickup: <b>${escapeHtml(serviceOrder.pickupDate)}</b></p>` : ''}${serviceOrder.dropoffDate ? `<p>Dropoff: <b>${escapeHtml(serviceOrder.dropoffDate)}</b></p>` : ''}${serviceOrder.duration ? `<p>Duration: <b>${escapeHtml(serviceOrder.duration)}</b></p>` : ''}${serviceOrder.notes ? `<p>Notes: <b>${escapeHtml(serviceOrder.notes)}</b></p>` : ''}</div>` : ''}
           </div>
           <table>
             <thead>
@@ -6877,13 +6884,22 @@ function previewOrder(transactionData = null) {
     } else {
       const totals = calculateTransactionTotals(currentOrder.items);
       currentTransaction = {
-        date: new Date().toLocaleString(),
+        date: new Date().toISOString(),
         customerName: getCurrentServerName(),
+        servedBy: getCurrentServerName(),
         tableNo: 'Shop',
         items: [...currentOrder.items],
         total: totals.total,
         subtotal: totals.subtotal,
-        tax: totals.tax
+        tax: totals.tax,
+        orderStatus: document.getElementById('orderStatusSelect')?.value || 'pending',
+        orderType: settings.serviceMode ? 'service' : 'product',
+        serviceOrder: {
+          pickupDate: document.getElementById('pickupDate')?.value || null,
+          dropoffDate: document.getElementById('dropoffDate')?.value || null,
+          duration: document.getElementById('serviceDuration')?.value.trim() || null,
+          notes: document.getElementById('serviceNotes')?.value.trim() || null
+        }
       };
       // Clear any previously stored historical transaction
       receiptModal._transactionData = null;
@@ -7686,10 +7702,19 @@ function getReceiptPromoMessage() {
  * This is a helper for PDF generation.
  */
 function populateReceiptContent(transaction) {
-  const { date, customerName, tableNo, items, total, subtotal, tax, discount, receiptType, paymentMethod, note, amountPaid } = transaction;
+  const { date, customerName, tableNo, items, total, subtotal, tax, discount, receiptType, paymentMethod, note, amountPaid, orderStatus, servedBy, serviceOrder = {}, orderType } = transaction;
   const transactionId = new Date(date).getTime();
   const invoiceNumber = getInvoiceNumber(transaction);
   const currencySymbol = getCurrencySymbol();
+  const effectiveOrderStatus = orderStatus || transaction.status || 'pending';
+  const effectiveServedBy = servedBy || transaction.cashier || transaction.staffName || customerName || 'Staff';
+  const showServiceModeStatus = settings.serviceMode === true;
+  const servicePickupLine = serviceOrder?.pickupDate ? `<div class="summary-line"><span>Pickup</span> <span>${escapeHtml(serviceOrder.pickupDate)}</span></div>` : '';
+  const serviceDropoffLine = serviceOrder?.dropoffDate ? `<div class="summary-line"><span>Dropoff</span> <span>${escapeHtml(serviceOrder.dropoffDate)}</span></div>` : '';
+  const serviceDurationLine = serviceOrder?.duration ? `<div class="summary-line"><span>Duration</span> <span>${escapeHtml(serviceOrder.duration)}</span></div>` : '';
+  const serviceNotesLine = serviceOrder?.notes ? `<div class="summary-line"><span>Service Notes</span> <span>${escapeHtml(serviceOrder.notes)}</span></div>` : '';
+  const servedByLine = `<div class="summary-line"><span>Served By</span> <span>${escapeHtml(effectiveServedBy)}</span></div>`;
+  const orderStatusLine = showServiceModeStatus ? `<div class="summary-line"><span>Order Status</span> <span>${getOrderStatusBadge(effectiveOrderStatus)}</span></div>` : '';
 
   // Fallback for old transactions that might not have subtotal/tax saved
   const displaySubtotal = subtotal !== undefined ? subtotal : total; // If no tax info, assume total is subtotal
@@ -7780,6 +7805,12 @@ function populateReceiptContent(transaction) {
           ${customerLine}
           ${customerContactLine}
           ${customerAddressLine}
+          ${servedByLine}
+          ${orderStatusLine}
+          ${servicePickupLine}
+          ${serviceDropoffLine}
+          ${serviceDurationLine}
+          ${serviceNotesLine}
           ${methodLine}
           ${noteLine}
           ${totalAmountLine}
@@ -9517,7 +9548,7 @@ function showAdminNoticesOverlay(notices = []) {
 
 function applyServiceModeUI(enabled) {
   const banner = document.getElementById('serviceModeBanner');
-  if (banner) banner.style.display = enabled ? 'block' : 'none';
+  if (banner) banner.style.display = 'none';
 
   const stockElements = [
     document.getElementById('lowStockThreshold'),
@@ -13280,9 +13311,8 @@ function showLoginOverlay(mode = 'login') {
     overlay.innerHTML = `
         ${deviceLabel}
         ${logoHtml}
+        <p style="font-size: 1.2em; margin: 0 0 12px;">Welcome</p>
         <h1 style="font-size: 3em; margin-top: 0px; margin-bottom: 0px;">${settings?.name || 'YoShop'}</h1>
-        <p style="font-size: 1.2em; margin-top: 0px; margin-bottom: 12px;">Welcome, ${currentUser.displayName || currentUser.email.split('@')[0]}</p>
-        
         ${statusDisplay}
 
         ${pinStageHtml}

@@ -1799,6 +1799,31 @@ section#menuTab.active {
   font-weight: bold;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
+#header-sync-status .header-sync-text,
+#header-sync-status .sync-badge {
+  display: none !important;
+}
+#header-sync-status .header-sync-icon {
+  font-size: 18px;
+  line-height: 1;
+}
+#serviceModeBanner,
+#serviceModeBanner * {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  width: 0 !important;
+  height: 0 !important;
+  margin: 0 !important;
+  padding: 0 !important;
+}
+#subscription-footer-status {
+  font-size: 0.68rem !important;
+  line-height: 1.15 !important;
+  margin-top: 4px !important;
+  padding: 4px 6px !important;
+  color: #6c757d !important;
+}
 
 @keyframes sync-pulse {
   0% {

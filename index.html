@@ -66,9 +66,6 @@
   </div>
 
   <header>
-    <div id="serviceModeBanner" class="service-mode-banner" style="display:none; text-align:center; padding:10px; background:#fff4e5; color:#975a16; border-bottom:1px solid #f7d7ac; font-weight:700;">
-      SERVICE MODE ACTIVE — Stock tracking disabled. This app is now optimized for service workflows like laundry, repairs, and appointments.
-    </div>
     <button id="menu-toggle" class="icon-btn" onclick="toggleNav()">&#9776;</button>
     <span class="header-logo">🖨️</span>
     <button id="header-printer-status" class="icon-btn" title="Printer Connected">
@@ -78,8 +75,9 @@
       </svg>
     </button>
     <div class="header-actions">
-      <button id="header-sync-status" class="icon-btn" onclick="syncNow()" title="Cloud Sync">
-        <span id="connectivity-status"></span>
+      <button id="header-sync-status" class="icon-btn" onclick="syncNow()" title="Cloud Sync" aria-label="Cloud Sync">
+        <span class="header-sync-icon">☁️</span>
+        <span id="connectivity-status" class="header-sync-text" aria-hidden="true"></span>
         <span id="sync-badge" class="sync-badge" style="display:none;">Pending</span>
       </button>
       <button id="update-notification-btn" class="icon-btn" onclick="toggleNotifications()" title="Notifications">
@@ -1407,7 +1405,10 @@
             style="font-size: 0.8em; padding: 2px 8px; margin: 0; background: #6c757d;">Check for Updates</button>
           <span id="footer-live-clock" style="font-size: 0.78em; color: #6c757d;">Loading time...</span>
         </div>
-        <div id="subscription-footer-status" style="font-size: 0.78em; color: #6c757d;">Checking plan status...</div>
+        <div id="serviceModeBanner" class="service-mode-banner" style="display:none; text-align:center; padding:8px 10px; background:#fff4e5; color:#975a16; border:1px solid #f7d7ac; border-radius:8px; font-weight:700; font-size:0.82rem; margin-top:8px;">
+          SERVICE MODE ACTIVE — Stock tracking disabled. This app is now optimized for service workflows like laundry, repairs, and appointments.
+        </div>
+        <div id="subscription-footer-status" style="font-size: 0.78em; color: #6c757d; margin-top:8px;">Checking plan status...</div>
       </div>
 
       <!-- App Admin -->
