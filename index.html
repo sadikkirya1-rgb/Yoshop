@@ -743,7 +743,7 @@
             <button class="btn btn-secondary" type="button" data-invoice-filter="all" onclick="setInvoiceFilter('all')">All</button>
             <button class="btn btn-secondary" type="button" data-invoice-filter="pending" onclick="setInvoiceFilter('pending')">Pending</button>
             <button class="btn btn-secondary" type="button" data-invoice-filter="paid" onclick="setInvoiceFilter('paid')">Paid</button>
-            <button class="btn btn-primary" type="button" id="invoiceStatusUpdateBtn" onclick="openInvoiceStatusModal()">Update Status</button>
+            <button class="btn btn-primary invoice-status-update-btn" type="button" id="invoiceStatusUpdateBtn" onclick="openInvoiceStatusModal()">Update Status</button>
           </div>
         </div>
         <div class="u-overflow-x-auto">
@@ -1202,8 +1202,9 @@
       <!-- Transactions -->
       <section id="transactionsTab">
         <h3>🧾 Sales History</h3>
-        <div class="input-row u-mb-15">
+        <div class="input-row u-mb-15" style="gap:8px; align-items:center; flex-wrap:wrap;">
           <input type="date" id="transactionFilterDate" onchange="renderTransactions()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
+          <button class="btn btn-primary invoice-status-update-btn" type="button" onclick="openInvoiceStatusModal()">Update Status</button>
         </div>
         <div class="u-mb-10" id="transactionCountInfo">Showing 0 of 0 bills</div>
         <div class="u-overflow-x-auto" id="transactionListContainer">
@@ -1212,6 +1213,7 @@
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllSales" onchange="toggleSelectAllRows('transactionHistoryBody', this.checked); updateSelectAllHeader('transactionHistoryBody','selectAllSales')"></th>
                 <th>#</th>
+                <th>Invoice</th>
                 <th>Date</th>
                 <th>Type</th>
                 <th class="service-status-column" style="display:none;">Status</th>

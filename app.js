@@ -10,7 +10,7 @@ import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAut
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
 import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity } from './admin-utils.mjs';
-import { getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-utils.mjs';
+import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
@@ -383,6 +383,45 @@ function touchSettingsRecord(record = {}, recordId = 'settings') {
     lastSyncAt: record.lastSyncAt || null
   };
 }
+
+function enqueueSettingsSync(settingsValue = settings) {
+  const effectiveUid = getEffectiveUid();
+  if (!effectiveUid || !dbFirestore) return Promise.resolve(null);
+
+  const payload = buildSettingsSyncPayload(normalizeSettings(settingsValue, defaultSettings), {
+    version: Number(settingsValue?.version || 0)
+  });
+
+  return enqueueLocalSyncAction({
+    entityType: 'settings',
+    payload,
+    businessId: effectiveUid,
+    userId: currentUser?.uid || effectiveUid,
+    staffId: currentLoggedInStaffName || currentUser?.uid || 'system',
+    updatedBy: currentUser?.uid || effectiveUid,
+    deviceId: getCurrentDeviceId()
+  });
+}
+
+function enqueueTransactionSync(transaction = {}) {
+  const effectiveUid = getEffectiveUid();
+  if (!effectiveUid || !dbFirestore || !transaction || typeof transaction !== 'object') return Promise.resolve(null);
+
+  const payload = buildTransactionSyncPayload(transaction, {
+    version: Number(transaction.version || 0)
+  });
+
+  return enqueueLocalSyncAction({
+    entityType: 'sales',
+    payload,
+    businessId: effectiveUid,
+    userId: currentUser?.uid || effectiveUid,
+    staffId: currentLoggedInStaffName || currentUser?.uid || 'system',
+    updatedBy: currentUser?.uid || effectiveUid,
+    deviceId: getCurrentDeviceId()
+  });
+}
+
 function pickNewestSettingsRecord(localRecord = {}, cloudRecord = {}, defaults = {}) {
   if (!cloudRecord || typeof cloudRecord !== 'object' || Object.keys(cloudRecord).length === 0) {
     return { ...defaults, ...(localRecord || {}) };
@@ -3621,15 +3660,7 @@ async function recordTransaction(transaction) {
 
   const effectiveUid = getEffectiveUid();
   if (effectiveUid && dbFirestore) {
-    await enqueueLocalSyncAction({
-      entityType: 'sales',
-      payload: transaction,
-      businessId: effectiveUid,
-      userId: effectiveUid,
-      staffId: currentLoggedInStaffName || currentUser?.uid || 'system',
-      updatedBy: currentUser?.uid || effectiveUid,
-      deviceId: new URLSearchParams(window.location.search).get('device') || 'browser'
-    });
+    await enqueueTransactionSync(transaction);
   }
 
   if (navigator.onLine) {
@@ -4968,7 +4999,9 @@ function toggleServiceMode() {
   const serviceModeCheckbox = document.getElementById('serviceMode');
   if (!serviceModeCheckbox) return;
   settings.serviceMode = serviceModeCheckbox.checked;
+  settings = touchSettingsRecord({ ...settings, serviceMode: settings.serviceMode }, 'settings');
   saveData();
+  enqueueSettingsSync(settings).catch(console.warn);
   applyServiceModeUI(settings.serviceMode === true);
   renderMenu();
   renderTransactions();
@@ -7209,7 +7242,7 @@ function getBarcodeDataUrl(code) {
 function normalizeInvoiceNumber(invoiceNumber) {
   if (!invoiceNumber || typeof invoiceNumber !== 'string') return invoiceNumber;
   const trimmed = invoiceNumber.trim();
-  if (/^INV-\d{2}\/\d{2}\/\d{4}$/.test(trimmed)) return trimmed;
+  if (/^INV-\d{2}\/\d{2}\/\d{4}\/\d{4}$/.test(trimmed)) return trimmed;
   const oldDashMatch = /^INV-(\d{2})(\d{2})-(\d{4})$/.exec(trimmed);
   if (oldDashMatch) return `INV-${oldDashMatch[1]}/${oldDashMatch[2]}/${oldDashMatch[3]}`;
   const dashDateMatch = /^INV-(\d{2})\/(\d{2})-(\d{4})$/.exec(trimmed);
@@ -7219,8 +7252,10 @@ function normalizeInvoiceNumber(invoiceNumber) {
 
 function parseInvoiceSequence(invoiceNumber) {
   const normalized = normalizeInvoiceNumber(invoiceNumber);
-  const match = /^INV-\d{2}\/\d{2}\/(\d{4})$/.exec(normalized);
-  return match ? Number(match[1]) : null;
+  const match = /^INV-\d{2}\/\d{2}\/\d{4}\/((?:\d{4})?)$/.exec(normalized);
+  if (!match) return null;
+  const serial = Number(match[1]);
+  return Number.isFinite(serial) && serial > 0 ? serial : null;
 }
 
 function getInvoiceNumber(transaction = null) {
@@ -7229,14 +7264,22 @@ function getInvoiceNumber(transaction = null) {
   const dateValue = transaction?.date ? new Date(transaction.date) : new Date();
   const dd = String(dateValue.getDate()).padStart(2, '0');
   const mm = String(dateValue.getMonth() + 1).padStart(2, '0');
-  const datePart = `${dd}/${mm}`; // DD/MM without year
-  const storageKey = `yoshop_invoice_counter_${dd}${mm}`;
+  const yyyy = String(dateValue.getFullYear());
+  const datePart = `${dd}/${mm}/${yyyy}`;
+  const storageKey = `yoshop_invoice_counter_${yyyy}${mm}${dd}`;
 
   try {
     const storedValue = parseInt(localStorage.getItem(storageKey) || '0', 10);
     const existingSerials = Array.isArray(transactions)
       ? transactions
-          .map(tx => tx?.invoiceNumber ? parseInvoiceSequence(tx.invoiceNumber) : null)
+          .map(tx => {
+            const number = tx?.invoiceNumber || tx?.transactionNumber || tx?.receiptNumber || '';
+            const normalized = normalizeInvoiceNumber(number);
+            const match = /^INV-(\d{2})\/(\d{2})\/(\d{4})\/(\d{4})$/.exec(normalized);
+            if (!match) return null;
+            const serialValue = Number(match[4]);
+            return Number.isFinite(serialValue) ? serialValue : null;
+          })
           .filter(num => Number.isFinite(num) && num > 0)
       : [];
     const highestSerial = existingSerials.length ? Math.max(...existingSerials) : 0;
@@ -7245,7 +7288,7 @@ function getInvoiceNumber(transaction = null) {
     if (highestSerial > 0) {
       nextNumber = Math.max(highestSerial, Number.isFinite(storedValue) ? storedValue : 0) + 1;
     } else if (Number.isFinite(storedValue) && storedValue > 0) {
-      nextNumber = 1;
+      nextNumber = storedValue + 1;
     }
 
     localStorage.setItem(storageKey, String(nextNumber));
@@ -7650,6 +7693,7 @@ function renderTransactions() {
     tr.innerHTML = `
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('transactionHistoryBody','selectAllSales')"></td>
         <td>${i + 1}</td>
+        <td class="u-fs-08 u-nowrap">${escapeHtml(getInvoiceNumber(t) || '—')}</td>
         <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}${(t.duplicateCount || 0) > 0 ? ' <span class="duplicate-sale-badge">Duplicate</span>' : ''}</td>
         <td class="u-fs-08 u-nowrap">${escapeHtml(String(t.orderType === 'service' ? 'Service' : 'Product'))}</td>
         <td class="service-status-column">${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
@@ -9382,6 +9426,7 @@ async function saveSettings() {
   settings.serviceMode = Boolean(document.getElementById('serviceMode')?.checked);
   settings.promoMessage = document.getElementById('promoMessage').value.trim();
   settings.ShopAdminPIN = pin;
+  settings = touchSettingsRecord({ ...settings, serviceMode: settings.serviceMode }, 'settings');
 
   const logoFile = document.getElementById('companyLogo').files[0];
   if (logoFile) {
@@ -9399,6 +9444,7 @@ async function saveSettings() {
   settings = touchSettingsRecord(settings, 'settings');
 
   saveData();
+  enqueueSettingsSync(settings).catch(console.warn);
   alert('Settings saved!');
   loadSettings(); // Reload to show preview
 
@@ -9659,10 +9705,11 @@ function applyServiceModeUI(enabled) {
     serviceFields.style.display = enabled ? 'flex' : 'none';
   }
 
-  const invoiceStatusButton = document.getElementById('invoiceStatusUpdateBtn');
-  if (invoiceStatusButton) {
-    invoiceStatusButton.style.display = enabled ? '' : 'none';
-  }
+  document.querySelectorAll('.invoice-status-update-btn').forEach(button => {
+    if (button) {
+      button.style.display = enabled ? '' : 'none';
+    }
+  });
 
   document.querySelectorAll('.service-status-column').forEach(el => {
     el.style.display = enabled ? '' : 'none';
@@ -10339,9 +10386,18 @@ function updateTransactionStatusByIndex(transactionIndex, status) {
   if (!transaction || typeof status !== 'string') return null;
   const previousStatus = String(transaction.orderStatus || transaction.status || '').trim().toLowerCase();
   const normalizedStatus = String(status || '').trim().toLowerCase();
-  transaction.orderStatus = normalizedStatus;
-  transaction.lastUpdated = new Date().toISOString();
+  const updatedTransaction = buildTransactionSyncPayload({
+    ...transaction,
+    orderStatus: normalizedStatus,
+    status: normalizedStatus,
+    lastUpdated: new Date().toISOString(),
+    synced: false,
+    syncStatus: 'pending'
+  });
+  transactions[transactionIndex] = updatedTransaction;
   const shouldSendUpdate = previousStatus !== normalizedStatus;
+  saveState('transactions', transactions, { enqueueSync: false }).catch(() => {});
+  enqueueTransactionSync(transactions[transactionIndex]).catch(console.warn);
   if (transaction.customerId) {
     const customer = customers.find(c => c && (c.id === transaction.customerId || String(c.id) === String(transaction.customerId)));
     if (customer) {
@@ -10355,7 +10411,7 @@ function updateTransactionStatusByIndex(transactionIndex, status) {
   if (shouldSendUpdate) {
     sendOrderStatusNotification(transactionIndex, normalizedStatus);
   }
-  return transaction;
+  return transactions[transactionIndex];
 }
 
 function promptAndUpdateOrderStatus(transactionIndex) {
