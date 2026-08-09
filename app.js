@@ -10263,6 +10263,8 @@ function toggleSelectAllCustomers(checked) {
   });
 }
 
+window.toggleSelectAllCustomers = toggleSelectAllCustomers;
+
 function renderCustomerList() {
   const tbody = document.getElementById('customerListBody');
   if (!tbody) return;
@@ -10283,8 +10285,8 @@ function renderCustomerList() {
       : `<span style="${outstandingBalance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${outstandingBalance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(outstandingBalance))}</span>`;
 
     const whatsappCell = customer.whatsapp ? `<a href="https://wa.me/${encodeURIComponent(customer.whatsapp.replace(/\s+/g, ''))}" target="_blank" rel="noreferrer" style="color:#25D366; text-decoration:none; font-weight:600;">${escapeHtml(customer.whatsapp)}</a>` : '<span style="color:#888;">N/A</span>';
-    const whatsappAction = customer.whatsapp ? `<button class="icon-btn" title="WhatsApp Customer" onclick="window.open('https://wa.me/${encodeURIComponent(customer.whatsapp.replace(/\s+/g, ''))}', '_blank'); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M20.52 3.48A11.89 11.89 0 0 0 12.01.01C5.4.01-.1 5.51-.1 12.11a11.9 11.9 0 0 0 2.02 6.43L.1 24l5.66-1.48a11.92 11.92 0 0 0 6.25 1.64h.01c6.62 0 12.02-5.4 12.02-12.03a12.04 12.04 0 0 0-1.44-5.65Zm-8.51 16.79a9.57 9.57 0 0 1-5.12-1.42l-.37-.23-3.35.88.9-3.27-.24-.38a9.56 9.56 0 0 1 1.44-10.84 9.5 9.5 0 0 1 12.9-.93 9.55 9.55 0 0 1 2.74 8.18 9.58 9.58 0 0 1-9.4 7.02Zm5.46-6.66c-.3-.15-1.78-.87-2.05-.97-.28-.1-.48-.15-.68.15-.2.3-.78.97-.96 1.17-.17.2-.34.22-.63.08-.3-.15-1.28-.47-2.44-1.5-.9-.8-1.51-1.8-1.69-2.1-.17-.28 0-.43.12-.57.12-.12.27-.31.4-.47.13-.16.17-.28.26-.47.09-.2.05-.37-.03-.52-.1-.15-.68-1.65-.93-2.26-.24-.58-.49-.5-.68-.51-.17-.01-.37-.01-.57-.01-.2 0-.52.07-.8.37-.28.3-1.08 1.05-1.08 2.56s1.11 2.97 1.26 3.18c.15.22 2.18 3.34 5.28 4.68.74.32 1.32.51 1.77.65.74.24 1.42.21 1.96.13.6-.09 1.78-.73 2.03-1.44.25-.71.25-1.32.18-1.45-.08-.12-.28-.2-.58-.34Z"/></svg></button>` : '<span style="color:#888;">—</span>';
-    const sendStatusAction = customer.whatsapp ? `<button class="icon-btn" title="Send Order Status" onclick="sendCustomerStatusNotification(${i}); event.stopPropagation();"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M0 4a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v7.5a.5.5 0 0 1-.777.416L10 8.101 4.777 11.916A.5.5 0 0 1 4 11.5V4z"/><path d="M2 3a1 1 0 0 0-1 1v7.5A1.5 1.5 0 0 0 2.5 13H4v1.5a.5.5 0 0 0 .8.4L8 12.101l3.2 2.799A.5.5 0 0 0 12 14.5V13h1.5A1.5 1.5 0 0 0 15 11.5V4a1 1 0 0 0-1-1H2z"/></svg></button>` : '<span style="color:#888;">—</span>';
+    const whatsappAction = '';
+    const sendStatusAction = '';
     const tr = document.createElement('tr');
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
                         <td>${i + 1}</td>
@@ -10312,15 +10314,45 @@ function getCustomerWhatsAppNumber(customer) {
   return String(phone).replace(/\D/g, '');
 }
 
-function buildCustomerStatusMessage(customer, status = 'pending', customMessage = '') {
+function applyCustomerQuickMessage(template) {
+  const input = document.getElementById('customerStatusMessageInput');
+  if (!input) return;
+
+  const templates = {
+    order_received: 'We have received your order and are preparing it for you. We will update you soon.',
+    order_ready: 'Great news! Your order is now ready for collection. Please visit us whenever convenient.',
+    invoice_ready: 'Your invoice is ready for review. Thank you for your business with us.',
+    payment_received: 'We have received your payment successfully. Thank you for choosing us.',
+    balance_due: 'This is a friendly reminder that your outstanding balance is due. Please contact us if you need assistance.',
+    special_offer: 'We have a special offer just for you. Please contact us to learn more about this exclusive deal.',
+    welcome: 'Welcome to our business! We are happy to assist you and look forward to serving you again.'
+  };
+
+  input.value = templates[template] || '';
+}
+
+function buildCustomerStatusMessage(customer, template = '', customMessage = '') {
   const storeName = settings?.name || 'YoShop';
   const customerName = customer?.name || 'Customer';
-  const statusLabel = getOrderStatusLabel(status);
-  let message = `Hello ${customerName},\nYour order status is: ${statusLabel}.`;
-  if (customMessage) {
-    message += `\n${customMessage}`;
+  const templates = {
+    order_received: 'We have received your order and are now preparing it with care. We will keep you updated shortly.',
+    order_ready: 'Great news! Your order is now ready for collection. Please visit us at your convenience.',
+    invoice_ready: 'Your invoice is now ready for review. Thank you for choosing us for your service.',
+    payment_received: 'We have successfully received your payment. Thank you for your trust and continued support.',
+    balance_due: 'This is a friendly reminder that your outstanding balance is due. Please contact us if you need any assistance.',
+    special_offer: 'We have a special offer just for you. Please reach out to us to discover more about this exclusive deal.',
+    welcome: 'Welcome to our business! We are delighted to assist you and look forward to serving you again.'
+  };
+
+  const selectedTemplate = templates[template] || '';
+  const body = customMessage || selectedTemplate || 'Thank you for choosing us.';
+
+  let message = `Hello ${customerName},\n\n${body}`;
+  if (!customMessage && selectedTemplate) {
+    message += `\n\nThank you for choosing ${storeName}.`;
+  } else if (!customMessage && !selectedTemplate) {
+    message += `\n\nThank you for choosing ${storeName}.`;
   }
-  message += `\n\nThank you for choosing ${storeName}.`;
   return message;
 }
 
@@ -10328,7 +10360,7 @@ function sendCustomerStatusNotification(index) {
   const customer = customers[index];
   if (!customer) return showAppAlert('Customer not found.', 'Send Notification');
 
-  const status = document.getElementById('customerStatusTemplateSelect')?.value || 'pending';
+  const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
   const whatsappNumber = getCustomerWhatsAppNumber(customer);
 
@@ -10336,7 +10368,7 @@ function sendCustomerStatusNotification(index) {
     return showAppAlert('This customer does not have a WhatsApp number.', 'Missing WhatsApp');
   }
 
-  const text = buildCustomerStatusMessage(customer, status, customMessage);
+  const text = buildCustomerStatusMessage(customer, template, customMessage);
   const shareUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
   window.open(shareUrl, '_blank', 'noopener,noreferrer');
 }
@@ -10347,7 +10379,7 @@ function sendSelectedCustomersStatusNotification() {
     return showAppAlert('Select at least one customer to send the status notification.', 'No Customer Selected');
   }
 
-  const status = document.getElementById('customerStatusTemplateSelect')?.value || 'pending';
+  const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
 
   selectedRows.forEach(checkbox => {
@@ -10356,11 +10388,43 @@ function sendSelectedCustomersStatusNotification() {
     if (!customer) return;
     const whatsappNumber = getCustomerWhatsAppNumber(customer);
     if (!whatsappNumber) return;
-    const text = buildCustomerStatusMessage(customer, status, customMessage);
+    const text = buildCustomerStatusMessage(customer, template, customMessage);
     const shareUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
     window.open(shareUrl, '_blank', 'noopener,noreferrer');
   });
 }
+
+async function sendAllCustomersStatusNotification() {
+  const customersWithWhatsApp = (Array.isArray(customers) ? customers : []).filter(customer => getCustomerWhatsAppNumber(customer));
+  if (!customersWithWhatsApp.length) {
+    return showAppAlert('No customers with WhatsApp numbers were found.', 'Bulk Send');
+  }
+
+  const confirmed = await showAppConfirm(
+    `Send this message to ${customersWithWhatsApp.length} customers?`,
+    'Bulk WhatsApp Send',
+    'Send',
+    'Cancel'
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
+  const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
+
+  customersWithWhatsApp.forEach(customer => {
+    const whatsappNumber = getCustomerWhatsAppNumber(customer);
+    if (!whatsappNumber) return;
+    const text = buildCustomerStatusMessage(customer, template, customMessage);
+    const shareUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
+    window.open(shareUrl, '_blank', 'noopener,noreferrer');
+  });
+}
+
+window.applyCustomerQuickMessage = applyCustomerQuickMessage;
+window.sendAllCustomersStatusNotification = sendAllCustomersStatusNotification;
 
 function getTransactionWhatsAppNumber(transaction) {
   if (!transaction || typeof transaction !== 'object') return '';
@@ -10478,7 +10542,10 @@ function buildOrderStatusMessage(transaction, status = 'pending', customMessage 
   const orderRef = transaction?.invoiceNumber || transaction?.id || transaction?.orderNumber || 'Order';
   const orderType = transaction?.orderType ? String(transaction.orderType).replace(/_/g, ' ') : '';
   const totalAmount = transaction?.total ? `${settings.currency || '$'}${formatCurrency(transaction.total)}` : '';
-  let message = `Hello ${customerName},\nYour order (${orderRef}) status is: ${getOrderStatusLabel(status)}.`;
+  let message = `Hello ${customerName},`;
+  if (orderRef) {
+    message += `\nOrder Reference: ${orderRef}.`;
+  }
   if (orderType) {
     message += `\nOrder Type: ${orderType}.`;
   }

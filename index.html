@@ -696,21 +696,24 @@
             <button class="btn" id="addCustomerBtn" onclick="toggleAddCustomerForm(true)">➕ Add New Customer</button>
           </div>
           <div class="input-row u-mt-10" style="gap: 10px; flex-wrap: wrap; align-items:flex-end;">
-            <div style="flex: 1 1 180px; min-width: 180px;">
-              <label for="customerStatusTemplateSelect" style="display:block; margin-bottom:4px; font-size:0.85rem;">Order Status</label>
-              <select id="customerStatusTemplateSelect" class="payment-method-select" style="width:100%;">
-                <option value="pending">Pending</option>
-                <option value="in_progress">In Progress</option>
-                <option value="ready">Ready</option>
-                <option value="completed">Completed</option>
-                <option value="canceled">Canceled</option>
-              </select>
-            </div>
-            <div style="flex: 2 1 320px; min-width: 220px;">
-              <label for="customerStatusMessageInput" style="display:block; margin-bottom:4px; font-size:0.85rem;">Status Message</label>
+            <div style="flex: 1 1 320px; min-width: 220px;">
+              <label for="customerStatusMessageInput" style="display:block; margin-bottom:4px; font-size:0.85rem;">Notification message (send notice message by WhatsApp)</label>
               <input type="text" id="customerStatusMessageInput" placeholder="Optional custom message" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1;" />
             </div>
-            <button class="btn btn-success" type="button" onclick="sendSelectedCustomersStatusNotification()" style="white-space: nowrap;">Send to Selected</button>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <select id="customerStatusTemplateSelect" onchange="applyCustomerQuickMessage(this.value)" style="padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1; min-width:180px;">
+                <option value="">Quick messages</option>
+                <option value="order_received">Order Received</option>
+                <option value="order_ready">Order Ready</option>
+                <option value="invoice_ready">Invoice Ready</option>
+                <option value="payment_received">Payment Received</option>
+                <option value="balance_due">Balance Due</option>
+                <option value="special_offer">Special Offer</option>
+                <option value="welcome">Welcome / General Care</option>
+              </select>
+              <button class="btn btn-success" type="button" onclick="sendSelectedCustomersStatusNotification()" title="Send to selected customers" style="white-space: nowrap;">📩 Selected</button>
+              <button class="btn btn-primary" type="button" onclick="sendAllCustomersStatusNotification()" title="Send to all customers with WhatsApp" style="white-space: nowrap;">📢 All</button>
+            </div>
           </div>
           <table class="u-mt-15">
             <thead>
