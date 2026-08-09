@@ -10314,38 +10314,51 @@ function getCustomerWhatsAppNumber(customer) {
   return String(phone).replace(/\D/g, '');
 }
 
-function applyCustomerQuickMessage(template) {
-  const input = document.getElementById('customerStatusMessageInput');
-  if (!input) return;
+function getCustomerQuickMessageText(customer, template) {
+  const currencySymbol = getCurrencySymbol();
+  let customerBalance = Number(customer?.balance || customer?.outstanding || customer?.outstandingBalance || 0);
 
-  const templates = {
-    order_received: 'We have received your order and are preparing it for you. We will update you soon.',
-    order_ready: 'Great news! Your order is now ready for collection. Please visit us whenever convenient.',
-    invoice_ready: 'Your invoice is ready for review. Thank you for your business with us.',
-    payment_received: 'We have received your payment successfully. Thank you for choosing us.',
-    balance_due: 'This is a friendly reminder that your outstanding balance is due. Please contact us if you need assistance.',
-    special_offer: 'We have a special offer just for you. Please contact us to learn more about this exclusive deal.',
-    welcome: 'Welcome to our business! We are happy to assist you and look forward to serving you again.'
-  };
+  if (customer && Array.isArray(transactions)) {
+    const customerTransactions = transactions.filter(transaction => {
+      const matchesCustomerId = customer?.id && transaction?.customerId && transaction.customerId === customer.id;
+      const matchesCustomerName = transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
+      return matchesCustomerId || matchesCustomerName;
+    });
+    customerBalance = buildInvoiceListItems({
+      customers: [customer],
+      transactions: customerTransactions
+    }).reduce((sum, row) => sum + (Number(row.balance) || 0), 0);
+  }
 
-  input.value = templates[template] || '';
-}
+  const balanceText = `${currencySymbol}${formatCurrency(Math.abs(customerBalance))}`;
 
-function buildCustomerStatusMessage(customer, template = '', customMessage = '') {
-  const storeName = settings?.name || 'YoShop';
-  const customerName = customer?.name || 'Customer';
   const templates = {
     order_received: 'We have received your order and are now preparing it with care. We will keep you updated shortly.',
     order_ready: 'Great news! Your order is now ready for collection. Please visit us at your convenience.',
     invoice_ready: 'Your invoice is now ready for review. Thank you for choosing us for your service.',
     payment_received: 'We have successfully received your payment. Thank you for your trust and continued support.',
-    balance_due: 'This is a friendly reminder that your outstanding balance is due. Please contact us if you need any assistance.',
+    balance_due: `This is a friendly reminder that your outstanding balance is ${balanceText}. Please contact us if you need any assistance.`,
     special_offer: 'We have a special offer just for you. Please reach out to us to discover more about this exclusive deal.',
     welcome: 'Welcome to our business! We are delighted to assist you and look forward to serving you again.'
   };
 
-  const selectedTemplate = templates[template] || '';
-  const body = customMessage || selectedTemplate || 'Thank you for choosing us.';
+  return templates[template] || '';
+}
+
+function applyCustomerQuickMessage(template) {
+  const input = document.getElementById('customerStatusMessageInput');
+  if (!input) return;
+
+  const selectedCustomerIndex = Array.from(document.querySelectorAll('.customer-row-select:checked'))[0]?.value;
+  const selectedCustomer = selectedCustomerIndex !== undefined ? customers[parseInt(selectedCustomerIndex, 10)] : null;
+  input.value = getCustomerQuickMessageText(selectedCustomer, template) || '';
+}
+
+function buildCustomerStatusMessage(customer, template = '', customMessage = '') {
+  const storeName = settings?.name || 'YoShop';
+  const customerName = customer?.name || 'Customer';
+  const selectedTemplate = template ? getCustomerQuickMessageText(customer, template) : '';
+  const body = (template ? selectedTemplate : customMessage) || customMessage || selectedTemplate || 'Thank you for choosing us.';
 
   let message = `Hello ${customerName},\n\n${body}`;
   if (!customMessage && selectedTemplate) {
