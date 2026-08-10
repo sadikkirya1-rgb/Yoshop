@@ -9705,6 +9705,11 @@ function applyServiceModeUI(enabled) {
     serviceFields.style.display = enabled ? 'flex' : 'none';
   }
 
+  const orderStatusSection = document.getElementById('orderStatusSection');
+  if (orderStatusSection) {
+    orderStatusSection.style.display = enabled ? 'flex' : 'none';
+  }
+
   document.querySelectorAll('.invoice-status-update-btn').forEach(button => {
     if (button) {
       button.style.display = enabled ? '' : 'none';
