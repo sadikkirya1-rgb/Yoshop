@@ -8999,6 +8999,42 @@ function getFilteredWastageLossHistory() {
   });
 }
 
+function getFilteredDashboardAdjustments() {
+  const { startDate, endDate } = getDashboardDateRange();
+  const srcTransactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
+  let adjustmentList = [];
+
+  srcTransactions.forEach(tx => {
+    const txAdjustments = Array.isArray(tx.adjustments) ? tx.adjustments.filter(Boolean) : [];
+    if (txAdjustments.length === 0 && tx.lastAdjustment && typeof tx.lastAdjustment === 'object') {
+      txAdjustments.push(tx.lastAdjustment);
+    }
+    txAdjustments.forEach(adj => {
+      if (!adj || !adj.date) return;
+      const d = new Date(adj.date);
+      if (Number.isNaN(d.getTime())) return;
+      if (startDate && d < startDate) return;
+      if (endDate && d > endDate) return;
+      adjustmentList.push(adj);
+    });
+  });
+
+  const srcCustomers = Array.isArray(customers) ? customers : [];
+  srcCustomers.forEach(customer => {
+    const custAdjustments = Array.isArray(customer.adjustments) ? customer.adjustments.filter(Boolean) : [];
+    custAdjustments.forEach(adj => {
+      if (!adj || !adj.date) return;
+      const d = new Date(adj.date);
+      if (Number.isNaN(d.getTime())) return;
+      if (startDate && d < startDate) return;
+      if (endDate && d > endDate) return;
+      adjustmentList.push(adj);
+    });
+  });
+
+  return adjustmentList;
+}
+
 function initializeDashboardFilters() {
 
   // Always default to today on app load
@@ -9070,8 +9106,11 @@ function updateDashboard() {
     .filter(item => item && item.stock !== undefined)
     .reduce((sum, item) => sum + Number(item.stock || 0), 0);
 
-  // Adjusted Amounts = total wastage/loss amounts in the filtered period
-  const adjustedAmounts = totalWastageLoss;
+  // Adjusted Amounts = total of debt/payment adjustments within the selected dashboard date range
+  const filteredDashboardAdjustments = getFilteredDashboardAdjustments();
+  const adjustedAmounts = filteredDashboardAdjustments.reduce((sum, adj) => {
+    return sum + Number(adj.amount || 0);
+  }, 0);
 
   // Always update dashboard cards (even with 0 values)
   document.getElementById('stockValue').textContent = formatCurrency(effectiveStockValue);
