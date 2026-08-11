@@ -10345,7 +10345,6 @@ function renderCustomerList() {
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
                         <td>${i + 1}</td>
                         <td>${escapeHtml(customer.name)}</td>
-                        <td>${escapeHtml(customer.contact || customer.phone || customer.mobile || '')}</td>
                         <td style="white-space:nowrap;">${whatsappCell}</td>
                         <td>${escapeHtml(customer.address || '')}</td>
                         <td>${outstandingText}</td>
