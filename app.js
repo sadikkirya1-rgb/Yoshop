@@ -2025,6 +2025,44 @@ function getCurrentServerName() {
   return 'N/A';
 }
 
+function normalizeInvoicePrintData(source = {}) {
+  const servedBy = source.servedBy || source.cashier || source.staffName || getCurrentServerName() || 'Staff';
+  const customerName = source.customerName || source.customer?.name || source.customerNameReal || 'Walk-in Customer';
+  const customerPhone = source.customerPhone || source.customerContact || source.contact || source.customer?.phone || source.customer?.mobile || source.customer?.whatsapp || source.phone || '';
+  const customerAddress = source.customerAddress || source.address || source.customer?.address || '';
+  const paymentMethod = source.paymentMethod || source.payment?.method || source.method || 'Cash';
+  const orderStatus = source.orderStatus || source.status || 'pending';
+  const orderType = source.orderType || ((source.serviceOrder && Object.values(source.serviceOrder).some(value => value)) ? 'service' : 'product');
+  const serviceOrder = source.serviceOrder || {};
+  const subtotal = Number(source.subtotal ?? source.subTotal ?? 0);
+  const tax = Number(source.taxAmount ?? source.tax ?? source.vatAmount ?? source.vat ?? 0);
+  const discount = source.discount || { amount: Number(source.discount?.amount ?? source.discountAmount ?? 0) };
+  const amountPaid = Number(source.amountPaid ?? source.totalPaid ?? source.paidAmount ?? 0);
+  const total = Number(source.total ?? source.grandTotal ?? source.amount ?? subtotal + tax - discount.amount);
+  const balance = Number(source.balance ?? source.outstandingBalance ?? (amountPaid - total));
+  const transactionId = String(source.id || source.transactionId || source.recordId || source.invoiceNumber || source.invoiceNo || source.date || '').trim();
+
+  return {
+    ...source,
+    servedBy,
+    customerName,
+    customerPhone,
+    customerAddress,
+    paymentMethod,
+    orderStatus,
+    orderType,
+    serviceOrder,
+    subtotal,
+    tax,
+    discount,
+    amountPaid,
+    total,
+    balance,
+    transactionId,
+    invoiceNumber: normalizeInvoiceNumber(source.invoiceNumber || source.invoiceNo || source.receiptNumber || source.transactionNumber || source.invoiceNo || undefined)
+  };
+}
+
 /**
  * Ensures the App Admin tab has the required dashboard layout elements
  * This creates the UI dynamically if not present in the HTML template.
@@ -5007,6 +5045,7 @@ function toggleServiceMode() {
   renderTransactions();
   renderStockListTable();
   renderCustomerList();
+  renderInvoices();
 }
 
 function updateMenuItemQuantity(name, value) {
@@ -6604,23 +6643,24 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
       return (typeof showAppAlert === 'function') ? showAppAlert('Please allow pop-ups to preview the A4 invoice.') : alert('Please allow pop-ups to preview the A4 invoice.');
     }
 
-  const source = transactionData || {};
-  const invoiceNumber = normalizeInvoiceNumber(source.invoiceNumber || source.invoiceNo || getInvoiceNumber(source)) || 'INV-UNKNOWN';
-  const invoiceDate = source.date ? new Date(source.date).toLocaleString() : new Date().toLocaleString();
-  const customerName = source.customerName || source.customer?.name || source.customerNameReal || 'Walk-in Customer';
-  const customerPhone = source.customerPhone || source.customerContact || source.contact || source.customer?.phone || source.customer?.mobile || source.customer?.whatsapp || source.phone || '';
-  const customerAddress = source.customerAddress || source.address || source.customer?.address || '';
-  const paymentMethod = source.paymentMethod || source.payment?.method || 'Cash';
-  const receiptType = source.receiptType || source.type || 'transaction';
-  const tableNo = source.tableNo || source.table || 'Shop';
-  const amountPaid = Number(source.amountPaid ?? source.totalPaid ?? source.paidAmount ?? 0);
-  const discountAmount = Number(source.discount?.amount ?? source.discountAmount ?? 0);
-  const paymentStatus = source.paymentStatus || source.payment?.status || source.status || (Number.isFinite(Number(source.balance)) && Number(source.balance) !== 0 ? 'PENDING' : 'PAID');
-  const orderStatus = source.orderStatus || source.status || 'pending';
-  const servedByName = source.servedBy || source.cashier || source.staffName || 'Staff';
-  const serviceOrder = source.serviceOrder || {};
-  const cashier = source.cashier || source.staffName || source.servedBy || 'Admin';
-  const effectiveOrderType = source.orderType || ((serviceOrder && Object.values(serviceOrder).some(value => value)) ? 'service' : 'product');
+  const data = normalizeInvoicePrintData(transactionData);
+  const source = data;
+  const invoiceNumber = data.invoiceNumber || 'INV-UNKNOWN';
+  const invoiceDate = data.date ? new Date(data.date).toLocaleString() : new Date().toLocaleString();
+  const customerName = data.customerName;
+  const customerPhone = data.customerPhone;
+  const customerAddress = data.customerAddress;
+  const paymentMethod = data.paymentMethod;
+  const receiptType = data.receiptType || data.type || 'transaction';
+  const tableNo = data.tableNo || data.table || 'Shop';
+  const amountPaid = data.amountPaid;
+  const discountAmount = Number(data.discount?.amount ?? 0);
+  const paymentStatus = data.paymentStatus || data.payment?.status || data.status || (Number.isFinite(Number(data.balance)) && Number(data.balance) !== 0 ? 'PENDING' : 'PAID');
+  const orderStatus = data.orderStatus;
+  const servedByName = data.servedBy;
+  const serviceOrder = data.serviceOrder || {};
+  const cashier = data.cashier || data.staffName || data.servedBy || getCurrentServerName() || 'Admin';
+  const effectiveOrderType = data.orderType;
   const isServiceTransaction = effectiveOrderType === 'service';
   const showServiceModeStatus = settings.serviceMode === true && isServiceTransaction;
   const safeOrderType = escapeHtml(effectiveOrderType === 'service' ? 'Service' : 'Product');
@@ -6972,6 +7012,7 @@ function previewOrder(transactionData = null) {
           notes: document.getElementById('serviceNotes')?.value.trim() || null
         }
       };
+      currentTransaction = normalizeInvoicePrintData(currentTransaction);
       // Store the active order preview data for sharing and printing
       receiptModal._transactionData = currentTransaction;
     }
@@ -7332,21 +7373,27 @@ async function printReceipt() {
     };
   }
 
+  printTransaction = normalizeInvoicePrintData(printTransaction);
   if (!receiptContentEl || !receiptContentEl.innerHTML.trim()) {
     populateReceiptContent(printTransaction);
   }
 
+  const receiptLogoUrl = sanitizeLogoUrl(settings.logo);
+  const fallbackLogoHtml = receiptLogoUrl
+    ? `<img src="${receiptLogoUrl}" onerror="this.src='assets/icons/icon.png';" style="width:50px; height:50px; object-fit:contain;">`
+    : '🧾';
   const printMarkup = receiptContentEl && receiptContentEl.innerHTML.trim()
     ? receiptContentEl.innerHTML
     : `
       <div class="receipt-header">
-        <div class="logo">🧾</div>
+        <div class="logo">${fallbackLogoHtml}</div>
         <h3>${settings.name || 'My Business'}</h3>
         <p>${settings.address || '123 Business Avenue, Suite 100'}</p>
       </div>
       <div class="receipt-details">
         <div><span>Invoice No:</span> <span>${getInvoiceNumber(printTransaction)}</span></div>
         <div><span>Date:</span> <span>${new Date(printTransaction.date).toLocaleDateString()}</span></div>
+        <div><span>Served By:</span> <span>${escapeHtml(getCurrentServerName())}</span></div>
       </div>
       <div class="receipt-summary">
         <div class="summary-line total"><span>TOTAL</span> <span>${getCurrencySymbol()}${formatCurrency(printTransaction.total || 0)}</span></div>
@@ -7819,13 +7866,14 @@ function getReceiptPromoMessage() {
  * This is a helper for PDF generation.
  */
 function populateReceiptContent(transaction) {
+  transaction = normalizeInvoicePrintData(transaction || {});
   const { date, customerName, tableNo, items, total, subtotal, tax, discount, receiptType, paymentMethod, note, amountPaid, orderStatus, servedBy, customerNameReal, serviceOrder = {}, orderType } = transaction;
   const displayCustomerName = customerNameReal || transaction.customer?.name || customerName || 'Walk-in Customer';
   const transactionId = new Date(date).getTime();
   const invoiceNumber = getInvoiceNumber(transaction);
   const currencySymbol = getCurrencySymbol();
   const effectiveOrderStatus = orderStatus || transaction.status || 'pending';
-  const effectiveServedBy = servedBy || transaction.cashier || transaction.staffName || 'Staff';
+  const effectiveServedBy = servedBy || transaction.cashier || transaction.staffName || getCurrentServerName() || 'Staff';
   const effectiveOrderType = orderType || ((serviceOrder && Object.values(serviceOrder).some(value => value)) ? 'service' : 'product');
   const isServiceTransaction = effectiveOrderType === 'service';
   const showServiceModeStatus = settings.serviceMode === true && isServiceTransaction;
@@ -9671,6 +9719,7 @@ function showAdminNoticesOverlay(notices = []) {
 }
 
 function applyServiceModeUI(enabled) {
+  document.body.classList.toggle('service-mode', enabled);
   const banner = document.getElementById('serviceModeBanner');
   if (banner) banner.style.display = enabled ? 'block' : 'none';
 
@@ -10930,7 +10979,7 @@ function renderInvoices() {
           const cell = document.createElement('td');
           if (textCellStyles[index]) cell.style.cssText = textCellStyles[index];
           if (index === 5) {
-            cell.classList.add('service-status-column');
+            cell.classList.add('invoice-status-column');
             cell.innerHTML = value;
           } else {
             cell.textContent = value;
