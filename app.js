@@ -10419,6 +10419,7 @@ function buildCustomerStatusMessage(customer, template = '', customMessage = '')
   } else if (!customMessage && !selectedTemplate) {
     message += `\n\nThank you for choosing ${storeName}.`;
   }
+  message += `\n\nIf you have any questions, reply to this message and we’ll be happy to help.`;
   return message;
 }
 
@@ -10607,21 +10608,29 @@ function buildOrderStatusMessage(transaction, status = 'pending', customMessage 
   const customerName = transaction?.customerNameReal || transaction?.customerName || transaction?.customer?.name || 'Customer';
   const orderRef = transaction?.invoiceNumber || transaction?.id || transaction?.orderNumber || 'Order';
   const orderType = transaction?.orderType ? String(transaction.orderType).replace(/_/g, ' ') : '';
+  const statusLabel = getOrderStatusLabel(status);
   const totalAmount = transaction?.total ? `${settings.currency || '$'}${formatCurrency(transaction.total)}` : '';
-  let message = `Hello ${customerName},`;
-  if (orderRef) {
-    message += `\nOrder Reference: ${orderRef}.`;
-  }
-  if (orderType) {
-    message += `\nOrder Type: ${orderType}.`;
-  }
-  if (totalAmount) {
-    message += `\nTotal: ${totalAmount}.`;
-  }
+
+  const lines = [
+    `Hello ${customerName},`,
+    '',
+    `Your order status has been updated.`,
+    orderRef ? `• Order Reference: ${orderRef}` : '',
+    orderType ? `• Order Type: ${orderType}` : '',
+    `• Status: ${statusLabel}`,
+    totalAmount ? `• Total: ${totalAmount}` : ''
+  ]
+    .filter(Boolean)
+    .join('\n');
+
+  let message = `${lines}`;
+
   if (customMessage) {
     message += `\n\n${customMessage}`;
   }
+
   message += `\n\nThank you for choosing ${storeName}.`;
+  message += `\nIf you have any questions, reply to this message and we’ll be happy to help.`;
   return message;
 }
 

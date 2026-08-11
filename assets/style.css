@@ -532,11 +532,10 @@
   .invoice-table td:nth-child(6) {
     text-align: center;
   }
-  body:not(.service-mode) .invoice-table th:nth-child(6),
-  body:not(.service-mode) .invoice-table td:nth-child(6),
-  body:not(.service-mode) .invoice-table th.invoice-status-column,
-  body:not(.service-mode) .invoice-table td.invoice-status-column {
-    display: none !important;
+  /* Keep the status column visible for debt invoices in both product and service modes */
+  .invoice-table th.invoice-status-column,
+  .invoice-table td.invoice-status-column {
+    display: table-cell !important;
   }
   .input-row {
     display: flex;
