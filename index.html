@@ -468,7 +468,7 @@
 
       <!-- Orders -->
       <section id="ordersTab">
-        <table>
+        <table class="table-excel">
           <thead>
             <tr>
               <th>Product</th>
@@ -556,8 +556,8 @@
           <button class="btn print-barcodes-btn" onclick="generateAndPrintBarcodes()">🖨️ Print</button>
           <button class="btn btn-danger" id="deleteMarkedProductsBtn" style="display:none; margin-left:8px;" onclick="deleteMarkedProducts()">🗑️ Delete marked</button>
         </h3>
-        <div class="u-overflow-x-auto">
-          <table class="u-table-nowrap-amounts">
+          <div class="u-overflow-x-auto">
+          <table class="u-table-nowrap-amounts table-excel">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllProducts" onchange="toggleSelectAllRows('dishesTableBody', this.checked, 'deleteMarkedProductsBtn'); updateSelectAllHeader('dishesTableBody','selectAllProducts')"></th>
@@ -584,7 +584,7 @@
             <input type="text" id="categoryNameInput" placeholder="New Category Name">
             <button class="btn" onclick="addCategory()">Add Category</button>
           </div>
-          <table class="u-mt-15">
+          <table class="u-mt-15 table-excel">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllCategories" onchange="toggleSelectAllRows('categoryListBody', this.checked); updateSelectAllHeader('categoryListBody','selectAllCategories')"></th>
@@ -608,7 +608,7 @@
             <input type="text" id="unitNameInput" placeholder="Short Name (e.g., kg)">
             <button class="btn" onclick="addUnit()">Add Unit</button>
           </div>
-          <table class="u-mt-15">
+          <table class="u-mt-15 table-excel">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllUnits" onchange="toggleSelectAllRows('unitListBody', this.checked); updateSelectAllHeader('unitListBody','selectAllUnits')"></th>
@@ -656,7 +656,7 @@
             <label><input type="checkbox" value="lockPin" checked> Lock PIN</label>
             <label><input type="checkbox" value="logoutAccount" checked> Logout</label>
           </div>
-          <table class="u-mt-15">
+          <table class="u-mt-15 table-excel">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllStaff" onchange="toggleSelectAllRows('staffListBody', this.checked); updateSelectAllHeader('staffListBody','selectAllStaff')"></th>
@@ -715,7 +715,7 @@
               <button class="btn btn-primary" type="button" onclick="sendAllCustomersStatusNotification()" title="Send to all customers with WhatsApp" style="white-space: nowrap;">📢 All</button>
             </div>
           </div>
-          <table class="u-mt-15">
+          <table class="u-mt-15 table-excel">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllCustomers" onchange="toggleSelectAllCustomers(this.checked)"></th>
@@ -879,7 +879,7 @@
         <div class="u-mt-20 dashboard-low-stock">
           <h5>Low Stock Report</h5>
           <div class="u-overflow-x-auto">
-            <table class="u-mt-10">
+            <table class="u-mt-10 table-excel">
               <thead>
                 <tr>
                   <th>Item</th>
@@ -904,7 +904,7 @@
           <button class="btn" onclick="saveSettings()">Save</button>
         </div>
         <h5 class="u-mt-20">Low Stock Report</h5>
-        <table class="u-mt-10">
+        <table class="u-mt-10 table-excel">
           <thead>
             <tr>
               <th>Item Name</th>
@@ -946,7 +946,7 @@
             <button class="btn btn-secondary" onclick="toggleNewStockItemForm(false)">Cancel</button>
           </div>
         </div>
-        <table class="u-mt-10">
+        <table class="u-mt-10 table-excel">
           <thead>
             <tr>
               <th colspan="9"><input type="text" id="stockSearchInput" onkeyup="renderStockListTable()"
@@ -1021,7 +1021,7 @@
         <div class="u-mt-20">
           <h5 class="u-m-0">Purchase History</h5>
           <div class="u-overflow-x-auto">
-            <table class="u-mt-10">
+            <table class="u-mt-10 table-excel">
               <thead>
                 <tr>
                   <th>#</th>
@@ -1065,7 +1065,7 @@
         <div class="u-mt-20">
           <h5 class="u-m-0">Supplier List</h5>
           <div class="u-overflow-x-auto">
-            <table class="u-mt-10">
+            <table class="u-mt-10 table-excel">
               <thead>
                 <tr>
                   <th>#</th>
@@ -1113,7 +1113,7 @@
         <div class="u-mt-20">
           <h5 class="u-m-0">Waste / Loss History</h5>
           <div class="u-overflow-x-auto">
-            <table class="u-mt-10">
+            <table class="u-mt-10 table-excel">
               <thead>
                 <tr>
                   <th>#</th>
@@ -1211,7 +1211,7 @@
         </div>
         <div class="u-mb-10" id="transactionCountInfo">Showing 0 of 0 bills</div>
         <div class="u-overflow-x-auto" id="transactionListContainer">
-          <table>
+          <table class="table-excel">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllSales" onchange="toggleSelectAllRows('transactionHistoryBody', this.checked); updateSelectAllHeader('transactionHistoryBody','selectAllSales')"></th>

@@ -1800,7 +1800,7 @@ const analytics = getAnalytics(app);
       }).join('');
 
       reportHtml = `<h4>Item Report</h4>
-        <table>
+        <table class="table-excel">
           <thead>
             <tr>
               <th style="text-align: center;">S/N</th>
@@ -1829,7 +1829,7 @@ const analytics = getAnalytics(app);
       const sortedCategories = Object.entries(categorySales).sort(([,a],[,b]) => b.total - a.total);
       
       const tableBody = sortedCategories.map(([name, data]) => `<tr><td>${name}</td><td style="text-align: right;">${data.qty}</td><td style="text-align: right;"><span class="currency-symbol">$</span>${formatCurrency(data.total)}</td></tr>`).join('');
-      reportHtml = `<h4>Category Report</h4><table><thead><tr><th style="text-align: center;">Category</th><th style="text-align: center;">Quantity Sold</th><th style="text-align: center;">Total Revenue</th></tr></thead><tbody>${tableBody}</tbody></table>`;
+      reportHtml = `<h4>Category Report</h4><table class="table-excel"><thead><tr><th style="text-align: center;">Category</th><th style="text-align: center;">Quantity Sold</th><th style="text-align: center;">Total Revenue</th></tr></thead><tbody>${tableBody}</tbody></table>`;
     }
 
     outputContainer.innerHTML = reportHtml;

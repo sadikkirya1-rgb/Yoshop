@@ -2176,7 +2176,7 @@ function initAppAdminDashboardLayout() {
             </div>
           </div>
           <div class="u-overflow-x-auto">
-            <table class="u-w-full">
+            <table class="u-w-full table-excel">
               <thead>
                 <tr>
                   <th class="u-text-center">#</th>
@@ -2222,7 +2222,7 @@ function initAppAdminDashboardLayout() {
           </div>
           
           <div class="u-overflow-x-auto">
-            <table class="u-w-full">
+            <table class="u-w-full table-excel">
               <thead>
                 <tr>
                   <th class="u-text-center">Logo</th>
@@ -2279,7 +2279,7 @@ function initAppAdminDashboardLayout() {
             <div class="u-mt-15">
               <div class="u-fs-08 u-text-muted u-mb-8">Current App Admin Access</div>
               <div class="u-overflow-x-auto">
-                <table class="u-w-full" style="border-collapse: collapse; font-size: 0.9em;">
+                <table class="u-w-full table-excel" style="border-collapse: collapse; font-size: 0.9em;">
                   <thead>
                     <tr style="border-bottom: 1px solid var(--border-color);">
                       <th style="text-align:left; padding:6px 8px;">Name</th>
@@ -8194,11 +8194,11 @@ function renderReport() {
         <div class="dashboard-card"><h4>Expenses</h4><p>${formatCurrency(expenseTotal)}</p></div>
         <div class="dashboard-card"><h4>Stock Value</h4><p>${formatCurrency(stockValue)}</p></div>
       </div>
-      <h5>Sales</h5><table id="reportTable"><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Payment</th><th class="u-text-right">Amount</th></tr></thead><tbody>${salesRows}</tbody></table>
-      <h5 class="u-mt-20">Current Inventory</h5><table><thead><tr><th>Item</th><th>Category</th><th class="u-text-right">Stock</th><th class="u-text-right">Low Stock Level</th><th>Status</th></tr></thead><tbody>${stockRows}</tbody></table>
-      <h5 class="u-mt-20">Purchases</h5><table><thead><tr><th>Date</th><th>Supplier</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th></tr></thead><tbody>${purchaseRows}</tbody></table>
-      <h5 class="u-mt-20">Waste / Loss</h5><table><thead><tr><th>Date</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th><th>Note</th></tr></thead><tbody>${wasteRows}</tbody></table>
-      <h5 class="u-mt-20">Expenses</h5><table><thead><tr><th>Date</th><th>Expense</th><th>Note</th><th class="u-text-right">Amount</th></tr></thead><tbody>${expenseRows}</tbody></table>`;
+      <h5>Sales</h5><table id="reportTable" class="table-excel"><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Payment</th><th class="u-text-right">Amount</th></tr></thead><tbody>${salesRows}</tbody></table>
+      <h5 class="u-mt-20">Current Inventory</h5><table class="table-excel"><thead><tr><th>Item</th><th>Category</th><th class="u-text-right">Stock</th><th class="u-text-right">Low Stock Level</th><th>Status</th></tr></thead><tbody>${stockRows}</tbody></table>
+      <h5 class="u-mt-20">Purchases</h5><table class="table-excel"><thead><tr><th>Date</th><th>Supplier</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th></tr></thead><tbody>${purchaseRows}</tbody></table>
+      <h5 class="u-mt-20">Waste / Loss</h5><table class="table-excel"><thead><tr><th>Date</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th><th>Note</th></tr></thead><tbody>${wasteRows}</tbody></table>
+      <h5 class="u-mt-20">Expenses</h5><table class="table-excel"><thead><tr><th>Date</th><th>Expense</th><th>Note</th><th class="u-text-right">Amount</th></tr></thead><tbody>${expenseRows}</tbody></table>`;
   } else if (reportType === 'salesSummary') {
     const totalRevenue = filteredTransactions.reduce((sum, t) => sum + (t.total || 0), 0);
     const totalBills = filteredTransactions.length;
@@ -8290,7 +8290,7 @@ function renderReport() {
         <div class="u-mb-20" style="display: flex; gap: 20px; flex-wrap: wrap;">
           <div style="flex: 1; min-width: 280px;">
             <h5>Collected by Payment Method</h5>
-            <table id="reportTable">
+            <table id="reportTable" class="table-excel">
               <thead>
                 <tr><th class="u-text-center">Method</th><th class="u-text-center">Total Revenue</th><th class="u-text-center">% Share</th></tr>
               </thead>
@@ -8313,7 +8313,7 @@ function renderReport() {
           </div>
           <div style="flex: 1; min-width: 280px;">
             <h5>Customer Accounts Summary</h5>
-            <table>
+            <table class="table-excel">
               <thead>
                 <tr><th class="u-text-center">Metric</th><th class="u-text-center">Amount</th></tr>
               </thead>
@@ -8467,7 +8467,7 @@ function renderReport() {
         </div>
         ${cardsHtml}
         ${chartsHtml}
-        <table id="reportTable">
+        <table id="reportTable" class="table-excel">
           <thead>
             <tr>
               <th class="u-text-center">S/N</th>
@@ -8536,7 +8536,7 @@ function renderReport() {
           <h4 class="u-m-0">Category Sales & Profitability</h4>
           <p class="u-fs-08 u-text-muted">Performance breakdown per category</p>
         </div>
-        <table id="reportTable">
+        <table id="reportTable" class="table-excel">
           <thead>
             <tr>
               <th class="u-text-center">Category</th>

@@ -1685,7 +1685,7 @@
       const sortedItems = Object.entries(itemSales).sort(([,a],[,b]) => b.qty - a.qty);
 
       const tableBody = sortedItems.map(([name, data]) => `<tr><td>${name}</td><td style="text-align: right;">${data.qty}</td><td style="text-align: right;"><span class="currency-symbol">$</span>${formatCurrency(data.total)}</td></tr>`).join('');
-      reportHtml = `<h4>Item Report</h4><table><thead><tr><th>Item</th><th style="text-align: right;">Quantity Sold</th><th style="text-align: right;">Total Revenue</th></tr></thead><tbody>${tableBody}</tbody></table>`;
+      reportHtml = `<h4>Item Report</h4><table class="table-excel"><thead><tr><th>Item</th><th style="text-align: right;">Quantity Sold</th><th style="text-align: right;">Total Revenue</th></tr></thead><tbody>${tableBody}</tbody></table>`;
 
     } else if (reportType === 'categorySales') {
       const categorySales = filteredTransactions.flatMap(t => t.items).reduce((acc, item) => {
@@ -1700,7 +1700,7 @@
       const sortedCategories = Object.entries(categorySales).sort(([,a],[,b]) => b.total - a.total);
       
       const tableBody = sortedCategories.map(([name, data]) => `<tr><td>${name}</td><td style="text-align: right;">${data.qty}</td><td style="text-align: right;"><span class="currency-symbol">$</span>${formatCurrency(data.total)}</td></tr>`).join('');
-      reportHtml = `<h4>Category Report</h4><table><thead><tr><th>Category</th><th style="text-align: right;">Quantity Sold</th><th style="text-align: right;">Total Revenue</th></tr></thead><tbody>${tableBody}</tbody></table>`;
+      reportHtml = `<h4>Category Report</h4><table class="table-excel"><thead><tr><th>Category</th><th style="text-align: right;">Quantity Sold</th><th style="text-align: right;">Total Revenue</th></tr></thead><tbody>${tableBody}</tbody></table>`;
     }
 
     outputContainer.innerHTML = reportHtml;
