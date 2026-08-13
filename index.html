@@ -749,7 +749,7 @@
           </div>
         </div>
         <div class="u-overflow-x-auto">
-          <table class="invoice-table">
+          <table class="u-mt-15 table-excel">
             <thead>
               <tr>
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllInvoiceRows" onchange="toggleSelectAllRows('invoiceListBody', this.checked); updateSelectAllHeader('invoiceListBody','selectAllInvoiceRows')"></th>
@@ -757,7 +757,7 @@
                 <th>Date</th>
                 <th>Customer</th>
                 <th>Invoice #</th>
-                <th class="invoice-status-column">Status</th>
+                <th class="invoice-status-column" style="display:none;">Status</th>
                 <th style="text-align: right;">Subtotal</th>
                 <th style="text-align: right;">Paid</th>
                 <th style="text-align: right;">Balance</th>
@@ -1219,7 +1219,7 @@
                 <th>Invoice</th>
                 <th>Date</th>
                 <th>Type</th>
-                <th class="service-status-column" style="display:none;">Status</th>
+                <th class="service-status-column">Status</th>
                 <th style="text-align: right;">Total</th>
                 <th style="text-align: right;">Action</th>
               </tr>

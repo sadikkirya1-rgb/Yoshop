@@ -521,6 +521,49 @@
   body.dark-mode table tr:hover td {
     background: rgba(255,255,255,0.03);
   }
+
+  /* Invoice status column - hidden by default (products mode), shown in service mode */
+  .table-excel th.invoice-status-column,
+  .table-excel td.invoice-status-column {
+    display: none !important;
+    text-align: center;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: capitalize;
+  }
+
+  .table-excel td.invoice-status-column {
+    padding: 8px 10px;
+    vertical-align: middle;
+  }
+
+  /* Show invoice status column in service mode only */
+  body.service-mode .table-excel th.invoice-status-column,
+  body.service-mode .table-excel td.invoice-status-column {
+    display: table-cell !important;
+  }
+
+  /* Service status column - hidden by default (products mode), shown in service mode */
+  .table-excel th.service-status-column,
+  .table-excel td.service-status-column {
+    display: none !important;
+    text-align: center;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: capitalize;
+  }
+
+  .table-excel td.service-status-column {
+    padding: 8px 10px;
+    vertical-align: middle;
+  }
+
+  /* Show service status column in service mode only */
+  body.service-mode .table-excel th.service-status-column,
+  body.service-mode .table-excel td.service-status-column {
+    display: table-cell !important;
+  }
+
   #addDishTab table td {
     white-space: normal; /* Allow content to wrap */
     word-break: break-word; /* Break long words if necessary */
@@ -575,112 +618,9 @@
     height: 1px;
     background: rgba(0, 0, 0, 0.08);
   }
-  .invoice-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    background: var(--card);
-    border-radius: 12px;
-    overflow: hidden;
-    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
-    font-family: inherit;
-    font-size: 0.85rem;
-  }
-  .invoice-table thead {
-    background: linear-gradient(135deg, rgba(255, 107, 53, 0.12), rgba(255, 133, 79, 0.04));
-    backdrop-filter: blur(6px);
-  }
-  .invoice-table thead th {
-    text-align: right;
-    padding: 8px 10px;
-    font-weight: 700;
-    font-size: 0.8rem;
-    letter-spacing: 0.03em;
-    color: var(--text);
-    border: none;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
-    text-transform: uppercase;
-    white-space: nowrap;
-    line-height: 1.2;
-    position: static !important;
-    background: transparent;
-  }
-  .invoice-table thead th:first-child {
-    text-align: center;
-    width: 40px;
-  }
-  .invoice-table thead th:nth-child(2),
-  .invoice-table thead th:nth-child(3),
-  .invoice-table thead th:nth-child(4),
-  .invoice-table thead th:nth-child(5) {
-    text-align: left;
-  }
-  .invoice-table tbody td {
-    padding: 8px 10px;
-    color: var(--text);
-    border: none;
-    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
-    vertical-align: middle;
-    font-size: 0.85rem;
-    line-height: 1.3;
-    background: transparent;
-  }
-  .invoice-table tbody tr:nth-child(even) {
-    background: rgba(255, 255, 255, 0.5);
-  }
-  body.dark-mode .invoice-table tbody tr:nth-child(even) {
-    background: rgba(255, 255, 255, 0.04);
-  }
-  .invoice-table tbody tr:nth-child(odd) {
-    background: var(--card);
-  }
-  body.dark-mode .invoice-table tbody tr:nth-child(odd) {
-    background: #2b2b2b;
-  }
-  .invoice-table tbody tr:last-child td {
-    border-bottom: none;
-  }
-  .invoice-table tbody tr {
-    background: inherit;
-  }
-  .invoice-table tbody tr:hover {
-    background: rgba(255, 107, 53, 0.1) !important;
-  }
-  .invoice-table td:last-child {
-    text-align: right;
-    white-space: nowrap;
-  }
-  .invoice-table td.invoice-status-column {
-    font-weight: 700;
-    color: var(--primary);
-    text-transform: capitalize;
-  }
-  .invoice-table .invoice-status-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 70px;
-    padding: 4px 10px;
-    border-radius: 999px;
-    background: rgba(255, 107, 53, 0.13);
-    color: var(--primary);
-    font-size: 0.75rem;
-    font-weight: 700;
-  }
-  .invoice-table td .btn {
-    min-width: 75px;
-    padding: 4px 8px;
-    font-size: 0.75rem;
-  }
-  .invoice-table th:nth-child(6),
-  .invoice-table td:nth-child(6) {
-    text-align: center;
-  }
-  /* Keep the status column visible for debt invoices in both product and service modes */
-  .invoice-table th.invoice-status-column,
-  .invoice-table td.invoice-status-column {
-    display: table-cell !important;
-  }
+  /* OLD INVOICE-TABLE CSS - REPLACED WITH TABLE-EXCEL STYLING */
+  /* The invoice table now uses the table-excel class for consistent styling across all data tables */
+  /* See table-excel CSS rules and invoice-status-column styling above */
   .input-row {
     display: flex;
     flex-wrap: wrap;

@@ -1038,6 +1038,48 @@ table tr:hover td {
     background: rgba(255, 107, 53, 0.15);
   }
 
+  /* Invoice status column - hidden by default (products mode), shown in service mode */
+  .table-excel th.invoice-status-column,
+  .table-excel td.invoice-status-column {
+    display: none !important;
+    text-align: center;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: capitalize;
+  }
+
+  .table-excel td.invoice-status-column {
+    padding: 8px 10px;
+    vertical-align: middle;
+  }
+
+  /* Show invoice status column in service mode only */
+  body.service-mode .table-excel th.invoice-status-column,
+  body.service-mode .table-excel td.invoice-status-column {
+    display: table-cell !important;
+  }
+
+  /* Service status column - hidden by default (products mode), shown in service mode */
+  .table-excel th.service-status-column,
+  .table-excel td.service-status-column {
+    display: none !important;
+    text-align: center;
+    font-weight: 700;
+    color: var(--primary);
+    text-transform: capitalize;
+  }
+
+  .table-excel td.service-status-column {
+    padding: 8px 10px;
+    vertical-align: middle;
+  }
+
+  /* Show service status column in service mode only */
+  body.service-mode .table-excel th.service-status-column,
+  body.service-mode .table-excel td.service-status-column {
+    display: table-cell !important;
+  }
+
   body.dark-mode table th {
     background: transparent;
     color: var(--text);

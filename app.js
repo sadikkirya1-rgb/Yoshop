@@ -7743,7 +7743,7 @@ function renderTransactions() {
         <td class="u-fs-08 u-nowrap">${escapeHtml(getInvoiceNumber(t) || '—')}</td>
         <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}${(t.duplicateCount || 0) > 0 ? ' <span class="duplicate-sale-badge">Duplicate</span>' : ''}</td>
         <td class="u-fs-08 u-nowrap">${escapeHtml(String(t.orderType === 'service' ? 'Service' : 'Product'))}</td>
-        <td class="service-status-column" style="display:none;">${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
+        <td class="service-status-column">${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
         <td class="u-text-right u-fs-08 u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
         <td class="u-text-right">
           <button class="btn u-fs-08 row-preview-btn" data-tx-index="${txIndex}" style="display: inline-block; padding: 6px 8px; margin: 0 2px; background: #17a2b8;"> 
@@ -10912,7 +10912,7 @@ function renderInvoices() {
     if (filteredRows.length === 0) {
       const emptyRow = document.createElement('tr');
       const emptyCell = document.createElement('td');
-      emptyCell.colSpan = 10;
+      emptyCell.colSpan = 11;
       emptyCell.className = 'u-text-center';
       emptyCell.textContent = 'No debt invoices found.';
       emptyRow.appendChild(emptyCell);
