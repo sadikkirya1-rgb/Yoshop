@@ -7743,7 +7743,7 @@ function renderTransactions() {
         <td class="u-fs-08 u-nowrap">${escapeHtml(getInvoiceNumber(t) || '—')}</td>
         <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}${(t.duplicateCount || 0) > 0 ? ' <span class="duplicate-sale-badge">Duplicate</span>' : ''}</td>
         <td class="u-fs-08 u-nowrap">${escapeHtml(String(t.orderType === 'service' ? 'Service' : 'Product'))}</td>
-        <td class="service-status-column">${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
+        <td class="service-status-column" style="display:none;">${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
         <td class="u-text-right u-fs-08 u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
         <td class="u-text-right">
           <button class="btn u-fs-08 row-preview-btn" data-tx-index="${txIndex}" style="display: inline-block; padding: 6px 8px; margin: 0 2px; background: #17a2b8;"> 
@@ -7781,7 +7781,7 @@ function renderTransactions() {
   tbody.innerHTML = ''; // Clear existing rows
 
   if (tableRows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="7" class="u-text-center">No transactions found.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="u-text-center">No transactions found.</td></tr>';
     return;
   }
 
@@ -7796,7 +7796,7 @@ function renderTransactions() {
     const showMoreRow = document.createElement('tr');
     // Use an IIFE in the onclick to safely reveal hidden rows regardless of class removal order
     showMoreRow.innerHTML = `
-        <td colspan="7" style="text-align: center; padding: 20px;">
+        <td colspan="8" style="text-align: center; padding: 20px;">
           <button class="btn btn-info" onclick="(function(btn){ const tbody = btn.closest('tbody'); const hidden = Array.from(tbody.querySelectorAll('tr.txn-row-hidden')); hidden.forEach(r => { r.classList.remove('txn-row-hidden'); r.style.display = ''; }); btn.closest('tr').style.display = 'none'; })(this);" style="padding: 8px 20px;">
             Show ${remainingRows.length} More Transactions
           </button>
@@ -8183,7 +8183,13 @@ function renderReport() {
     const purchaseRows = purchasesForReport.map(entry => `<tr><td>${String(entry.date || '').slice(0, 10) || '—'}</td><td>${entry.supplier || '—'}</td><td>${entry.item || entry.itemName || '—'}</td><td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td><td class="u-text-right">${formatCurrency(numberFrom(entry, ['purchaseAmount', 'amount', 'total', 'totalCost', 'cost']))}</td></tr>`).join('') || '<tr><td colspan="5" class="u-text-center">No purchases for this period.</td></tr>';
     const wasteRows = wastageForReport.map(entry => `<tr><td>${String(entry.date || '').slice(0, 10) || '—'}</td><td>${entry.item || entry.itemName || '—'}</td><td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td><td class="u-text-right">${formatCurrency(numberFrom(entry, ['amount', 'total', 'value', 'cost']))}</td><td>${entry.note || '—'}</td></tr>`).join('') || '<tr><td colspan="5" class="u-text-center">No waste/loss records for this period.</td></tr>';
     const expenseRows = expensesForReport.map(entry => `<tr><td>${String(entry.date || entry.expenseDate || '').slice(0, 10) || '—'}</td><td>${entry.name || entry.title || entry.description || entry.category || 'Expense'}</td><td>${entry.note || entry.notes || '—'}</td><td class="u-text-right">${formatCurrency(numberFrom(entry, ['amount', 'total', 'value', 'cost']))}</td></tr>`).join('') || '<tr><td colspan="4" class="u-text-center">No expenses for this period.</td></tr>';
-    const salesRows = filteredTransactions.map(entry => `<tr><td>${String(entry.date || '').slice(0, 10) || '—'}</td><td>${entry.invoiceNo || entry.invoiceNumber || '—'}</td><td>${entry.customerName || 'Walk-in'}</td><td>${entry.paymentMethod || '—'}</td><td class="u-text-right">${formatCurrency(Number(entry.total || 0))}</td></tr>`).join('') || '<tr><td colspan="5" class="u-text-center">No sales for this period.</td></tr>';
+    const salesRows = filteredTransactions.map(entry => {
+      const amtPaid = entry.amountPaid !== undefined ? entry.amountPaid : (entry.total || 0);
+      const total = Number(entry.total || 0);
+      const status = amtPaid >= total ? 'Paid' : 'Pending';
+      const statusClass = amtPaid >= total ? 'u-text-success' : 'u-text-warning';
+      return `<tr><td>${String(entry.date || '').slice(0, 10) || '—'}</td><td>${entry.invoiceNo || entry.invoiceNumber || '—'}</td><td>${entry.customerName || 'Walk-in'}</td><td>${entry.paymentMethod || '—'}</td><td class="${statusClass}">${status}</td><td class="u-text-right">${formatCurrency(total)}</td></tr>`;
+    }).join('') || '<tr><td colspan="6" class="u-text-center">No sales for this period.</td></tr>';
 
     reportHtml = brandingHeader + watermarkHtml + `
       <div class="report-header-info u-mb-20"><h4 class="u-m-0">Complete Business Report</h4><p class="u-fs-08 u-text-muted">Period: ${reportDate || 'All Time'} | Includes sales, inventory, purchases, waste/loss, and expenses.</p></div>
@@ -8194,7 +8200,7 @@ function renderReport() {
         <div class="dashboard-card"><h4>Expenses</h4><p>${formatCurrency(expenseTotal)}</p></div>
         <div class="dashboard-card"><h4>Stock Value</h4><p>${formatCurrency(stockValue)}</p></div>
       </div>
-      <h5>Sales</h5><table id="reportTable" class="table-excel"><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Payment</th><th class="u-text-right">Amount</th></tr></thead><tbody>${salesRows}</tbody></table>
+      <h5>Sales</h5><table id="reportTable" class="table-excel"><thead><tr><th>Date</th><th>Invoice</th><th>Customer</th><th>Payment</th><th title="Payment Status: Paid or Pending">Status</th><th class="u-text-right">Amount</th></tr></thead><tbody>${salesRows}</tbody></table>
       <h5 class="u-mt-20">Current Inventory</h5><table class="table-excel"><thead><tr><th>Item</th><th>Category</th><th class="u-text-right">Stock</th><th class="u-text-right">Low Stock Level</th><th>Status</th></tr></thead><tbody>${stockRows}</tbody></table>
       <h5 class="u-mt-20">Purchases</h5><table class="table-excel"><thead><tr><th>Date</th><th>Supplier</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th></tr></thead><tbody>${purchaseRows}</tbody></table>
       <h5 class="u-mt-20">Waste / Loss</h5><table class="table-excel"><thead><tr><th>Date</th><th>Item</th><th class="u-text-right">Qty</th><th class="u-text-right">Amount</th><th>Note</th></tr></thead><tbody>${wasteRows}</tbody></table>
