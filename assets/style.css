@@ -387,7 +387,7 @@
   }
 
   /* Orders / Tables - Excel-like gridlines */
-  table, .table-excel {
+  table {
     width: 100%;
     border-collapse: collapse;
     border-spacing: 0;
@@ -396,13 +396,61 @@
     background: transparent;
   }
 
+  .table-excel {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    background: var(--card);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    font-family: inherit;
+    font-size: 0.95rem;
+  }
+
   .table-excel caption { caption-side: top; font-weight: 600; padding: 6px 0; color: var(--text); }
 
-  table th, .table-excel th {
-    background: linear-gradient(180deg, rgba(255,107,53,0.12), rgba(255,133,79,0.04));
-    color: var(--text);
+  .table-excel thead {
+    background: linear-gradient(135deg, rgba(255, 107, 53, 0.12), rgba(255, 133, 79, 0.04));
+    backdrop-filter: blur(6px);
+  }
+
+  .table-excel th {
+    text-align: left;
+    padding: 16px 14px;
     font-weight: 700;
-    padding: 12px 14px;
+    font-size: 0.9rem;
+    letter-spacing: 0.05em;
+    color: var(--text);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    text-transform: capitalize;
+    white-space: nowrap;
+  }
+
+  .table-excel td {
+    padding: 14px;
+    color: var(--text);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+    vertical-align: middle;
+  }
+
+  .table-excel tbody tr:nth-child(even) {
+    background: rgba(255, 255, 255, 0.5);
+  }
+
+  .table-excel tbody tr:last-child td {
+    border-bottom: none;
+  }
+
+  .table-excel tbody tr:hover {
+    background: rgba(255, 107, 53, 0.1);
+  }
+
+  table th {
+    background: transparent;
+    color: var(--text);
+    font-weight: 600;
+    padding: 10px 12px;
     border: 1px solid var(--border-color);
     text-align: left;
     position: sticky;
@@ -410,38 +458,64 @@
     z-index: 3;
   }
 
-  table td, .table-excel td {
-    padding: 12px 14px;
+  table td {
+    padding: 10px 12px;
     border: 1px solid var(--border-color);
     background: var(--card);
     vertical-align: middle;
   }
 
-  table tr:nth-child(even) td, .table-excel tr:nth-child(even) td {
-    background: rgba(255,107,53,0.03);
+  table tr:nth-child(even) td {
+    background: rgba(0,0,0,0.02);
   }
 
-  table tr:hover td, .table-excel tr:hover td {
-    background: rgba(255,107,53,0.08);
+  table tr:hover td {
+    background: rgba(0,0,0,0.04);
   }
   /* Dark mode table overrides */
-  body.dark-mode table th, body.dark-mode .table-excel th {
-    background: linear-gradient(180deg,#3a3a3a,#222);
+  body.dark-mode .table-excel {
+    background: #2b2b2b;
+  }
+
+  body.dark-mode .table-excel thead {
+    background: linear-gradient(135deg, rgba(255, 107, 53, 0.15), rgba(255, 133, 79, 0.06));
+  }
+
+  body.dark-mode .table-excel th {
+    color: var(--text);
+    border-bottom-color: rgba(255,255,255,0.1);
+  }
+
+  body.dark-mode .table-excel td {
+    color: var(--text);
+    border-bottom-color: rgba(255,255,255,0.08);
+  }
+
+  body.dark-mode .table-excel tbody tr:nth-child(even) {
+    background: rgba(255,255,255,0.04);
+  }
+
+  body.dark-mode .table-excel tbody tr:hover {
+    background: rgba(255, 107, 53, 0.15);
+  }
+
+  body.dark-mode table th {
+    background: transparent;
     color: var(--text);
     border-color: #444;
   }
 
-  body.dark-mode table td, body.dark-mode .table-excel td {
+  body.dark-mode table td {
     background: #2b2b2b;
     color: var(--text);
     border-color: #444;
   }
 
-  body.dark-mode table tr:nth-child(even) td, body.dark-mode .table-excel tr:nth-child(even) td {
+  body.dark-mode table tr:nth-child(even) td {
     background: rgba(255,255,255,0.02);
   }
 
-  body.dark-mode table tr:hover td, body.dark-mode .table-excel tr:hover td {
+  body.dark-mode table tr:hover td {
     background: rgba(255,255,255,0.03);
   }
   #addDishTab table td {
