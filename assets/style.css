@@ -417,21 +417,24 @@
 
   .table-excel th {
     text-align: left;
-    padding: 16px 14px;
+    padding: 8px 10px;
     font-weight: 700;
-    font-size: 0.9rem;
-    letter-spacing: 0.05em;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
     color: var(--text);
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
     text-transform: capitalize;
     white-space: nowrap;
+    line-height: 1.2;
   }
 
   .table-excel td {
-    padding: 14px;
+    padding: 8px 10px;
     color: var(--text);
     border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     vertical-align: middle;
+    font-size: 0.85rem;
+    line-height: 1.3;
   }
 
   .table-excel tbody tr:nth-child(even) {
@@ -577,10 +580,11 @@
     border-collapse: separate;
     border-spacing: 0;
     background: var(--card);
-    border-radius: 22px;
+    border-radius: 12px;
     overflow: hidden;
-    box-shadow: 0 20px 40px rgba(15, 23, 42, 0.08);
-    min-width: 760px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+    font-family: inherit;
+    font-size: 0.85rem;
   }
   .invoice-table thead {
     background: linear-gradient(135deg, rgba(255, 107, 53, 0.12), rgba(255, 133, 79, 0.04));
@@ -588,14 +592,18 @@
   }
   .invoice-table thead th {
     text-align: right;
-    padding: 18px 16px;
+    padding: 8px 10px;
     font-weight: 700;
-    font-size: 0.95rem;
-    letter-spacing: 0.08em;
+    font-size: 0.8rem;
+    letter-spacing: 0.03em;
     color: var(--text);
+    border: none;
     border-bottom: 1px solid rgba(0, 0, 0, 0.08);
     text-transform: uppercase;
     white-space: nowrap;
+    line-height: 1.2;
+    position: static !important;
+    background: transparent;
   }
   .invoice-table thead th:first-child {
     text-align: center;
@@ -608,11 +616,14 @@
     text-align: left;
   }
   .invoice-table tbody td {
-    padding: 18px 16px;
+    padding: 8px 10px;
     color: var(--text);
+    border: none;
     border-bottom: 1px solid rgba(0, 0, 0, 0.06);
     vertical-align: middle;
-    font-size: 0.95rem;
+    font-size: 0.85rem;
+    line-height: 1.3;
+    background: transparent;
   }
   .invoice-table tbody tr:nth-child(even) {
     background: rgba(255, 255, 255, 0.5);
@@ -620,11 +631,20 @@
   body.dark-mode .invoice-table tbody tr:nth-child(even) {
     background: rgba(255, 255, 255, 0.04);
   }
+  .invoice-table tbody tr:nth-child(odd) {
+    background: var(--card);
+  }
+  body.dark-mode .invoice-table tbody tr:nth-child(odd) {
+    background: #2b2b2b;
+  }
   .invoice-table tbody tr:last-child td {
     border-bottom: none;
   }
+  .invoice-table tbody tr {
+    background: inherit;
+  }
   .invoice-table tbody tr:hover {
-    background: rgba(255, 107, 53, 0.15);
+    background: rgba(255, 107, 53, 0.1) !important;
   }
   .invoice-table td:last-child {
     text-align: right;
@@ -639,16 +659,18 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 86px;
-    padding: 7px 12px;
+    min-width: 70px;
+    padding: 4px 10px;
     border-radius: 999px;
     background: rgba(255, 107, 53, 0.13);
     color: var(--primary);
-    font-size: 0.88rem;
+    font-size: 0.75rem;
     font-weight: 700;
   }
   .invoice-table td .btn {
-    min-width: 92px;
+    min-width: 75px;
+    padding: 4px 8px;
+    font-size: 0.75rem;
   }
   .invoice-table th:nth-child(6),
   .invoice-table td:nth-child(6) {
