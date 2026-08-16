@@ -1204,6 +1204,15 @@ function clearBrowserStorageForThisOrigin() {
 }
 
 async function deleteYoShopIndexedDatabases() {
+  // First, close and clear the repository if it exists
+  if (localRepository && typeof localRepository.clear === 'function') {
+    try {
+      await localRepository.clear();
+    } catch (error) {
+      console.warn('[CLEAR] Repository clear failed:', error);
+    }
+  }
+
   const namedDatabases = [];
   if (window.indexedDB && typeof window.indexedDB.databases === 'function') {
     try {
@@ -1221,18 +1230,57 @@ async function deleteYoShopIndexedDatabases() {
   }
 
   const uniqueDatabaseNames = [...new Set(namedDatabases.filter((name) => typeof name === 'string' && (name === 'posDB' || name.startsWith('posDB_'))))];
+  
   for (const dbName of uniqueDatabaseNames) {
     await new Promise((resolve) => {
       const request = window.indexedDB.deleteDatabase(dbName);
-      request.onsuccess = () => resolve();
-      request.onerror = () => resolve();
-      request.onblocked = () => resolve();
+      request.onsuccess = () => {
+        console.log(`[CLEAR] Successfully deleted IndexedDB: ${dbName}`);
+        resolve();
+      };
+      request.onerror = () => {
+        console.warn(`[CLEAR] Error deleting IndexedDB ${dbName}:`, request.error);
+        resolve();
+      };
+      request.onblocked = () => {
+        console.warn(`[CLEAR] Delete blocked for ${dbName}, retrying...`);
+        resolve();
+      };
     });
   }
 }
 
+function resetAllAppStateInMemory() {
+  try {
+    menu = [];
+    stockTableFilter = 'all';
+    activeOrders = {};
+    transactions = [];
+    staff = [];
+    dishCategories = [];
+    customers = [];
+    expenses = [];
+    restockHistory = [];
+    purchaseHistory = [];
+    wastageLossHistory = [];
+    supplierList = [];
+    lastKnownDishImages = {};
+    settings = { ...defaultSettings };
+    appAdminSettings = { ...defaultAppAdminSettings };
+    auditTrail = [];
+    pendingSyncQueue = [];
+    currentLoggedInStaffName = '';
+    currentUserRole = '';
+    if (typeof currentUser !== 'undefined') {
+      currentUser = null;
+    }
+  } catch (error) {
+    console.warn('[CLEAR] Failed to reset in-memory app state:', error);
+  }
+}
+
 async function clearYoShopLocalData(options = {}) {
-  const { skipConfirm = false, reload = true } = options;
+  const { skipConfirm = false, reload = true, resetAuth = true } = options;
 
   if (!skipConfirm && typeof showAppConfirm === 'function') {
     const response = await showAppConfirm('This will remove the local sales archive, IndexedDB data, app caches, and browser storage for YoShop. Continue?', 'Clear Local App Data', 'Clear Data', 'Cancel');
@@ -1240,6 +1288,16 @@ async function clearYoShopLocalData(options = {}) {
   }
 
   try {
+    resetAllAppStateInMemory();
+
+    if (auth && typeof auth.signOut === 'function' && resetAuth) {
+      try {
+        await auth.signOut();
+      } catch (error) {
+        console.warn('[CLEAR] Firebase sign-out during reset failed:', error);
+      }
+    }
+
     if (db) {
       db.close();
       db = null;
@@ -1265,13 +1323,27 @@ async function clearYoShopLocalData(options = {}) {
     clearBrowserStorageForThisOrigin();
     await deleteYoShopIndexedDatabases();
 
+    // Set a flag to skip cloud sync on next load to prevent data from re-syncing
+    try {
+      sessionStorage.setItem('skipCloudSyncOnNextLoad', 'true');
+    } catch (e) {
+      console.warn('[CLEAR] Could not set skipCloudSyncOnNextLoad flag:', e);
+    }
+
     APP_STORAGE_KEYS_TO_CLEAR.forEach((key) => {
       try { localStorage.removeItem(key); } catch (e) { }
       try { sessionStorage.removeItem(key); } catch (e) { }
     });
 
+    try { localStorage.clear(); } catch (e) { }
+    try { sessionStorage.clear(); } catch (e) { }
+
     if (reload) {
-      window.location.reload();
+      // Wait longer to ensure all async operations (IndexedDB, repository clear, cache cleanup) complete
+      setTimeout(() => {
+        console.log('[CLEAR] All cleanup operations complete, reloading app...');
+        window.location.reload();
+      }, 500);
     }
     return true;
   } catch (error) {
@@ -1512,8 +1584,14 @@ function looksLikeDefaultSettings(value) {
 function sanitizeForFirestore(value) {
   if (value === undefined) return null;
   if (value === null) return null;
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Uint8Array) return Array.from(value);
   if (Array.isArray(value)) return value.map(v => sanitizeForFirestore(v));
   if (typeof value === 'object') {
+    const prototype = Object.getPrototypeOf(value);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return value;
+    }
     const out = {};
     Object.keys(value).forEach(k => {
       const v = value[k];
@@ -13508,6 +13586,14 @@ function setupEnterpriseRecordCollectionSync(uid) {
   });
 }
 function setupRealTimeSync(uid) {
+  // Skip cloud sync on first load after reset
+  if (sessionStorage.getItem('skipCloudSyncOnNextLoad') === 'true') {
+    console.log('⏭️  [SYNC] Skipping cloud sync on this load (post-reset). User must log in again to resume sync.');
+    sessionStorage.removeItem('skipCloudSyncOnNextLoad');
+    isInitialLoadComplete = true;
+    return;
+  }
+
   if (!dbFirestore) {
     console.warn("🔴 Firestore not initialized, skipping real-time sync");
     isInitialLoadComplete = true; // Allow local-only operation
@@ -15168,6 +15254,7 @@ function showUpdateNotification() {
 
 function playNotificationSound() {
   try {
+    if (!_audioGestureAvailable) return;
     const ctx = unlockAudioContext();
     if (!ctx) return;
 
@@ -15522,6 +15609,7 @@ document.addEventListener('keydown', (e) => {
 // ===== Scan Sound (Web Audio API — no external files needed) =====
 function playScanSound(type = 'success') {
   try {
+    if (!_audioGestureAvailable) return;
     const ctx = getSharedAudioContext();
     if (!ctx) return;
 
@@ -15898,7 +15986,7 @@ function getSharedAudioContext() {
   return createAudioContext();
 }
 
-// Automatically unlock AudioContext on user gesture (essential for iOS Safari, mobile Chrome, PWA)
+// Automatically unlock AudioContext only after a real user gesture (essential for iOS Safari, mobile Chrome, PWA)
 function unlockAudioContext() {
   if (!_audioGestureAvailable) {
     return null;
@@ -15913,25 +16001,20 @@ function unlockAudioContext() {
   }
   return ctx;
 }
-window.addEventListener('click', () => {
+
+function markTrustedAudioGesture() {
   _audioGestureAvailable = true;
   unlockAudioContext();
-}, { once: false });
-window.addEventListener('touchstart', () => {
-  _audioGestureAvailable = true;
-  unlockAudioContext();
-}, { once: false });
-window.addEventListener('keydown', () => {
-  _audioGestureAvailable = true;
-  unlockAudioContext();
-}, { once: false });
-window.addEventListener('pointerdown', () => {
-  _audioGestureAvailable = true;
-  unlockAudioContext();
-}, { once: false });
+}
+
+window.addEventListener('click', markTrustedAudioGesture, { once: false, passive: true });
+window.addEventListener('touchstart', markTrustedAudioGesture, { once: false, passive: true });
+window.addEventListener('keydown', markTrustedAudioGesture, { once: false, passive: true });
+window.addEventListener('pointerdown', markTrustedAudioGesture, { once: false, passive: true });
 
 function playQtyChangeSound(isIncrement) {
   try {
+    if (!_audioGestureAvailable) return;
     const ctx = unlockAudioContext() || getSharedAudioContext();
     if (!ctx) return;
 
@@ -15960,6 +16043,7 @@ function playQtyChangeSound(isIncrement) {
 
 function playCelebrationSound() {
   try {
+    if (!_audioGestureAvailable) return;
     const ctx = getSharedAudioContext();
     if (!ctx) return;
 
@@ -16011,6 +16095,7 @@ function playCelebrationSound() {
 
 function playTrashSound() {
   try {
+    if (!_audioGestureAvailable) return;
     const ctx = getSharedAudioContext();
     if (!ctx) return;
 
@@ -16037,6 +16122,7 @@ function playTrashSound() {
 
 function playErrorSound() {
   try {
+    if (!_audioGestureAvailable) return;
     const ctx = getSharedAudioContext();
     if (!ctx) return;
 
@@ -16064,6 +16150,7 @@ function playErrorSound() {
 
 function playClickSound() {
   try {
+    if (!_audioGestureAvailable) return;
     const ctx = getSharedAudioContext();
     if (!ctx) return;
 
