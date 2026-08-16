@@ -709,6 +709,52 @@ async function getShopsPageOptimized(pageNumber = 0) {
 /**
  * Ensure tenant's local and cloud parameters are initialized after login/registration
  */
+async function ensureTenantBusinessId(uid) {
+  if (!uid || !dbFirestore) return null;
+
+  try {
+    const userRef = doc(dbFirestore, 'users', uid);
+    const profileRef = doc(dbFirestore, 'users', uid, 'data', 'shop_profile');
+    const [userSnap, profileSnap] = await Promise.all([getDoc(userRef), getDoc(profileRef)]);
+    const userData = userSnap.exists() ? (userSnap.data() || {}) : {};
+    const profileData = profileSnap.exists() ? (profileSnap.data() || {}) : {};
+    const existingId = (userData.businessId || userData.shopId || profileData.businessId || profileData.shopId || '').toString().trim();
+
+    if (existingId) {
+      const updates = {};
+      if (!userData.businessId) updates.businessId = existingId;
+      if (!userData.shopId) updates.shopId = existingId;
+      if (!profileData.businessId) updates.shopProfileBusinessId = existingId;
+      if (!profileData.shopId) updates.shopProfileShopId = existingId;
+
+      if (Object.keys(updates).length) {
+        const mergedUser = {};
+        const mergedProfile = {};
+        if (updates.businessId) mergedUser.businessId = existingId;
+        if (updates.shopId) mergedUser.shopId = existingId;
+        if (updates.shopProfileBusinessId) mergedProfile.businessId = existingId;
+        if (updates.shopProfileShopId) mergedProfile.shopId = existingId;
+
+        await Promise.all([
+          userSnap.exists() ? setDoc(userRef, mergedUser, { merge: true }) : Promise.resolve(),
+          profileSnap.exists() ? setDoc(profileRef, mergedProfile, { merge: true }) : Promise.resolve()
+        ]);
+      }
+      return existingId;
+    }
+
+    const businessId = await generateBusinessId();
+    await Promise.all([
+      setDoc(userRef, { businessId, shopId: businessId }, { merge: true }),
+      setDoc(profileRef, { businessId, shopId: businessId }, { merge: true })
+    ]);
+    return businessId;
+  } catch (error) {
+    console.warn('ensureTenantBusinessId warning:', error);
+    return null;
+  }
+}
+
 async function setupTenantShopParameters(uid) {
   try {
     if (!uid) return;
@@ -724,6 +770,8 @@ async function setupTenantShopParameters(uid) {
       console.log(`[SHOP] Skipping tenant shop initialization for app admin identity ${uid}`);
       return;
     }
+
+    await ensureTenantBusinessId(uid);
     // Initialize IndexedDB for this user (namespaced)
     await initDB(uid);
 
@@ -771,6 +819,34 @@ async function setupTenantShopParameters(uid) {
 }
 
 /**
+ * Creates a fixed, readable business ID that is safe for Firebase Storage and admin identification.
+ * Pattern: yoshop-001, yoshop-002, ...
+ */
+async function generateBusinessId() {
+  try {
+    if (!dbFirestore) return 'yoshop-001';
+    const usersSnap = await getDocs(collection(dbFirestore, 'users'));
+    const taken = new Set();
+
+    usersSnap.forEach(docSnap => {
+      const data = docSnap.data() || {};
+      const candidate = (data.businessId || data.shopId || '').toString().trim();
+      if (candidate) taken.add(candidate.toLowerCase());
+    });
+
+    let next = 1;
+    while (taken.has(`yoshop-${String(next).padStart(3, '0')}`.toLowerCase())) {
+      next += 1;
+    }
+
+    return `yoshop-${String(next).padStart(3, '0')}`;
+  } catch (error) {
+    console.warn('Failed to generate business ID from Firestore. Falling back to timestamp-based ID.', error);
+    return `yoshop-${String(Date.now() % 100000).padStart(3, '0')}`;
+  }
+}
+
+/**
  * Register a new tenant shop programmatically with immediate tenant initialization
  */
 async function registerNewTenantShop(email, password, businessName) {
@@ -785,19 +861,24 @@ async function registerNewTenantShop(email, password, businessName) {
     throw new Error('App administrator accounts cannot create or own shops.');
   }
   const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+  const businessId = await generateBusinessId();
   if (businessName) await updateProfile(userCredential.user, { displayName: businessName });
 
   // Root metadata
   await setDoc(doc(dbFirestore, 'users', userCredential.user.uid), {
     email: email,
     name: businessName || null,
+    businessId,
+    shopId: businessId,
     status: 'pending',
     createdAt: new Date().toISOString()
   }, { merge: true });
 
   // Tenant private profile
   await setDoc(doc(dbFirestore, 'users', userCredential.user.uid, 'data', 'shop_profile'), {
-    settings: { name: businessName || 'My Business' },
+    settings: { name: businessName || 'My Business', businessId },
+    businessId,
+    shopId: businessId,
     menu: [],
     lastUpdated: new Date().toISOString()
   }, { merge: true });
@@ -983,6 +1064,32 @@ async function compressSelectedDishImage() {
   }
 }
 
+async function resolveTenantBusinessId(uid = getEffectiveUid()) {
+  if (!uid) return null;
+
+  try {
+    const userRef = doc(dbFirestore, 'users', uid);
+    const profileRef = doc(dbFirestore, 'users', uid, 'data', 'shop_profile');
+    const [userSnap, profileSnap] = await Promise.all([getDoc(userRef), getDoc(profileRef)]);
+    const userData = userSnap.exists() ? (userSnap.data() || {}) : {};
+    const profileData = profileSnap.exists() ? (profileSnap.data() || {}) : {};
+    const shopSettings = profileData.settings || {};
+
+    const businessId = userData.businessId || userData.shopId || profileData.businessId || profileData.shopId || shopSettings.businessId || null;
+    return businessId ? String(businessId).trim() : null;
+  } catch (error) {
+    console.warn('resolveTenantBusinessId warning:', error);
+    return null;
+  }
+}
+
+async function getTenantStorageRoot(uid = getEffectiveUid()) {
+  const businessId = await resolveTenantBusinessId(uid);
+  if (businessId) return `shops/${businessId}`;
+  if (uid) return `users/${uid}`;
+  return 'users/anonymous';
+}
+
 // Helper function to upload images to Firebase Storage
 async function uploadImage(base64Data, path) {
   try {
@@ -991,14 +1098,16 @@ async function uploadImage(base64Data, path) {
     if (actualSize > MAX_IMAGE_UPLOAD_BYTES) {
       throw new Error('Image exceeds 1 MB. Please upload an image up to 1 MB.');
     }
-    let uid = getEffectiveUid() || 'anonymous';
-    const userPath = `users/${uid}/${path}`;
-    const storageRef = ref(storage, userPath);
+
+    const uid = getEffectiveUid() || 'anonymous';
+    const tenantRoot = await getTenantStorageRoot(uid);
+    const tenantPath = `${tenantRoot}/${path}`.replace(/\/+/g, '/');
+    const storageRef = ref(storage, tenantPath);
     await uploadString(storageRef, base64Data, 'data_url');
     return await getDownloadURL(storageRef);
   } catch (error) {
     if (error.code === 'storage/unauthorized') {
-      console.error("CRITICAL: Firebase Storage permission denied. Please ensure your Storage Security Rules allow writes to the 'users/' path for authenticated users.");
+      console.error("CRITICAL: Firebase Storage permission denied. Please ensure your Storage Security Rules allow writes to the 'shops/' path for authenticated users.");
     }
     if (error && error.message && error.message.includes('1 MB')) {
       await showImageSizeError(error.message);
@@ -2331,6 +2440,7 @@ function initAppAdminDashboardLayout() {
                 <tr>
                   <th class="u-text-center">Logo</th>
                   <th>Shop Name</th>
+                  <th>Business ID</th>
                   <th>Owner Account</th>
                   <th>Contact</th>
                   <th>WhatsApp</th>
@@ -2341,7 +2451,7 @@ function initAppAdminDashboardLayout() {
                 </tr>
               </thead>
               <tbody id="appAdminShopsTableBody">
-                <tr><td colspan="8" class="u-text-center">Loading shops details...</td></tr>
+                <tr><td colspan="10" class="u-text-center">Loading shops details...</td></tr>
               </tbody>
             </table>
           </div>
@@ -2976,6 +3086,7 @@ async function refreshAppAdminShops() {
       const shopName = (shopSettings.name || '').toLowerCase().trim();
 
       const userData = userDoc.data();
+      const businessId = userData.businessId || userData.shopId || shopData.businessId || shopSettings.businessId || 'N/A';
       const userEmail = (userData.email || '').toLowerCase().trim();
       const userStatus = userData.status || 'active';
       const whatsappNum = userData.whatsapp || 'N/A';
@@ -3037,6 +3148,7 @@ async function refreshAppAdminShops() {
           </div>
           <div class="shop-card-details">
             <p class="u-fs-08" title="${accountEmail}"><strong>Owner Account:</strong> ${accountEmail}</p>
+            <p class="u-fs-08"><strong>Business ID:</strong> ${businessId}</p>
             <p class="u-fs-08"><strong>Contact:</strong> ${contactInfo}</p>
             <p class="u-fs-08"><strong>WhatsApp:</strong> ${whatsappNum}</p>
             <p class="u-fs-08"><strong>Last Active:</strong> ${lastActive}</p>
@@ -3153,6 +3265,7 @@ async function refreshAppAdminShopsTable() {
       if (effectiveEmail) seenEmails.add(effectiveEmail);
 
       const shopSettings = shopData.settings || {};
+      const businessId = userData.businessId || userData.shopId || shopData.businessId || shopSettings.businessId || 'N/A';
       const logoUrl = sanitizeLogoUrl(shopSettings.logo) || 'assets/icons/icon.png';
       const userStatus = userData.status || 'active';
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
@@ -3178,6 +3291,7 @@ async function refreshAppAdminShopsTable() {
       tr.innerHTML = `
           <td class="u-text-center"><img src="${logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color);" onerror="this.src='assets/icons/icon.png';"></td>
           <td class="u-bold">${shopSettings.name || 'Unnamed Shop'}</td>
+          <td class="u-fs-08"><strong>${businessId}</strong></td>
           <td class="u-fs-08">${effectiveEmail || 'No Email'}</td>
           <td class="u-fs-08">${shopSettings.contact || 'N/A'}</td>
           <td class="u-fs-08">${whatsappNum}</td>
@@ -4427,6 +4541,7 @@ async function registerWithEmail() {
       alert("Email login successfully added to your account! You can now log in with either Google or this password.");
     } else {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+      const businessId = await generateBusinessId();
       if (name) {
         await updateProfile(userCredential.user, { displayName: name });
       }
@@ -4435,6 +4550,8 @@ async function registerWithEmail() {
       await setDoc(doc(dbFirestore, "users", userCredential.user.uid), {
         whatsapp: whatsapp || null,
         name: name || null,
+        businessId,
+        shopId: businessId,
         email: email,
         status: 'pending',
         createdAt: new Date().toISOString()
@@ -4442,7 +4559,9 @@ async function registerWithEmail() {
 
       // Initialize the tenant's private shop profile under /users/{uid}/data/shop_profile
       await setDoc(doc(dbFirestore, "users", userCredential.user.uid, "data", "shop_profile"), {
-        settings: { name: name || 'My Business' },
+        settings: { name: name || 'My Business', businessId },
+        businessId,
+        shopId: businessId,
         menu: [],
         transactions: [],
         lastUpdated: new Date().toISOString()
@@ -5580,6 +5699,7 @@ function populateRecipeIngredientSelect() {
 
 
 // Helper to convert file to Base64 with resizing and strict 1 MB limit.
+// Transparent logos must stay transparent; JPEG conversion is avoided for PNG/WebP assets.
 const toBase64 = file => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.readAsDataURL(file);
@@ -5589,6 +5709,10 @@ const toBase64 = file => new Promise((resolve, reject) => {
     img.onload = () => {
       const MAX_DIMENSION = 1400;
       const targetBytes = MAX_IMAGE_UPLOAD_BYTES;
+      const transparentFormats = ['image/png', 'image/webp', 'image/gif', 'image/svg+xml'];
+      const fileType = (file && file.type) ? file.type.toLowerCase() : '';
+      const isTransparentImage = transparentFormats.includes(fileType) || (typeof file?.name === 'string' && /\.(png|webp|gif|svg)$/i.test(file.name));
+
       let width = img.width;
       let height = img.height;
       let scale = 1;
@@ -5602,15 +5726,42 @@ const toBase64 = file => new Promise((resolve, reject) => {
       const elem = document.createElement('canvas');
       elem.width = width;
       elem.height = height;
-      const ctx = elem.getContext('2d');
+      const ctx = elem.getContext('2d', { alpha: true });
+
+      if (isTransparentImage) {
+        ctx.clearRect(0, 0, width, height);
+      } else {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, width, height);
+      }
+
       ctx.drawImage(img, 0, 0, width, height);
 
-      let quality = 0.92;
-      let result = elem.toDataURL('image/jpeg', quality);
+      const mimeType = isTransparentImage ? 'image/png' : 'image/jpeg';
+      let result = elem.toDataURL(mimeType, mimeType === 'image/jpeg' ? 0.92 : undefined);
 
-      while (getDataUrlByteSize(result) > targetBytes && quality > 0.12) {
-        quality -= 0.08;
-        result = elem.toDataURL('image/jpeg', quality);
+      if (mimeType === 'image/jpeg') {
+        let quality = 0.92;
+        while (getDataUrlByteSize(result) > targetBytes && quality > 0.12) {
+          quality -= 0.08;
+          result = elem.toDataURL('image/jpeg', quality);
+        }
+      } else {
+        let currentWidth = width;
+        let currentHeight = height;
+        let iteration = 0;
+
+        while (getDataUrlByteSize(result) > targetBytes && iteration < 8) {
+          iteration += 1;
+          const nextScale = Math.max(0.55, 1 - (iteration * 0.12));
+          currentWidth = Math.max(1, Math.round(width * nextScale));
+          currentHeight = Math.max(1, Math.round(height * nextScale));
+          elem.width = currentWidth;
+          elem.height = currentHeight;
+          ctx.clearRect(0, 0, currentWidth, currentHeight);
+          ctx.drawImage(img, 0, 0, currentWidth, currentHeight);
+          result = elem.toDataURL('image/png');
+        }
       }
 
       if (getDataUrlByteSize(result) > targetBytes) {
@@ -9714,9 +9865,10 @@ async function saveSettings() {
 
   const logoField = document.getElementById('companyLogo');
   const logoFile = logoField && logoField.files[0];
+  const pendingLogoBase64 = window.pendingLogoBase64 || null;
   const shouldClearLogo = window.companyLogoCleared === true;
-  if (logoFile) {
-    const base64Logo = await toBase64(logoFile);
+  if (logoFile || pendingLogoBase64) {
+    const base64Logo = pendingLogoBase64 || await toBase64(logoFile);
     const oldLogo = settings.logo;
     settings.logo = await uploadImage(base64Logo, 'branding/logo.jpg');
     if (oldLogo && oldLogo !== settings.logo) {
@@ -9726,6 +9878,8 @@ async function saveSettings() {
       clearImageFromCache(settings.logo);
     }
     window.companyLogoCleared = false;
+    window.pendingLogoBase64 = null;
+    if (logoField) logoField.value = '';
   } else if (shouldClearLogo) {
     const oldLogo = settings.logo;
     settings.logo = '';
@@ -9733,6 +9887,7 @@ async function saveSettings() {
       clearImageFromCache(oldLogo);
     }
     window.companyLogoCleared = false;
+    window.pendingLogoBase64 = null;
   }
 
   settings = touchSettingsRecord(settings, 'settings');
@@ -10044,6 +10199,61 @@ function togglePINVisibility(inputId = 'ShopAdminPIN') {
   }
 }
 
+function updateLogoValidation(message, type = 'info') {
+  const messageEl = document.getElementById('logoValidationMessage');
+  const sizeReadout = document.getElementById('logoSizeReadout');
+  const badge = document.getElementById('logoStatusBadge');
+
+  if (messageEl) {
+    messageEl.textContent = message || 'Maximum upload: 1 MB';
+    messageEl.style.display = message ? 'inline-block' : 'none';
+    messageEl.style.color = type === 'error' ? '#d93025' : type === 'success' ? '#2e7d32' : '#4a5568';
+  }
+
+  if (badge) {
+    badge.style.display = 'inline-block';
+    if (type === 'error') {
+      badge.textContent = 'Too large';
+      badge.style.background = '#fdecea';
+      badge.style.color = '#c62828';
+    } else if (type === 'success') {
+      badge.textContent = 'OK under 1 MB';
+      badge.style.background = '#e8f5e9';
+      badge.style.color = '#2e7d32';
+    } else {
+      badge.textContent = 'OK under 1 MB';
+      badge.style.background = '#e5e7eb';
+      badge.style.color = '#374151';
+    }
+  }
+
+  if (sizeReadout) {
+    sizeReadout.style.display = 'block';
+    sizeReadout.textContent = sizeReadout.dataset.sizeText || 'No image selected';
+  }
+}
+
+function updateLogoSizeReadout(file) {
+  const sizeReadout = document.getElementById('logoSizeReadout');
+  if (!sizeReadout) return;
+
+  if (!file) {
+    sizeReadout.textContent = 'No image selected';
+    sizeReadout.dataset.sizeText = 'No image selected';
+    sizeReadout.style.display = 'none';
+    return;
+  }
+
+  const sizeInKb = file.size / 1024;
+  const sizeText = sizeInKb >= 1024
+    ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+    : `${sizeInKb.toFixed(1)} KB`;
+
+  sizeReadout.textContent = `Selected size: ${sizeText}`;
+  sizeReadout.dataset.sizeText = sizeReadout.textContent;
+  sizeReadout.style.display = 'block';
+}
+
 function clearLogoPreview() {
   if (typeof showAppPopup === 'function') {
     void showAppPopup({
@@ -10066,7 +10276,10 @@ function clearLogoPreview() {
         logoPreview.style.display = 'none';
       }
       if (clearLogoBtn) clearLogoBtn.style.display = 'none';
+      updateLogoSizeReadout(null);
+      updateLogoValidation('No logo selected', 'info');
       window.companyLogoCleared = true;
+      window.pendingLogoBase64 = null;
       settings.logo = '';
     });
     return;
@@ -10084,26 +10297,101 @@ function clearLogoPreview() {
     logoPreview.style.display = 'none';
   }
   if (clearLogoBtn) clearLogoBtn.style.display = 'none';
+  updateLogoSizeReadout(null);
+  updateLogoValidation('No logo selected', 'info');
   window.companyLogoCleared = true;
+  window.pendingLogoBase64 = null;
   settings.logo = '';
 }
 
+window.clearLogoPreview = clearLogoPreview;
+
 function previewLogo(input) {
   if (input.files && input.files[0]) {
+    const file = input.files[0];
+    const sizeInBytes = file.size || 0;
+    updateLogoSizeReadout(file);
+
+    if (sizeInBytes > MAX_IMAGE_UPLOAD_BYTES) {
+      const sizeMb = (sizeInBytes / MAX_IMAGE_UPLOAD_BYTES).toFixed(2);
+      updateLogoValidation(`Image is ${sizeMb} MB. Upload limit is 1 MB.`, 'error');
+
+      showAppPopup({
+        title: 'Logo Too Large',
+        message: `This logo is ${sizeMb} MB. Compress it to 1 MB before saving and syncing to the cloud?`,
+        confirmText: 'Compress to 1 MB',
+        cancelText: 'Cancel',
+        showCancel: true,
+        icon: '🖼️',
+        danger: false
+      }).then(async (result) => {
+        if (!result || !result.confirmed) {
+          input.value = '';
+          updateLogoSizeReadout(null);
+          updateLogoValidation('No logo selected', 'info');
+          const logoPreview = document.getElementById('logoPreview');
+          const clearLogoBtn = document.getElementById('clearLogoBtn');
+          if (logoPreview) {
+            logoPreview.src = '';
+            logoPreview.style.display = 'none';
+          }
+          if (clearLogoBtn) clearLogoBtn.style.display = 'none';
+          window.pendingLogoBase64 = null;
+          return;
+        }
+
+        try {
+          const compressed = await toBase64(file);
+          window.pendingLogoBase64 = compressed;
+          const logoPreview = document.getElementById('logoPreview');
+          const clearLogoBtn = document.getElementById('clearLogoBtn');
+          if (logoPreview) {
+            logoPreview.src = compressed;
+            logoPreview.style.display = 'inline-block';
+          }
+          if (clearLogoBtn) clearLogoBtn.style.display = 'block';
+          updateLogoSizeReadout({ size: getDataUrlByteSize(compressed) });
+          updateLogoValidation(`Logo ready: ${formatImageSizeLabel(getDataUrlByteSize(compressed))}`, 'success');
+          window.companyLogoCleared = false;
+          if (input) input.value = '';
+        } catch (error) {
+          console.error('Could not compress oversized logo:', error);
+          input.value = '';
+          window.pendingLogoBase64 = null;
+          updateLogoSizeReadout(null);
+          updateLogoValidation('Could not compress logo. Please upload an image under 1 MB.', 'error');
+          const logoPreview = document.getElementById('logoPreview');
+          const clearLogoBtn = document.getElementById('clearLogoBtn');
+          if (logoPreview) {
+            logoPreview.src = '';
+            logoPreview.style.display = 'none';
+          }
+          if (clearLogoBtn) clearLogoBtn.style.display = 'none';
+        }
+      });
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = e => {
       const logoPreview = document.getElementById('logoPreview');
       const clearLogoBtn = document.getElementById('clearLogoBtn');
-      logoPreview.src = e.target.result;
-      logoPreview.style.display = 'inline-block';
+      if (logoPreview) {
+        logoPreview.src = e.target.result;
+        logoPreview.style.display = 'inline-block';
+      }
       if (clearLogoBtn) clearLogoBtn.style.display = 'block';
+      window.pendingLogoBase64 = e.target.result;
+      updateLogoValidation(`Logo ready: ${formatImageSizeLabel(sizeInBytes)}`, 'success');
       window.companyLogoCleared = false;
     };
-    reader.readAsDataURL(input.files[0]);
+    reader.readAsDataURL(file);
   } else {
     clearLogoPreview();
   }
 }
+
+window.previewLogo = previewLogo;
 
 function toggleSelectAllRows(bodyId, checked, buttonId = null) {
   const body = document.getElementById(bodyId);
@@ -15593,6 +15881,7 @@ function printDishLabel(index) {
 // ===== Sound Effects (Web Audio API — Shared Context for Mobile/PWA) =====
 let _sharedAudioCtx = null;
 let _audioContextUnlocked = false;
+let _audioGestureAvailable = false;
 
 function createAudioContext() {
   if (_sharedAudioCtx) return _sharedAudioCtx;
@@ -15605,12 +15894,16 @@ function createAudioContext() {
 }
 
 function getSharedAudioContext() {
-  if (!_audioContextUnlocked) return null;
+  if (!_audioContextUnlocked || !_audioGestureAvailable) return null;
   return createAudioContext();
 }
 
 // Automatically unlock AudioContext on user gesture (essential for iOS Safari, mobile Chrome, PWA)
 function unlockAudioContext() {
+  if (!_audioGestureAvailable) {
+    return null;
+  }
+
   const ctx = createAudioContext();
   if (!ctx) return null;
 
@@ -15620,10 +15913,22 @@ function unlockAudioContext() {
   }
   return ctx;
 }
-window.addEventListener('click', unlockAudioContext, { once: false });
-window.addEventListener('touchstart', unlockAudioContext, { once: false });
-window.addEventListener('keydown', unlockAudioContext, { once: false });
-window.addEventListener('pointerdown', unlockAudioContext, { once: false });
+window.addEventListener('click', () => {
+  _audioGestureAvailable = true;
+  unlockAudioContext();
+}, { once: false });
+window.addEventListener('touchstart', () => {
+  _audioGestureAvailable = true;
+  unlockAudioContext();
+}, { once: false });
+window.addEventListener('keydown', () => {
+  _audioGestureAvailable = true;
+  unlockAudioContext();
+}, { once: false });
+window.addEventListener('pointerdown', () => {
+  _audioGestureAvailable = true;
+  unlockAudioContext();
+}, { once: false });
 
 function playQtyChangeSound(isIncrement) {
   try {

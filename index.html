@@ -1345,10 +1345,15 @@
             <div class="input-row">
               <label for="companyLogo">Logo:</label>
               <input type="file" id="companyLogo" accept="image/*" onchange="previewLogo(this)">
-              <div id="logoPreviewWrap" style="position: relative; display: inline-block; vertical-align: middle;">
-                <img id="logoPreview" src="" alt="Logo Preview" style="display: none; max-width: 120px; max-height: 120px; object-fit: contain; border-radius: 8px; border: 1px solid var(--border-color, #d9d9d9); background: #fff;">
+              <div id="logoPreviewWrap" style="position: relative; display: inline-block; vertical-align: middle; padding: 8px; border-radius: 10px; background: linear-gradient(45deg, #f1f3f4 25%, transparent 25%), linear-gradient(-45deg, #f1f3f4 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f1f3f4 75%), linear-gradient(-45deg, transparent 75%, #f1f3f4 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0; border: 1px solid var(--border-color, #d9d9d9);">
+                <img id="logoPreview" src="" alt="Logo Preview" style="display: none; max-width: 120px; max-height: 120px; object-fit: contain; border-radius: 8px; background: transparent;">
                 <button type="button" id="clearLogoBtn" onclick="clearLogoPreview()" title="Remove logo" aria-label="Remove logo" style="position: absolute; top: -8px; right: -8px; display: none; width: 28px; height: 28px; padding: 0; margin: 0; border: none; border-radius: 50%; background: rgba(220, 53, 69, 0.95); color: white; font-size: 18px; line-height: 1; cursor: pointer; box-shadow: 0 2px 6px rgba(0,0,0,0.18);">×</button>
               </div>
+              <div style="margin-top:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span id="logoValidationMessage" style="display:none; font-size:12px; color:#4a5568;">Maximum upload: 1 MB</span>
+                <span id="logoStatusBadge" style="display:none; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; background:#e5e7eb; color:#374151;">OK under 1 MB</span>
+              </div>
+              <div id="logoSizeReadout" style="display:none; margin-top:4px; font-size:11px; color:#4a5568;">No image selected</div>
             </div>
             <button class="btn" onclick="saveSettings()">Save Settings</button>
           </div>
