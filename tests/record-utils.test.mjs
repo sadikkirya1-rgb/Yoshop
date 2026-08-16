@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getCanonicalProductCatalog } from '../record-utils.mjs';
+import { getCanonicalProductCatalog, findMatchingProductEntry } from '../record-utils.mjs';
 
 test('getCanonicalProductCatalog keeps only sellable products and removes duplicates', () => {
   const products = [
@@ -29,4 +29,17 @@ test('getCanonicalProductCatalog merges same-name stock and shop items into one 
   assert.equal(result[0].name, 'Milk');
   assert.equal(result[0].stock, 10);
   assert.equal(result[0].price, 4);
+});
+
+test('findMatchingProductEntry detects an existing product before auto-creating a duplicate', () => {
+  const products = [
+    { name: 'Tomato', stock: 12, unit: 'kg', costPrice: 1.2 },
+    { name: 'Onion', stock: 8, unit: 'kg', costPrice: 0.9 }
+  ];
+
+  const match = findMatchingProductEntry(products, 'Tomato');
+
+  assert.ok(match);
+  assert.equal(match.index, 0);
+  assert.equal(match.record.name, 'Tomato');
 });

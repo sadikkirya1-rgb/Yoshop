@@ -16,7 +16,7 @@ import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
 import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
-import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord } from './record-utils.mjs';
+import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics } from './invoice-utils.mjs';
 
@@ -474,15 +474,8 @@ function normalizeProductCatalog(products = []) {
 }
 
 function getProductCatalogMatchIndex(name = '', barcode = '') {
-  const normalizedName = String(name || '').trim().toLowerCase();
-  const normalizedBarcode = String(barcode || '').trim();
-
-  return menu.findIndex(item => {
-    if (!item || typeof item !== 'object') return false;
-    if (normalizedBarcode && String(item.barcode || '').trim() === normalizedBarcode) return true;
-    if (normalizedName && String(item.name || '').trim().toLowerCase() === normalizedName) return true;
-    return false;
-  });
+  const match = findMatchingProductEntry(menu, name, barcode);
+  return match ? match.index : -1;
 }
 
 function hydrateEnterpriseRecords(entityType, records = []) {
@@ -5192,6 +5185,8 @@ function getLowStockThreshold(item) {
 }
 
 async function addDish(buttonElement) {
+  const dishIndexInput = document.getElementById('dishIndex').value;
+  const isUpdate = dishIndexInput !== '';
   const name = document.getElementById('dishName').value.trim();
   const barcode = document.getElementById('dishBarcode').value.trim();
   const category = document.getElementById('dishCategory').value;
@@ -5202,6 +5197,11 @@ async function addDish(buttonElement) {
     return alert("Please enter a valid name.");
   }
 
+  const existingDuplicate = findExactDuplicateProductName(name, isUpdate ? parseInt(dishIndexInput, 10) : null);
+  if (existingDuplicate && (!isUpdate || existingDuplicate.index !== parseInt(dishIndexInput, 10))) {
+    return showAppAlert(`A product named "${name}" already exists. Please update the existing item instead of creating a duplicate.`, 'Duplicate Product');
+  }
+
   if (!category) {
     return alert("Please select a category for the dish.");
   }
@@ -5210,9 +5210,6 @@ async function addDish(buttonElement) {
     buttonElement.disabled = true;
     buttonElement.textContent = 'Processing...';
   }
-
-  const dishIndexInput = document.getElementById('dishIndex').value;
-  const isUpdate = dishIndexInput !== '';
   const existingDish = isUpdate ? menu[parseInt(dishIndexInput, 10)] : null;
   const thresholdInput = document.getElementById('dishLowStockThreshold');
   const enteredThreshold = thresholdInput?.value.trim();
@@ -11782,10 +11779,18 @@ async function saveNewStockItem() {
   const stock = parseInt(document.getElementById('newStockItemStock').value, 10);
   const lowStockInput = document.getElementById('newStockItemLowStockThreshold').value.trim();
   const lowStockThreshold = lowStockInput === '' ? undefined : Number(lowStockInput);
+  const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
+  const itemIndexNumber = itemIndex === undefined || itemIndex === null || itemIndex === '' ? null : Number.parseInt(itemIndex, 10);
 
   if (!name) {
     return showAppAlert("Please enter an item name.", 'Item Name Required');
   }
+
+  const duplicateMatch = findExactDuplicateProductName(name, itemIndexNumber !== null && !Number.isNaN(itemIndexNumber) ? itemIndexNumber : null);
+  if (duplicateMatch) {
+    return showAppAlert(`A stock item named "${name}" already exists. Please update that item instead of creating a duplicate.`, 'Duplicate Stock Item');
+  }
+
   if (!unit) {
     return showAppAlert("Please select a unit.", 'Unit Required');
   }
@@ -11799,10 +11804,9 @@ async function saveNewStockItem() {
     return showAppAlert("Please enter a valid, non-negative low-stock level.", 'Invalid Low Stock Level');
   }
 
-  const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
-  const existingMatchIndex = !itemIndex ? getProductCatalogMatchIndex(name) : -1;
+  const existingMatchIndex = itemIndexNumber === null || Number.isNaN(itemIndexNumber) ? getProductCatalogMatchIndex(name) : -1;
 
-  if (itemIndex) {
+  if (itemIndexNumber !== null && !Number.isNaN(itemIndexNumber)) {
     // Update existing item
     const index = parseInt(itemIndex, 10);
     const item = menu[index];
@@ -11870,9 +11874,16 @@ async function saveNewStockItem() {
     enqueueEnterpriseRecordChange('products', menu[existingMatchIndex], 'upsert').catch(console.warn);
     await showAppAlert(`Item "${name}" updated successfully.`, 'Stock Item Updated');
   } else {
-    // Add new item
+    if (existingMatchIndex >= 0) {
+      const existingItem = menu[existingMatchIndex];
+      if (existingItem) {
+        await showAppAlert(`Item "${name}" already exists. Please update it instead of creating a duplicate.`, 'Duplicate Stock Item');
+        return;
+      }
+    }
+
+    // Add new item manually only.
     console.log('[DEBUG_STOCK] Adding new stock item', { name, unit, costPrice, stock });
-    // It's a primary ingredient, so calculate its selling price based on markup
     let price;
     if (sellingPriceInput && !isNaN(parseFloat(sellingPriceInput))) {
       price = parseFloat(sellingPriceInput);
@@ -11882,7 +11893,7 @@ async function saveNewStockItem() {
     }
     const newItem = enrichEnterpriseRecord('products', {
       name,
-      category: null, // No default category
+      category: null,
       costPrice,
       stock,
       unit,
@@ -12135,26 +12146,14 @@ function savePurchaseEntry() {
       showAppAlert('Please enter a new item name.', 'Item Required');
       return;
     }
-    purchaseAmount = Number.isFinite(newItemCost) && newItemCost >= 0 ? newItemCost : 0;
-    displayItem = newItemName;
-    if (Number.isFinite(newItemQty) && newItemQty > 0) {
-      const categoryName = newItemCategory || 'Purchased';
-      if (!dishCategories.includes(categoryName)) {
-        dishCategories.push(categoryName);
-      }
-      const newItemEntry = {
-        id: `stock-${Date.now()}`,
-        name: newItemName,
-        stock: newItemQty,
-        costPrice: newItemCost,
-        price: newItemCost,
-        unit: 'unit',
-        category: categoryName
-      };
-      menu.push(newItemEntry);
-      saveData().catch(() => {});
-      renderStockListTable();
+
+    if (getProductCatalogMatchIndex(newItemName)) {
+      showAppAlert(`Item "${newItemName}" already exists. Update it manually in the Stock or Products tab instead of creating a duplicate.`, 'Duplicate Item');
+      return;
     }
+
+    showAppAlert('Create new stock or product records manually from the Stock/Products section. Automatic item creation is disabled to prevent duplicates.', 'Manual Entry Required');
+    return;
   } else {
     if (!item) {
       showAppAlert('Please select a stock item for the purchase.', 'Purchase Required');

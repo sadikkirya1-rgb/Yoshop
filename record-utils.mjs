@@ -145,6 +145,31 @@ export function deduplicateRecords(records = [], entityType = '') {
   return deduped;
 }
 
+export function findMatchingProductEntry(records = [], name = '', barcode = '') {
+  if (!Array.isArray(records)) return null;
+
+  const normalizedName = typeof name === 'string' ? name.trim().toLowerCase() : '';
+  const normalizedBarcode = typeof barcode === 'string' ? barcode.trim() : '';
+
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    if (!record || typeof record !== 'object') continue;
+
+    const recordName = typeof record.name === 'string' ? record.name.trim().toLowerCase() : '';
+    const recordBarcode = typeof record.barcode === 'string' ? record.barcode.trim() : '';
+
+    if (normalizedBarcode && recordBarcode && normalizedBarcode === recordBarcode) {
+      return { index, record };
+    }
+
+    if (normalizedName && recordName && normalizedName === recordName) {
+      return { index, record };
+    }
+  }
+
+  return null;
+}
+
 export function getCanonicalProductCatalog(records = [], options = {}) {
   const includeOnlySellable = options.includeOnlySellable !== undefined ? options.includeOnlySellable : true;
   const deduped = deduplicateRecords(Array.isArray(records) ? records : [], 'products');
