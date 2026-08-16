@@ -574,6 +574,43 @@ section>h3 {
   width: 120px;
 }
 
+.stock-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+}
+
+.stock-search-input {
+  flex: 1 1 auto;
+  min-height: 38px;
+  height: 38px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+}
+
+.stock-filter-buttons {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.stock-filter-btn {
+  min-height: 32px;
+  padding: 6px 10px;
+  font-size: 0.8rem;
+  line-height: 1.2;
+}
+
+.stock-filter-btn.active {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
 /* Constrain chart canvas sizes for admin dashboard smaller layout */
 .charts-container .chart-wrapper canvas {
   width: 100% !important;

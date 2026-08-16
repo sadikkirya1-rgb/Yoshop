@@ -1972,6 +1972,7 @@ async function persistImageCache() {
 const PLACEHOLDER_IMAGE = 'https://placehold.co/100';
 let defaultMenu = [];
 let menu = [];
+let stockTableFilter = 'all';
 let activeOrders = {};
 let transactions = [];
 let staff = [];
@@ -9164,6 +9165,8 @@ window.updateWastageLossSummary = updateWastageLossSummary;
 window.saveSupplierEntry = saveSupplierEntry;
 window.clearSupplierForm = clearSupplierForm;
 window.renderSupplierList = renderSupplierList;
+window.renderStockListTable = renderStockListTable;
+window.setStockTableFilter = setStockTableFilter;
 
 function renderBestSellingItemsChart(sourceTransactions = transactions) {
   if (typeof Chart === 'undefined') return;
@@ -11574,14 +11577,35 @@ function renderInventoryReport() {
   }
 }
 
+function setStockTableFilter(filterName = 'all') {
+  stockTableFilter = filterName || 'all';
+  const buttons = document.querySelectorAll('.stock-filter-btn');
+  buttons.forEach(button => {
+    const isActive = button.dataset.stockFilter === stockTableFilter;
+    button.classList.toggle('active', isActive);
+  });
+  renderStockListTable();
+}
+
 function renderStockListTable() {
   const searchTerm = document.getElementById('stockSearchInput')?.value.toLowerCase() || '';
   const tbody = document.getElementById('stockListBody');
   if (!tbody) return;
   tbody.innerHTML = '';
 
-  // Filter to show only raw ingredients (items with a 'stock' property)
-  const stockItems = menu.filter(item => item.stock !== undefined && (!searchTerm || item.name.toLowerCase().includes(searchTerm)));
+  const stockItems = menu.filter(item => {
+    if (item.stock === undefined) return false;
+    const matchesSearch = !searchTerm || item.name.toLowerCase().includes(searchTerm);
+    if (!matchesSearch) return false;
+
+    const stockValue = Number(calculateDishStock(item, true) || 0);
+    const threshold = Number(getLowStockThreshold(item) || 0);
+
+    if (stockTableFilter === 'low') return stockValue <= threshold;
+    if (stockTableFilter === 'out') return stockValue <= 0;
+    if (stockTableFilter === 'in') return stockValue > 0;
+    return true;
+  });
 
   stockItems.forEach((item, rowIndex) => {
     const index = menu.indexOf(item);

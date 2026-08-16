@@ -949,8 +949,18 @@
         <table class="u-mt-10 table-excel">
           <thead>
             <tr>
-              <th colspan="9"><input type="text" id="stockSearchInput" onkeyup="renderStockListTable()"
-                  placeholder="Search stock items..." class="u-w-full u-mb-15"></th>
+              <th colspan="9">
+                <div class="stock-toolbar-row">
+                  <input type="text" id="stockSearchInput" onkeyup="renderStockListTable()"
+                    placeholder="Search stock items..." class="stock-search-input">
+                  <div class="stock-filter-buttons">
+                    <button type="button" class="btn btn-secondary stock-filter-btn active" data-stock-filter="all" onclick="setStockTableFilter('all')">All</button>
+                    <button type="button" class="btn btn-secondary stock-filter-btn" data-stock-filter="low" onclick="setStockTableFilter('low')">Low</button>
+                    <button type="button" class="btn btn-secondary stock-filter-btn" data-stock-filter="out" onclick="setStockTableFilter('out')">Out</button>
+                    <button type="button" class="btn btn-secondary stock-filter-btn" data-stock-filter="in" onclick="setStockTableFilter('in')">In Stock</button>
+                  </div>
+                </div>
+              </th>
             </tr>
           </thead>
           <thead>
