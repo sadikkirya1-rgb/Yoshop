@@ -2,7 +2,6 @@ rules_version = '2';
 
 service firebase.storage {
   match /b/{bucket}/o {
-    // Helper to identify Master Admin by UID or email claim
     function isAdmin() {
       return request.auth != null && (
         request.auth.uid == 'Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2' ||
@@ -10,13 +9,21 @@ service firebase.storage {
       );
     }
 
-    // Strict per-tenant isolation: files stored under /users/{userId}/** are only
-    // accessible by that authenticated user or the Master Admin.
-    match /users/{userId}/{allPaths=**} {
-      allow read, write: if request.auth != null && (request.auth.uid == userId || isAdmin());
+    function isValidUserImageUpload() {
+      return request.auth != null
+        && request.resource != null
+        && request.resource.contentType.matches('image/.*')
+        && request.resource.size <= 1048576
+        && request.resource.size > 0;
     }
 
-    // Deny everything else by default
+    match /users/{userId}/{allPaths=**} {
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      allow write: if request.auth != null
+        && (request.auth.uid == userId || isAdmin())
+        && isValidUserImageUpload();
+    }
+
     match /{allPaths=**} {
       allow read, write: if false;
     }

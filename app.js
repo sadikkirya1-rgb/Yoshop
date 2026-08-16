@@ -880,10 +880,117 @@ function getAppHealthStatus() {
   };
 }
 
+const MAX_IMAGE_UPLOAD_BYTES = 1024 * 1024;
+
+function getDataUrlByteSize(dataUrl) {
+  if (!dataUrl || typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return 0;
+  const base64 = dataUrl.split(',')[1] || '';
+  const padded = base64.length % 4;
+  const adjusted = padded === 0 ? base64.length : base64.length + (4 - padded);
+  return Math.ceil((adjusted / 4) * 3);
+}
+
+function formatImageSizeLabel(bytes) {
+  if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
+  return `${(bytes / MAX_IMAGE_UPLOAD_BYTES).toFixed(2)} MB`;
+}
+
+function setDishImageValidation(message, type = 'info') {
+  const el = document.getElementById('dishImageValidationMessage');
+  const compressBtn = document.getElementById('dishImageCompressBtn');
+  const sizeReadout = document.getElementById('dishImageSizeReadout');
+  const badge = document.getElementById('dishImageStatusBadge');
+  if (!el) return;
+
+  el.textContent = message || 'Maximum upload: 1 MB';
+  el.style.display = message ? 'block' : 'none';
+  el.style.color = type === 'error' ? '#d93025' : type === 'success' ? '#2e7d32' : '#4a5568';
+
+  if (badge) {
+    if (type === 'error') {
+      badge.textContent = 'Too large';
+      badge.style.background = '#fdecea';
+      badge.style.color = '#c62828';
+    } else if (type === 'success') {
+      badge.textContent = 'OK under 1 MB';
+      badge.style.background = '#e8f5e9';
+      badge.style.color = '#2e7d32';
+    } else {
+      badge.textContent = 'OK under 1 MB';
+      badge.style.background = '#e5e7eb';
+      badge.style.color = '#374151';
+    }
+  }
+
+  if (compressBtn) {
+    compressBtn.style.display = type === 'error' ? 'inline-flex' : 'none';
+  }
+
+  if (sizeReadout) {
+    const readoutText = sizeReadout.dataset.sizeText || 'No image selected';
+    sizeReadout.textContent = readoutText;
+    sizeReadout.style.display = 'block';
+  }
+}
+
+function updateDishImageSizeReadout(file) {
+  const sizeReadout = document.getElementById('dishImageSizeReadout');
+  if (!sizeReadout) return;
+
+  if (!file) {
+    sizeReadout.textContent = 'No image selected';
+    sizeReadout.dataset.sizeText = 'No image selected';
+    return;
+  }
+
+  const sizeInKb = file.size / 1024;
+  const sizeText = sizeInKb >= 1024
+    ? `${(file.size / (1024 * 1024)).toFixed(2)} MB`
+    : `${sizeInKb.toFixed(1)} KB`;
+
+  sizeReadout.textContent = `Selected size: ${sizeText}`;
+  sizeReadout.dataset.sizeText = sizeReadout.textContent;
+}
+
+function showImageSizeError(message = 'Please upload an image up to 1 MB.') {
+  if (typeof showAppAlert === 'function') {
+    return showAppAlert(message, 'Image Too Large');
+  }
+  return alert(message);
+}
+
+async function compressSelectedDishImage() {
+  const input = document.getElementById('dishImage');
+  const preview = document.getElementById('dishImagePreview');
+  const hiddenInput = document.getElementById('dishImageBase64');
+  if (!input || !input.files || !input.files[0]) {
+    setDishImageValidation('Choose an image first.', 'error');
+    return null;
+  }
+
+  try {
+    const compressed = await toBase64(input.files[0]);
+    const sizeLabel = formatImageSizeLabel(getDataUrlByteSize(compressed));
+    preview.src = compressed;
+    hiddenInput.value = compressed;
+    updateDishImageSizeReadout({ size: getDataUrlByteSize(compressed) });
+    setDishImageValidation(`Compressed image ready: ${sizeLabel}`, 'success');
+    return compressed;
+  } catch (error) {
+    console.error('Could not compress selected image:', error);
+    setDishImageValidation('Could not compress image. Please try another image.', 'error');
+    return null;
+  }
+}
+
 // Helper function to upload images to Firebase Storage
 async function uploadImage(base64Data, path) {
   try {
     if (!base64Data || !base64Data.startsWith('data:image')) return base64Data;
+    const actualSize = getDataUrlByteSize(base64Data);
+    if (actualSize > MAX_IMAGE_UPLOAD_BYTES) {
+      throw new Error('Image exceeds 1 MB. Please upload an image up to 1 MB.');
+    }
     let uid = getEffectiveUid() || 'anonymous';
     const userPath = `users/${uid}/${path}`;
     const storageRef = ref(storage, userPath);
@@ -892,6 +999,9 @@ async function uploadImage(base64Data, path) {
   } catch (error) {
     if (error.code === 'storage/unauthorized') {
       console.error("CRITICAL: Firebase Storage permission denied. Please ensure your Storage Security Rules allow writes to the 'users/' path for authenticated users.");
+    }
+    if (error && error.message && error.message.includes('1 MB')) {
+      await showImageSizeError(error.message);
     }
     console.error("Image upload failed:", error);
     return base64Data; // Return original (likely placeholder) on failure
@@ -5469,7 +5579,7 @@ function populateRecipeIngredientSelect() {
 }
 
 
-// Helper to convert file to Base64 with resizing
+// Helper to convert file to Base64 with resizing and strict 1 MB limit.
 const toBase64 = file => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.readAsDataURL(file);
@@ -5477,32 +5587,41 @@ const toBase64 = file => new Promise((resolve, reject) => {
     const img = new Image();
     img.src = event.target.result;
     img.onload = () => {
-      const elem = document.createElement('canvas');
-      const maxWidth = 800; // Resize to max 800px to save space and memory
-      const maxHeight = 800;
+      const MAX_DIMENSION = 1400;
+      const targetBytes = MAX_IMAGE_UPLOAD_BYTES;
       let width = img.width;
       let height = img.height;
+      let scale = 1;
 
-      if (width > height) {
-        if (width > maxWidth) {
-          height *= maxWidth / width;
-          width = maxWidth;
-        }
-      } else {
-        if (height > maxHeight) {
-          width *= maxHeight / height;
-          height = maxHeight;
-        }
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        scale = Math.min(MAX_DIMENSION / width, MAX_DIMENSION / height, 1);
+        width = Math.max(1, Math.round(width * scale));
+        height = Math.max(1, Math.round(height * scale));
       }
+
+      const elem = document.createElement('canvas');
       elem.width = width;
       elem.height = height;
       const ctx = elem.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(elem.toDataURL('image/jpeg', 0.7)); // Compress to JPEG 70%
+
+      let quality = 0.92;
+      let result = elem.toDataURL('image/jpeg', quality);
+
+      while (getDataUrlByteSize(result) > targetBytes && quality > 0.12) {
+        quality -= 0.08;
+        result = elem.toDataURL('image/jpeg', quality);
+      }
+
+      if (getDataUrlByteSize(result) > targetBytes) {
+        return reject(new Error('Image exceeds 1 MB. Please upload an image up to 1 MB.'));
+      }
+
+      resolve(result);
     };
-    img.onerror = error => reject(new Error("Failed to process image data."));
+    img.onerror = () => reject(new Error('Failed to process image data.'));
   };
-  reader.onerror = error => reject(new Error("File reading failed. Please check app permissions."));
+  reader.onerror = () => reject(new Error('File reading failed. Please check app permissions.'));
 });
 
 function sanitizeLogoUrl(url) {
@@ -5517,20 +5636,68 @@ function sanitizeLogoUrl(url) {
 function previewDishImage(input) {
   const preview = document.getElementById('dishImagePreview');
   const hiddenInput = document.getElementById('dishImageBase64');
-  if (input.files && input.files[0]) {
-    // Use the robust toBase64 function for preview as well
-    toBase64(input.files[0]).then(base64 => {
-      preview.src = base64;
-      hiddenInput.value = base64; // Save base64 immediately to avoid re-reading file
-    }).catch(e => {
-      console.error(e);
-      alert("Could not preview image: " + e.message);
-      input.value = ''; // Clear input
-      preview.src = 'https://placehold.co/100';
-    });
-  } else {
+  const file = input.files && input.files[0];
+
+  if (!file) {
     preview.src = 'https://placehold.co/100';
+    hiddenInput.value = '';
+    updateDishImageSizeReadout(null);
+    setDishImageValidation('Maximum upload: 1 MB', 'info');
+    return;
   }
+
+  updateDishImageSizeReadout(file);
+  const fileSizeMb = (file.size / MAX_IMAGE_UPLOAD_BYTES).toFixed(2);
+
+  if (file.size > MAX_IMAGE_UPLOAD_BYTES) {
+    setDishImageValidation(`Image is ${fileSizeMb} MB. Upload limit is 1 MB.`, 'error');
+    showAppPopup({
+      title: 'Image Too Large',
+      message: `This image is ${fileSizeMb} MB. Compress it to 1 MB before saving and syncing to the cloud?`,
+      confirmText: 'Compress to 1 MB',
+      cancelText: 'Cancel',
+      showCancel: true,
+      icon: '🖼️'
+    }).then(async (result) => {
+      if (!result.confirmed) {
+        input.value = '';
+        hiddenInput.value = '';
+        preview.src = 'https://placehold.co/100';
+        setDishImageValidation('Maximum upload: 1 MB', 'info');
+        return;
+      }
+
+      try {
+        const compressed = await compressSelectedDishImage();
+        if (compressed) {
+          hiddenInput.value = compressed;
+        }
+      } catch (error) {
+        console.error('Could not compress oversized image:', error);
+        input.value = '';
+        hiddenInput.value = '';
+        preview.src = 'https://placehold.co/100';
+        setDishImageValidation('Could not compress image. Please upload an image under 1 MB.', 'error');
+      }
+    });
+    return;
+  }
+
+  toBase64(file).then(base64 => {
+    preview.src = base64;
+    hiddenInput.value = base64;
+    setDishImageValidation(`Image ready: ${formatImageSizeLabel(file.size)}`, 'success');
+  }).catch(e => {
+    console.error(e);
+    const message = e && e.message && e.message.includes('1 MB')
+      ? 'Image exceeds 1 MB. Please upload an image up to 1 MB.'
+      : 'Could not preview image: ' + (e && e.message ? e.message : 'Unknown error');
+    showImageSizeError(message);
+    input.value = '';
+    hiddenInput.value = '';
+    preview.src = 'https://placehold.co/100';
+    setDishImageValidation('Maximum upload: 1 MB', 'info');
+  });
 }
 function toggleAddDishForm(show) {
   const formContainer = document.getElementById('addDishFormContainer');
@@ -6571,6 +6738,22 @@ function renderDishesTable() {
   }
 })();
 
+async function deleteProductImageFromStorage(imageUrl) {
+  if (!imageUrl || typeof imageUrl !== 'string') return;
+  if (!imageUrl.startsWith('https://') && !imageUrl.startsWith('gs://')) return;
+
+  try {
+    const storagePath = imageUrl.includes('firebasestorage') ? imageUrl.split('/o/')[1]?.split('?')[0] : null;
+    if (!storagePath) return;
+    const decodedPath = decodeURIComponent(storagePath).replace(/^\//, '');
+    const imageRef = ref(storage, decodedPath);
+    await deleteObject(imageRef);
+    console.log('Deleted product image from Firebase Storage:', decodedPath);
+  } catch (error) {
+    console.warn('Could not delete product image from storage:', error);
+  }
+}
+
 async function deleteMarkedProducts() {
   const body = document.getElementById('dishesTableBody');
   if (!body) return;
@@ -6594,12 +6777,15 @@ async function deleteMarkedProducts() {
     .filter(index => Number.isFinite(index))
     .sort((a, b) => b - a);
 
-  indicesToDelete.forEach(index => {
+  for (const index of indicesToDelete) {
     const item = menu[index];
-    if (!item) return;
+    if (!item) continue;
+    if (item.image && item.image.startsWith('https')) {
+      await deleteProductImageFromStorage(item.image);
+    }
     enqueueEnterpriseRecordChange('products', item, 'delete').catch(console.warn);
     menu.splice(index, 1);
-  });
+  }
 
   saveData();
 
@@ -6619,6 +6805,11 @@ async function deleteItem(i) {
     const resp = await showAppConfirm(`Are you sure you want to delete ${item.name}?`, 'Delete Item', 'Delete', 'Cancel');
     if (!resp || !resp.confirmed) return;
   }
+
+  if (item.image && item.image.startsWith('https')) {
+    await deleteProductImageFromStorage(item.image);
+  }
+
   enqueueEnterpriseRecordChange('products', item, 'delete').catch(console.warn);
 
   menu.splice(index, 1);
@@ -9521,7 +9712,9 @@ async function saveSettings() {
   settings.ShopAdminPIN = pin;
   settings = touchSettingsRecord({ ...settings, serviceMode: settings.serviceMode }, 'settings');
 
-  const logoFile = document.getElementById('companyLogo').files[0];
+  const logoField = document.getElementById('companyLogo');
+  const logoFile = logoField && logoField.files[0];
+  const shouldClearLogo = window.companyLogoCleared === true;
   if (logoFile) {
     const base64Logo = await toBase64(logoFile);
     const oldLogo = settings.logo;
@@ -9532,6 +9725,14 @@ async function saveSettings() {
     if (settings.logo) {
       clearImageFromCache(settings.logo);
     }
+    window.companyLogoCleared = false;
+  } else if (shouldClearLogo) {
+    const oldLogo = settings.logo;
+    settings.logo = '';
+    if (oldLogo) {
+      clearImageFromCache(oldLogo);
+    }
+    window.companyLogoCleared = false;
   }
 
   settings = touchSettingsRecord(settings, 'settings');
@@ -9750,13 +9951,16 @@ function showAdminNoticesOverlay(notices = []) {
   if (serviceModeCheckbox) serviceModeCheckbox.checked = settings.serviceMode === true;
 
   const logoPreview = document.getElementById('logoPreview');
+  const clearLogoBtn = document.getElementById('clearLogoBtn');
   const logoUrl = sanitizeLogoUrl(settings.logo);
   if (logoUrl) {
     logoPreview.src = logoUrl;
     logoPreview.style.display = 'inline-block';
+    if (clearLogoBtn) clearLogoBtn.style.display = 'block';
   } else {
     logoPreview.src = '';
     logoPreview.style.display = 'none';
+    if (clearLogoBtn) clearLogoBtn.style.display = 'none';
   }
 
   applyServiceModeUI(settings.serviceMode === true);
@@ -9840,15 +10044,64 @@ function togglePINVisibility(inputId = 'ShopAdminPIN') {
   }
 }
 
+function clearLogoPreview() {
+  if (typeof showAppPopup === 'function') {
+    void showAppPopup({
+      title: 'Remove Logo',
+      message: 'Remove the selected business logo?',
+      confirmText: 'Remove',
+      cancelText: 'Cancel',
+      showCancel: true,
+      icon: '🗑️',
+      danger: true
+    }).then((result) => {
+      if (!result || !result.confirmed) return;
+
+      const logoInput = document.getElementById('companyLogo');
+      const logoPreview = document.getElementById('logoPreview');
+      const clearLogoBtn = document.getElementById('clearLogoBtn');
+      if (logoInput) logoInput.value = '';
+      if (logoPreview) {
+        logoPreview.src = '';
+        logoPreview.style.display = 'none';
+      }
+      if (clearLogoBtn) clearLogoBtn.style.display = 'none';
+      window.companyLogoCleared = true;
+      settings.logo = '';
+    });
+    return;
+  }
+
+  const confirmed = window.confirm('Remove the selected business logo?');
+  if (!confirmed) return;
+
+  const logoInput = document.getElementById('companyLogo');
+  const logoPreview = document.getElementById('logoPreview');
+  const clearLogoBtn = document.getElementById('clearLogoBtn');
+  if (logoInput) logoInput.value = '';
+  if (logoPreview) {
+    logoPreview.src = '';
+    logoPreview.style.display = 'none';
+  }
+  if (clearLogoBtn) clearLogoBtn.style.display = 'none';
+  window.companyLogoCleared = true;
+  settings.logo = '';
+}
+
 function previewLogo(input) {
   if (input.files && input.files[0]) {
     const reader = new FileReader();
     reader.onload = e => {
       const logoPreview = document.getElementById('logoPreview');
+      const clearLogoBtn = document.getElementById('clearLogoBtn');
       logoPreview.src = e.target.result;
       logoPreview.style.display = 'inline-block';
+      if (clearLogoBtn) clearLogoBtn.style.display = 'block';
+      window.companyLogoCleared = false;
     };
     reader.readAsDataURL(input.files[0]);
+  } else {
+    clearLogoPreview();
   }
 }
 
