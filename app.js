@@ -18,6 +18,7 @@ import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry } from './record-utils.mjs';
 import { getAuthErrorMessage } from './auth-utils.mjs';
+import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
@@ -1169,19 +1170,6 @@ const DB_VERSION = 1;
 const STORE_NAME = 'appState';
 const CART_ID = 'SHOP_CART';
 
-const APP_STORAGE_KEYS_TO_CLEAR = [
-  'lastUserUid',
-  'currentUserUid',
-  'currentUserRole',
-  'currentUserPermissions',
-  'currentLoggedInStaffName',
-  'isPinVerified',
-  'lastAdminNoticeSeen',
-  'appNotifications',
-  'pendingTransactions',
-  'lastSyncTime'
-];
-
 function clearBrowserStorageForThisOrigin() {
   try {
     const localKeys = Object.keys(localStorage || {});
@@ -1252,35 +1240,108 @@ async function deleteYoShopIndexedDatabases() {
 
 function resetAllAppStateInMemory() {
   try {
-    menu = [];
+    const resetState = getAppResetState({ defaultSettings, defaultAppAdminSettings });
+    menu = resetState.menu;
     stockTableFilter = 'all';
-    activeOrders = {};
-    transactions = [];
-    staff = [];
-    dishCategories = [];
-    customers = [];
-    expenses = [];
-    restockHistory = [];
-    purchaseHistory = [];
-    wastageLossHistory = [];
-    supplierList = [];
-    lastKnownDishImages = {};
-    settings = { ...defaultSettings };
-    appAdminSettings = { ...defaultAppAdminSettings };
-    auditTrail = [];
-    pendingSyncQueue = [];
-    currentLoggedInStaffName = '';
-    currentUserRole = '';
+    activeOrders = resetState.activeOrders;
+    transactions = resetState.transactions;
+    staff = resetState.staff;
+    dishCategories = resetState.dishCategories;
+    customers = resetState.customers;
+    expenses = resetState.expenses;
+    restockHistory = resetState.restockHistory;
+    purchaseHistory = resetState.purchaseHistory;
+    wastageLossHistory = resetState.wastageLossHistory;
+    supplierList = resetState.supplierList;
+    units = resetState.units;
+    lastKnownDishImages = resetState.lastKnownDishImages;
+    settings = resetState.settings;
+    appAdminSettings = resetState.appAdminSettings;
+    auditTrail = resetState.auditTrail;
+    pendingSyncQueue = resetState.pendingSyncQueue;
+    currentLoggedInStaffName = resetState.currentLoggedInStaffName;
+    currentUserRole = resetState.currentUserRole;
+    currentUserPermissions = Array.isArray(resetState.currentUserPermissions) ? resetState.currentUserPermissions : [];
+    appNotifications = Array.isArray(resetState.appNotifications) ? resetState.appNotifications : [];
+    userMetadata = resetState.userMetadata;
     if (typeof currentUser !== 'undefined') {
-      currentUser = null;
+      currentUser = resetState.currentUser;
     }
+    isPinVerified = false;
   } catch (error) {
     console.warn('[CLEAR] Failed to reset in-memory app state:', error);
   }
 }
 
+async function deleteFirestoreCollection(ref) {
+  if (!ref || !dbFirestore) return;
+
+  try {
+    const snapshot = await getDocs(ref);
+    if (snapshot.empty) return;
+
+    await Promise.allSettled(snapshot.docs.map((docSnap) => deleteDoc(docSnap.ref)));
+  } catch (error) {
+    console.warn('[CLEAR] Failed to delete Firestore collection:', ref, error);
+  }
+}
+
+async function clearCurrentShopFirestoreData(uid) {
+  if (!uid || !dbFirestore) return false;
+
+  const collectionPaths = [
+    ['users', uid, 'products'],
+    ['users', uid, 'categories'],
+    ['users', uid, 'customers'],
+    ['users', uid, 'staff'],
+    ['users', uid, 'units'],
+    ['users', uid, 'transactions'],
+    ['users', uid, 'notifications'],
+    ['users', uid, 'audit_log'],
+    ['users', uid, 'inventory_history'],
+    ['users', uid, 'suppliers'],
+    ['users', uid, 'purchase_history'],
+    ['users', uid, 'expenses'],
+    ['users', uid, 'sale_items'],
+    ['users', uid, 'payments'],
+    ['users', uid, 'receipts'],
+    ['users', uid, 'reports'],
+    ['users', uid, 'roles'],
+    ['users', uid, 'permissions'],
+    ['users', uid, 'metadata'],
+    ['users', uid, 'activity_log']
+  ];
+
+  for (const path of collectionPaths) {
+    await deleteFirestoreCollection(collection(dbFirestore, ...path));
+  }
+
+  const cleanupRefs = [
+    doc(dbFirestore, 'users', uid, 'data', 'shop_profile'),
+    doc(dbFirestore, 'users', uid)
+  ];
+
+  for (const ref of cleanupRefs) {
+    try {
+      await deleteDoc(ref);
+    } catch (error) {
+      console.warn('[CLEAR] Failed to delete Firestore document:', ref.path, error);
+    }
+  }
+
+  return true;
+}
+
 async function clearYoShopLocalData(options = {}) {
   const { skipConfirm = false, reload = true, resetAuth = true } = options;
+
+  try {
+    persistResetGuard('true');
+    sessionStorage.setItem('yoshopResetGuard', 'true');
+    localStorage.setItem('yoshopResetGuard', 'true');
+  } catch (e) {
+    console.warn('[CLEAR] Could not set reset guard:', e);
+  }
 
   if (!skipConfirm && typeof showAppConfirm === 'function') {
     const response = await showAppConfirm('This will remove the local sales archive, IndexedDB data, app caches, and browser storage for YoShop. Continue?', 'Clear Local App Data', 'Clear Data', 'Cancel');
@@ -1289,6 +1350,15 @@ async function clearYoShopLocalData(options = {}) {
 
   try {
     resetAllAppStateInMemory();
+
+    const resetUid = currentUser?.uid || sessionStorage.getItem('currentUserUid') || localStorage.getItem('lastUserUid');
+    if (resetUid && dbFirestore) {
+      try {
+        await clearCurrentShopFirestoreData(resetUid);
+      } catch (error) {
+        console.warn('[CLEAR] Firestore data wipe failed:', error);
+      }
+    }
 
     if (auth && typeof auth.signOut === 'function' && resetAuth) {
       try {
@@ -1323,9 +1393,12 @@ async function clearYoShopLocalData(options = {}) {
     clearBrowserStorageForThisOrigin();
     await deleteYoShopIndexedDatabases();
 
-    // Set a flag to skip cloud sync on next load to prevent data from re-syncing
+    // Set a durable flag to skip cloud sync on next load to prevent data from re-syncing.
+    // We persist it outside the storage we are about to clear so the refresh does not rehydrate stale cloud data.
     try {
+      persistResetGuard('true');
       sessionStorage.setItem('skipCloudSyncOnNextLoad', 'true');
+      localStorage.setItem('skipCloudSyncOnNextLoad', 'true');
     } catch (e) {
       console.warn('[CLEAR] Could not set skipCloudSyncOnNextLoad flag:', e);
     }
@@ -2473,8 +2546,10 @@ function initAppAdminDashboardLayout() {
                   <th class="u-text-center">#</th>
                   <th class="u-text-center"><input type="checkbox" id="subscriptionsSelectAllCheckbox" onclick="toggleSelectAllSubscriptionRows(this.checked)"></th>
                   <th class="u-text-center">Logo</th>
-                  <th>Shop</th>
-                  <th>Owner</th>
+                  <th>Name</th>
+                  <th>ID</th>
+                  <th>UID</th>
+                  <th>Email</th>
                   <th>WhatsApp</th>
                   <th>Status</th>
                   <th>Off/ON</th>
@@ -2484,7 +2559,7 @@ function initAppAdminDashboardLayout() {
                 </tr>
               </thead>
               <tbody id="appAdminSubscriptionsTableBody">
-                <tr><td colspan="11" class="u-text-center">Loading subscriptions...</td></tr>
+                <tr><td colspan="13" class="u-text-center">Loading subscriptions...</td></tr>
               </tbody>
             </table>
           </div>
@@ -2517,9 +2592,10 @@ function initAppAdminDashboardLayout() {
               <thead>
                 <tr>
                   <th class="u-text-center">Logo</th>
-                  <th>Shop Name</th>
-                  <th>Business ID</th>
-                  <th>Owner Account</th>
+                  <th>Name</th>
+                  <th>ID</th>
+                  <th>UID</th>
+                  <th>Email</th>
                   <th>Contact</th>
                   <th>WhatsApp</th>
                   <th class="u-text-center">Status</th>
@@ -2529,7 +2605,7 @@ function initAppAdminDashboardLayout() {
                 </tr>
               </thead>
               <tbody id="appAdminShopsTableBody">
-                <tr><td colspan="10" class="u-text-center">Loading shops details...</td></tr>
+                <tr><td colspan="11" class="u-text-center">Loading shops details...</td></tr>
               </tbody>
             </table>
           </div>
@@ -2878,7 +2954,7 @@ async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.fil
   const tbody = document.getElementById('appAdminSubscriptionsTableBody');
   if (!tbody) return;
 
-tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinner"></span> Loading subscriptions...</td></tr>';
+tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinner"></span> Loading subscriptions...</td></tr>';
 
   try {
     const usersSnap = await getDocs(collection(dbFirestore, 'users'));
@@ -2889,10 +2965,11 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
 
     for (const userDoc of usersSnap.docs) {
       const uid = userDoc.id;
+      const userData = userDoc.data() || {};
+      const resolvedBusinessId = await ensureTenantBusinessId(uid) || userData.businessId || userData.shopId || 'N/A';
       const dataDoc = await getDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'));
       if (!dataDoc.exists()) continue;
 
-      const userData = userDoc.data();
       const shopData = dataDoc.data();
       const shopName = (shopData.settings && shopData.settings.name) || 'Unnamed Shop';
       const ownerEmail = (userData.email || '').trim() || uid;
@@ -2931,6 +3008,7 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
       rows.push({
         uid,
         shopName,
+        businessId: resolvedBusinessId,
         ownerEmail,
         contact,
         whatsapp,
@@ -2978,7 +3056,7 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
     subscriptionsAdminState.rows.forEach(row => { row.visible = true; });
 
     if (!filteredRows.length) {
-      tbody.innerHTML = '<tr><td colspan="11" class="u-text-center">No shops match this filter.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="13" class="u-text-center">No shops match this filter.</td></tr>';
       return;
     }
 
@@ -2993,11 +3071,14 @@ tbody.innerHTML = '<tr><td colspan="11" class="u-text-center"><span class="spinn
       const isSelected = subscriptionsAdminState.selectedUids.has(row.uid);
       const shopNameSafe = (row.shopName || 'Unnamed Shop').replace(/'/g, "\\'");
       const ownerEmailSafe = (row.ownerEmail || 'No Email').replace(/'/g, "\\'");
+      const businessId = row.businessId || 'N/A';
       tr.innerHTML = `
         <td class="u-text-center">${index + 1}</td>
         <td class="u-text-center"><input type="checkbox" class="subscription-row-checkbox" data-uid="${row.uid}" ${isSelected ? 'checked' : ''}></td>
-        <td class="u-text-center"><img src="${row.logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color);" onerror="this.src='assets/icons/icon.png';"></td>
+        <td class="u-text-center"><img src="${row.logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color); background:transparent;" onerror="this.src='assets/icons/icon.png';"></td>
         <td class="u-bold">${row.shopName}</td>
+        <td class="u-fs-08"><strong>${businessId}</strong></td>
+        <td class="u-fs-08"><code style="font-size:0.75em; white-space:normal; word-break:break-all;">${row.uid}</code></td>
         <td class="u-fs-08">${row.ownerEmail}</td>
         <td class="u-fs-08">${row.whatsapp}</td>
         <td class="u-fs-08"><span class="shop-card-status ${row.className}">${row.label}</span></td>
@@ -3328,13 +3409,14 @@ async function refreshAppAdminShopsTable() {
       if (currentRefreshId !== lastShopsTableRefreshId) return;
 
       const uid = userDoc.id;
+      const userData = userDoc.data() || {};
+      const resolvedBusinessId = await ensureTenantBusinessId(uid) || userData.businessId || userData.shopId || 'N/A';
       const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "shop_profile"));
       if (!dataDoc.exists()) continue;
 
       const shopData = dataDoc.data();
       if (uid === MASTER_APP_ADMIN_UID && (shopData.menu || []).length === 0) continue;
 
-      const userData = userDoc.data();
       const userEmail = (userData.email || '').toLowerCase().trim();
       const whatsappNum = userData.whatsapp || 'N/A';
       const effectiveEmail = (uid.includes('@') && !userEmail) ? uid.toLowerCase().trim() : userEmail;
@@ -3343,7 +3425,7 @@ async function refreshAppAdminShopsTable() {
       if (effectiveEmail) seenEmails.add(effectiveEmail);
 
       const shopSettings = shopData.settings || {};
-      const businessId = userData.businessId || userData.shopId || shopData.businessId || shopSettings.businessId || 'N/A';
+      const businessId = resolvedBusinessId;
       const logoUrl = sanitizeLogoUrl(shopSettings.logo) || 'assets/icons/icon.png';
       const userStatus = userData.status || 'active';
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
@@ -3370,6 +3452,7 @@ async function refreshAppAdminShopsTable() {
           <td class="u-text-center"><img src="${logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color);" onerror="this.src='assets/icons/icon.png';"></td>
           <td class="u-bold">${shopSettings.name || 'Unnamed Shop'}</td>
           <td class="u-fs-08"><strong>${businessId}</strong></td>
+          <td class="u-fs-08"><code style="font-size:0.75em; white-space:normal; word-break:break-all;">${uid}</code></td>
           <td class="u-fs-08">${effectiveEmail || 'No Email'}</td>
           <td class="u-fs-08">${shopSettings.contact || 'N/A'}</td>
           <td class="u-fs-08">${whatsappNum}</td>
@@ -13587,9 +13670,12 @@ function setupEnterpriseRecordCollectionSync(uid) {
 }
 function setupRealTimeSync(uid) {
   // Skip cloud sync on first load after reset
-  if (sessionStorage.getItem('skipCloudSyncOnNextLoad') === 'true') {
+  const resetGuardValue = readResetGuard();
+  if (resetGuardValue === 'true') {
     console.log('⏭️  [SYNC] Skipping cloud sync on this load (post-reset). User must log in again to resume sync.');
+    clearResetGuard();
     sessionStorage.removeItem('skipCloudSyncOnNextLoad');
+    localStorage.removeItem('skipCloudSyncOnNextLoad');
     isInitialLoadComplete = true;
     return;
   }
@@ -14429,7 +14515,7 @@ function showLoginOverlay(mode = 'login') {
   let overlay = document.getElementById('login-overlay');
   const logoUrl = sanitizeLogoUrl(settings?.logo);
   const displayLogo = logoUrl || 'assets/icons/icon.png';
-  const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width: 100px; height: 100px; object-fit: contain; margin-top: -40px; margin-bottom: 12px;">`;
+const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width: 100px; height: 100px; object-fit: contain; margin-top: -40px; margin-bottom: 12px; background: transparent;">`;
 
   if (!overlay) {
     overlay = document.createElement('div');

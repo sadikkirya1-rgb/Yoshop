@@ -3114,9 +3114,13 @@ section#menuTab.active {
   object-fit: contain;
   margin: 0 auto 15px auto;
   border-radius: 12px;
-  background: #fff;
+  background: transparent;
   border: 1px solid var(--border-color);
   padding: 5px;
+}
+
+img[src*="icon.png"], img[src*="android192x192.png"], .splash-logo-img {
+  background: transparent !important;
 }
 
 .shop-card-title {

@@ -28,53 +28,8 @@ service cloud.firestore {
       // Allow listing/querying the top-level /users collection only to the Master Admin
       allow list: if isAdmin();
 
-      // Nested private shop assets, including shop_profile and sync_queue
-      match /data/{document=**} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      // Transactions subcollection
-      match /transactions/{transactionId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      match /sale_items/{recordId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      match /payments/{recordId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      // Production per-record collections
-      match /customers/{recordId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-      match /categories/{recordId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      match /products/{recordId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      match /staff/{recordId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      match /units/{recordId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      match /inventory_history/{recordId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      match /audit_log/{recordId} {
-        allow read, write: if isOwnerOrAdmin(userId);
-      }
-
-      match /notifications/{recordId} {
+      // Nested private shop assets and all per-user collections must remain private to the owner/admin.
+      match /{document=**} {
         allow read, write: if isOwnerOrAdmin(userId);
       }
     }
