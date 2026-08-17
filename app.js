@@ -4156,7 +4156,8 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null) 
       renderTransactions();
       updateDashboard();
     } else {
-      console.warn("[TX_LOAD] ⚠️ No transactions found in cloud or local storage");
+      // Fresh accounts and newly reset shops legitimately have no transactions yet.
+      console.info("[TX_LOAD] No transactions found in cloud or local storage yet.");
       // Still render empty state to show dashboard
       if (typeof renderTransactions === 'function') renderTransactions();
       if (typeof updateDashboard === 'function') updateDashboard();
@@ -8282,7 +8283,24 @@ function renderTransactions() {
   tbody.innerHTML = ''; // Clear existing rows
 
   if (tableRows.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" class="u-text-center">No transactions found.</td></tr>';
+    const emptyStateTitle = (startDate || endDate) ? 'No sales in this date range' : 'No sales yet';
+    const emptyStateSubtitle = (startDate || endDate)
+      ? 'Try a different date range or create a new sale to populate this list.'
+      : 'Your sales history will appear here after the first bill is created.';
+
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="8" style="padding: 22px 12px;">
+          <div style="display:flex; align-items:center; justify-content:center; min-height: 180px; border: 1px solid var(--border-color, #dfe3ec); background: linear-gradient(180deg, rgba(23, 162, 184, 0.06), rgba(15, 23, 42, 0.02)); border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.25);">
+            <div style="text-align:center; max-width: 420px; color: var(--text, #1f2937); padding: 18px;">
+              <div style="font-size: 2rem; margin-bottom: 8px;">🧾</div>
+              <div style="font-size: 1.15rem; font-weight: 700; margin-bottom: 6px;">${emptyStateTitle}</div>
+              <div style="font-size: 0.92rem; color: var(--muted-text, #6b7280); line-height: 1.5;">${emptyStateSubtitle}</div>
+            </div>
+          </div>
+        </td>
+      </tr>
+    `;
     return;
   }
 
