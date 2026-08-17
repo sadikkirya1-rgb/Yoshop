@@ -487,7 +487,19 @@ function findExactDuplicateProductName(name = '', excludeIndex = null) {
     if (excludeIndex !== null && index === excludeIndex) continue;
     
     const product = menu[index];
-    if (product && product.name && product.name.trim().toLowerCase() === normalizedName) {
+    if (!product || typeof product !== 'object') continue;
+    if (!product.name || !product.name.trim()) continue;
+    
+    // Use the same sellability check as the Products display
+    // A product is sellable if it has a recipe OR has price > 0 AND a category
+    const price = Number(product.price || 0);
+    const category = typeof product.category === 'string' ? product.category.trim() : '';
+    const hasRecipe = Array.isArray(product.recipe) && product.recipe.length > 0;
+    const isSellable = hasRecipe || (price > 0 && Boolean(category));
+    
+    if (!isSellable) continue; // Skip non-sellable items (they won't be displayed anyway)
+    
+    if (product.name.trim().toLowerCase() === normalizedName) {
       return { index, record: product };
     }
   }
@@ -5597,7 +5609,7 @@ async function addDish(buttonElement) {
   const name = document.getElementById('dishName').value.trim();
   const barcode = document.getElementById('dishBarcode').value.trim();
   const category = document.getElementById('dishCategory').value;
-  const type = document.getElementById('dishTypeSelect')?.value || 'product';
+  const type = 'product';
   const imageInput = document.getElementById('dishImage');
 
   if (!name) {
@@ -5618,9 +5630,7 @@ async function addDish(buttonElement) {
     buttonElement.textContent = 'Processing...';
   }
   const existingDish = isUpdate ? menu[parseInt(dishIndexInput, 10)] : null;
-  const thresholdInput = document.getElementById('dishLowStockThreshold');
-  const enteredThreshold = thresholdInput?.value.trim();
-  const lowStockThreshold = enteredThreshold === '' ? existingDish?.lowStockThreshold : Number(enteredThreshold);
+  const lowStockThreshold = existingDish?.lowStockThreshold;
   const oldName = existingDish ? existingDish.name : null;
 
   let totalRecipeCost = 0;
@@ -5752,13 +5762,10 @@ function editDish(index) {
   document.getElementById('dishName').value = dish.name;
   document.getElementById('dishBarcode').value = dish.barcode || '';
   document.getElementById('dishCategory').value = dish.category;
-  const typeSelect = document.getElementById('dishTypeSelect');
-  if (typeSelect) typeSelect.value = dish.type || 'product';
 
   document.getElementById('dishImageBase64').value = isValidMenuImage(dish.image) ? dish.image : ''; // Store current image
   document.getElementById('dishImagePreview').src = isValidMenuImage(dish.image) ? dish.image : PLACEHOLDER_IMAGE; // Show current image in preview
   document.getElementById('dishSellingPrice').value = (dish.price || 0);
-  document.getElementById('dishLowStockThreshold').value = dish.lowStockThreshold ?? '';
 
   // Show the form first to ensure all elements are visible and ready.
   toggleAddDishForm(true);
@@ -6048,7 +6055,6 @@ function toggleAddDishForm(show) {
     document.getElementById('dishImagePreview').src = 'https://placehold.co/100';
     document.getElementById('dishImageBase64').value = '';
     document.getElementById('dishSellingPrice').value = '';
-    document.getElementById('dishLowStockThreshold').value = '';
   }
 }
 
@@ -10329,7 +10335,6 @@ function applyServiceModeUI(enabled) {
     document.getElementById('newStockItemFormContainer'),
     document.getElementById('stockListBody'),
     document.getElementById('stockSearchInput')
-    , document.getElementById('dishLowStockThreshold')
   ];
 
   stockElements.forEach(el => {
@@ -15550,6 +15555,14 @@ async function restoreData() {
       const restoredData = JSON.parse(event.target.result || '{}');
 
       const restoredMenu = hydrateEnterpriseRecords('products', restoredData.menu || defaultMenu);
+      
+      // Ensure all stock items have a proper stock property for display
+      restoredMenu.forEach(item => {
+        if (item && (item.costPrice !== undefined || item.unit) && item.stock === undefined) {
+          item.stock = item.stock === undefined ? 0 : item.stock;
+        }
+      });
+      
       const restoredTransactions = hydrateEnterpriseRecords('sales', restoredData.transactions || []);
       const restoredStaff = hydrateEnterpriseRecords('staff', restoredData.staff || defaultStaff);
       const restoredCustomers = hydrateEnterpriseRecords('customers', restoredData.customers || []);

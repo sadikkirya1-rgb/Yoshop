@@ -505,12 +505,6 @@
                 title="Generate Random Barcode">🎲</button>
             </div>
             <select id="dishCategory" class="u-flex-grow-1"></select>
-            <select id="dishTypeSelect" class="u-flex-grow-1" title="Select whether this item is a product or service">
-              <option value="product">Product</option>
-              <option value="service">Service</option>
-            </select>
-            <input type="number" id="dishLowStockThreshold" placeholder="Low-stock level" min="0" step="0.01"
-              class="u-flex-grow-05" title="Alert level for this product. Leave empty to use the default stock setting.">
             <div class="dish-image-picker-wrap" style="display:flex; align-items:center; gap:8px; flex:1; min-width: 0;">
               <input type="file" id="dishImage" accept="image/*" onchange="previewDishImage(this)" class="u-flex-grow-1"
                 title="Product Image">

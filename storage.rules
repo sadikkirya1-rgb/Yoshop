@@ -9,26 +9,33 @@ service firebase.storage {
       );
     }
 
-    function isValidUserImageUpload() {
-      return request.auth != null
-        && request.resource != null
-        && request.resource.contentType.matches('image/.*')
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isValidImageUpload() {
+      return request.resource != null
+        && request.resource.contentType.matches('image/(jpeg|png|gif|webp|jpg)')
         && request.resource.size <= 1048576
         && request.resource.size > 0;
     }
 
+    // Allow authenticated users to upload to their own user folder
     match /users/{userId}/{allPaths=**} {
       allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
       allow write: if request.auth != null
         && (request.auth.uid == userId || isAdmin())
-        && isValidUserImageUpload();
+        && isValidImageUpload();
     }
 
+    // Allow authenticated users to upload product/dish images to shops
+    // This supports multi-tenant shops where each shop has its own folder
     match /shops/{shopId}/{allPaths=**} {
-      allow read: if request.auth != null;
-      allow write: if request.auth != null && isValidUserImageUpload();
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidImageUpload();
     }
 
+    // Default: deny all other access
     match /{allPaths=**} {
       allow read, write: if false;
     }
