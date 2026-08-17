@@ -149,6 +149,12 @@ function createMemoryDatabase(dbName) {
 export function createEntityId(entityType, payload = {}) {
   const source = payload && typeof payload === 'object' && !Array.isArray(payload) ? payload : { value: payload };
   if (source.id || source._id) return source.id || source._id;
+
+  if ((entityType === 'products' || entityType === 'product') && source.name && typeof source.name === 'string' && source.name.trim()) {
+    const cleanName = source.name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    if (cleanName) return `prod-${cleanName}`;
+  }
+
   const base = JSON.stringify(source);
   let hash = 0;
   for (let i = 0; i < base.length; i += 1) {

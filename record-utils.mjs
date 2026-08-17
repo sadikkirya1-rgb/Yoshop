@@ -3,17 +3,17 @@ function normalizeText(value = '') {
 }
 
 function getRecordIdentity(record = {}, entityType = '') {
+  const name = normalizeText(record?.name);
+  const barcode = typeof record?.barcode === 'string' ? record.barcode.trim() : '';
   const id = typeof record?.recordId === 'string' && record.recordId.trim()
     ? record.recordId.trim()
     : (typeof record?.id === 'string' && record.id.trim() ? record.id.trim() : '');
-  const name = normalizeText(record?.name);
-  const barcode = typeof record?.barcode === 'string' ? record.barcode.trim() : '';
   const category = normalizeText(record?.category);
 
   if (entityType === 'products' || entityType === 'product') {
-    if (id) return `id:${id}`;
     if (name) return `name:${name}`;
     if (barcode) return `barcode:${barcode}`;
+    if (id) return `id:${id}`;
     if (category) return `cat:${category}`;
   }
 

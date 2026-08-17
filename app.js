@@ -346,7 +346,11 @@ function enrichEnterpriseRecord(entityType, record = {}, existingRecord = null) 
   const now = new Date().toISOString();
   const context = getSyncMetadataContext();
   const currentVersion = Number(existingRecord?.version || record.version || 0);
-  const generatedId = record.id || record.recordId || existingRecord?.id || existingRecord?.recordId || createEntityId(entityType, record);
+
+  let generatedId = record.id || record.recordId || existingRecord?.id || existingRecord?.recordId;
+  if (!generatedId || ((entityType === 'products' || entityType === 'product') && record.name)) {
+    generatedId = createEntityId(entityType, { ...existingRecord, ...record });
+  }
 
   return {
     ...record,
@@ -479,9 +483,11 @@ function getProductCatalogMatchIndex(name = '', barcode = '') {
   return match ? match.index : -1;
 }
 
-function findExactDuplicateProductName(name = '', excludeIndex = null) {
+function findExactDuplicateProductName(name = '', excludeIndex = null, options = {}) {
   if (!name || !Array.isArray(menu)) return null;
   const normalizedName = name.trim().toLowerCase();
+  const onlySellable = options?.onlySellable === true;
+
   for (let index = 0; index < menu.length; index++) {
     // Skip the item being edited
     if (excludeIndex !== null && index === excludeIndex) continue;
@@ -490,15 +496,14 @@ function findExactDuplicateProductName(name = '', excludeIndex = null) {
     if (!product || typeof product !== 'object') continue;
     if (!product.name || !product.name.trim()) continue;
     
-    // Use the same sellability check as the Products display
-    // A product is sellable if it has a recipe OR has price > 0 AND a category
-    const price = Number(product.price || 0);
-    const category = typeof product.category === 'string' ? product.category.trim() : '';
-    const hasRecipe = Array.isArray(product.recipe) && product.recipe.length > 0;
-    const isSellable = hasRecipe || (price > 0 && Boolean(category));
-    
-    if (!isSellable) continue; // Skip non-sellable items (they won't be displayed anyway)
-    
+    if (onlySellable) {
+      const price = Number(product.price || 0);
+      const category = typeof product.category === 'string' ? product.category.trim() : '';
+      const hasRecipe = Array.isArray(product.recipe) && product.recipe.length > 0;
+      const isSellable = hasRecipe || (price > 0 && Boolean(category));
+      if (!isSellable) continue;
+    }
+
     if (product.name.trim().toLowerCase() === normalizedName) {
       return { index, record: product };
     }
@@ -852,7 +857,16 @@ async function setupTenantShopParameters(uid) {
  */
 async function generateBusinessId() {
   try {
-    if (!dbFirestore) return 'yoshop-001';
+    if (!dbFirestore) return `yoshop-${String(Date.now() % 100000).padStart(5, '0')}`;
+
+    const effectiveUid = typeof getEffectiveUid === 'function' ? getEffectiveUid() : (currentUser?.uid || '');
+    const isMasterAdmin = (effectiveUid === MASTER_APP_ADMIN_UID || (currentUser && currentUser.email === 'sadikkirya@gmail.com'));
+
+    // Non-admin tenants cannot query the global /users collection due to Firestore security rules
+    if (!isMasterAdmin) {
+      return `yoshop-${String(Date.now() % 100000).padStart(5, '0')}`;
+    }
+
     const usersSnap = await getDocs(collection(dbFirestore, 'users'));
     const taken = new Set();
 
@@ -870,7 +884,7 @@ async function generateBusinessId() {
     return `yoshop-${String(next).padStart(3, '0')}`;
   } catch (error) {
     console.warn('Failed to generate business ID from Firestore. Falling back to timestamp-based ID.', error);
-    return `yoshop-${String(Date.now() % 100000).padStart(3, '0')}`;
+    return `yoshop-${String(Date.now() % 100000).padStart(5, '0')}`;
   }
 }
 
@@ -5616,7 +5630,7 @@ async function addDish(buttonElement) {
     return alert("Please enter a valid name.");
   }
 
-  const existingDuplicate = findExactDuplicateProductName(name, isUpdate ? parseInt(dishIndexInput, 10) : null);
+  const existingDuplicate = findExactDuplicateProductName(name, isUpdate ? parseInt(dishIndexInput, 10) : null, { onlySellable: true });
   if (existingDuplicate && (!isUpdate || existingDuplicate.index !== parseInt(dishIndexInput, 10))) {
     return showAppAlert(`A product named "${name}" already exists. Please update the existing item instead of creating a duplicate.`, 'Duplicate Product');
   }
@@ -5668,7 +5682,7 @@ async function addDish(buttonElement) {
       const imageToSave = isValidMenuImage(image) ? image : menu[index].image;
       let dishData = enrichEnterpriseRecord('products', {
         ...menu[index],
-        name, barcode, category, recipe, costPrice, price, image: imageToSave,
+        name, barcode, category, unit, recipe, costPrice, price, image: imageToSave,
         type,
         lowStockThreshold: Number.isFinite(lowStockThreshold) && lowStockThreshold >= 0 ? lowStockThreshold : undefined
       }, menu[index]);
@@ -5707,6 +5721,7 @@ async function addDish(buttonElement) {
         name,
         barcode,
         category,
+        unit,
         type,
         recipe,
         costPrice,
@@ -5771,8 +5786,9 @@ function editDish(index) {
   toggleAddDishForm(true);
   document.getElementById('recipeItemsContainer').innerHTML = '';
 
-  // Now that the form is visible and dropdowns are populated, set the category.
+  // Now that the form is visible and dropdowns are populated, set the category and unit.
   document.getElementById('dishCategory').value = dish.category;
+  if (document.getElementById('dishUnit')) document.getElementById('dishUnit').value = dish.unit || '';
 
   // Populate recipe builder
   const recipeContainer = document.getElementById('recipeItemsContainer');
@@ -6043,6 +6059,7 @@ function toggleAddDishForm(show) {
     populateRecipeIngredientSelect();
     updateRecipeItemUnit();
     populateCategoryDropdown();
+    populateUnitDropdown();
     populateStockNameList();
     toggleButton.style.display = 'none';
   } else {
@@ -6052,6 +6069,7 @@ function toggleAddDishForm(show) {
     document.getElementById('recipeItemsContainer').innerHTML = ''; // Clear recipe on close
     document.getElementById('dishName').value = '';
     document.getElementById('dishBarcode').value = '';
+    if (document.getElementById('dishUnit')) document.getElementById('dishUnit').value = '';
     document.getElementById('dishImagePreview').src = 'https://placehold.co/100';
     document.getElementById('dishImageBase64').value = '';
     document.getElementById('dishSellingPrice').value = '';
@@ -7031,7 +7049,7 @@ function renderDishesTable() {
   tbody.innerHTML = '';
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
   const productsForTable = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
-  // Show items that either have a recipe OR have a selling price and category (sellable stock items)
+  // Show only products/sellable items in the Products table
   productsForTable.forEach((dish, rowIndex) => {
     const i = menu.indexOf(dish); // Get the original index for edit/delete functions
     const stock = calculateDishStock(dish);
@@ -12359,7 +12377,7 @@ function renderStockListTable() {
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('stockListBody','selectAllStock')"></td>
         <td>${rowIndex + 1}</td>
         <td class="u-fs-08 u-text-break">${item.name}</td> 
-        <td class="u-fs-08">${(item.recipe && item.recipe.length > 0) ? 'Recipe' : (item.unit || 'N/A')}</td>
+        <td class="u-fs-08">${item.unit || 'N/A'}</td>
         <td class="u-fs-08 u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>
         <td class="u-fs-08 u-text-right">${Number(stock).toFixed(1)}</td>
         <td class="u-fs-08 u-text-right">${getLowStockThreshold(item)}</td>
@@ -12412,9 +12430,10 @@ function convertToProduct(index) {
   document.getElementById('dishBarcode').value = item.barcode || '';
   document.getElementById('dishSellingPrice').value = parseFloat(item.price) || 0;
 
-  // Automatically assign a category
+  // Automatically assign a category & unit
   const defaultCat = item.category || (dishCategories.length > 0 ? dishCategories[0] : "");
   document.getElementById('dishCategory').value = defaultCat;
+  if (document.getElementById('dishUnit')) document.getElementById('dishUnit').value = item.unit || '';
 
   document.getElementById('dishImageBase64').value = item.image || '';
   document.getElementById('dishImagePreview').src = item.image || 'https://placehold.co/100';
@@ -12528,9 +12547,20 @@ function toggleNewStockItemForm(show) {
 }
 
 function populateUnitDropdown() {
-  const unitSelect = document.getElementById('newStockItemUnit');
-  if (!unitSelect) return;
-  unitSelect.innerHTML = `<option value="" disabled selected>Select Unit</option>` + units.map(u => `<option value="${u.short}">${u.short}</option>`).join('');
+  const stockUnitSelect = document.getElementById('newStockItemUnit');
+  const dishUnitSelect = document.getElementById('dishUnit');
+  const optionsHtml = `<option value="" disabled selected>Select Unit</option>` + units.map(u => `<option value="${u.short}">${u.short}</option>`).join('');
+
+  if (stockUnitSelect) {
+    const currVal = stockUnitSelect.value;
+    stockUnitSelect.innerHTML = optionsHtml;
+    if (currVal) stockUnitSelect.value = currVal;
+  }
+  if (dishUnitSelect) {
+    const currVal = dishUnitSelect.value;
+    dishUnitSelect.innerHTML = optionsHtml;
+    if (currVal) dishUnitSelect.value = currVal;
+  }
 }
 
 async function saveNewStockItem() {
