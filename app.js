@@ -479,6 +479,21 @@ function getProductCatalogMatchIndex(name = '', barcode = '') {
   return match ? match.index : -1;
 }
 
+function findExactDuplicateProductName(name = '', excludeIndex = null) {
+  if (!name || !Array.isArray(menu)) return null;
+  const normalizedName = name.trim().toLowerCase();
+  for (let index = 0; index < menu.length; index++) {
+    // Skip the item being edited
+    if (excludeIndex !== null && index === excludeIndex) continue;
+    
+    const product = menu[index];
+    if (product && product.name && product.name.trim().toLowerCase() === normalizedName) {
+      return { index, record: product };
+    }
+  }
+  return null;
+}
+
 function hydrateEnterpriseRecords(entityType, records = []) {
   if (!Array.isArray(records)) return [];
   const hydrated = records
