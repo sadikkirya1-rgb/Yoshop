@@ -13385,9 +13385,11 @@ async function deleteWastageLossEntry(id) {
   if (!confirmed || !confirmed.confirmed) return;
 
   wastageLossHistory = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).filter(e => e.id !== id);
-  await saveData().catch(() => {});
+  await saveData(true, { allowEmptyOverwriteFields: ['wastageLossHistory'] }).catch(() => {});
   if (navigator.onLine && currentUser && dbFirestore) {
-    try { await flushLocalSyncQueue({ force: true, skipStatusUpdate: true }); } catch (error) { console.warn('[SYNC] Failed to flush deleted waste/loss sync:', error); }
+    try {
+      await flushLocalSyncQueue({ force: true });
+    } catch (error) { console.warn('[SYNC] Failed to flush deleted waste/loss sync:', error); }
   }
   renderWastageLossHistory();
   updateDashboard();
@@ -13463,9 +13465,11 @@ async function deletePurchaseEntry(id) {
   if (!confirmed || !confirmed.confirmed) return;
 
   purchaseHistory = (Array.isArray(purchaseHistory) ? purchaseHistory : []).filter(e => e.id !== id);
-  await saveData().catch(() => {});
+  await saveData(true, { allowEmptyOverwriteFields: ['purchaseHistory'] }).catch(() => {});
   if (navigator.onLine && currentUser && dbFirestore) {
-    try { await flushLocalSyncQueue({ force: true, skipStatusUpdate: true }); } catch (error) { console.warn('[SYNC] Failed to flush deleted purchase sync:', error); }
+    try {
+      await flushLocalSyncQueue({ force: true });
+    } catch (error) { console.warn('[SYNC] Failed to flush deleted purchase sync:', error); }
   }
   renderPurchaseHistory();
   updateDashboard();
