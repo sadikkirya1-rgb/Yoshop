@@ -4646,6 +4646,76 @@ async function login() {
   }
 }
 
+function resetAuthLoginSubmitButton() {
+  const submitBtn = document.getElementById('email-login-submit-btn');
+  if (!submitBtn) return;
+
+  const originalHtml = submitBtn.dataset.originalHtml || submitBtn.innerHTML;
+  submitBtn.disabled = false;
+  submitBtn.innerHTML = originalHtml;
+  submitBtn.dataset.originalHtml = originalHtml;
+}
+
+function showAuthLoginError(message = 'Invalid email or password') {
+  const errorEl = document.getElementById('auth-login-error');
+  if (!errorEl) return;
+
+  errorEl.textContent = message;
+  errorEl.style.display = 'block';
+  errorEl.style.opacity = '1';
+  errorEl.style.transform = 'translateY(0)';
+  errorEl.style.color = '#ffd7d7';
+  errorEl.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+}
+
+function clearAuthLoginError() {
+  const errorEl = document.getElementById('auth-login-error');
+  if (!errorEl) return;
+
+  errorEl.style.transition = 'opacity 0.25s ease, transform 0.25s ease';
+  errorEl.style.opacity = '0';
+  errorEl.style.transform = 'translateY(-4px)';
+  errorEl.textContent = 'Invalid email or password';
+  errorEl.style.color = '#ffd7d7';
+
+  window.setTimeout(() => {
+    if (document.getElementById('auth-login-error') === errorEl) {
+      errorEl.style.display = 'none';
+      errorEl.style.opacity = '1';
+      errorEl.style.transform = 'translateY(0)';
+    }
+  }, 220);
+}
+
+function bindAuthLoginFieldErrorReset() {
+  const emailInputField = document.getElementById('authEmail');
+  const passwordInputField = document.getElementById('authPassword');
+
+  [emailInputField, passwordInputField].forEach(field => {
+    if (!field) return;
+    field.oninput = () => {
+      const errorEl = document.getElementById('auth-login-error');
+      if (errorEl) {
+        clearAuthLoginError();
+      }
+
+      const submitBtn = document.getElementById('email-login-submit-btn');
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = submitBtn.dataset.originalHtml || submitBtn.innerHTML;
+      }
+
+      const email = document.getElementById('authEmail')?.value?.trim() || '';
+      const password = document.getElementById('authPassword')?.value?.trim() || '';
+      if (email && password && errorEl) {
+        errorEl.style.display = 'none';
+        errorEl.style.opacity = '1';
+        errorEl.style.transform = 'translateY(0)';
+      }
+    };
+  });
+}
+
 async function loginWithEmail() {
   const emailInput = document.getElementById('authEmail');
   const passwordInput = document.getElementById('authPassword');
@@ -4653,48 +4723,49 @@ async function loginWithEmail() {
   const password = passwordInput?.value?.trim();
   if (!email || !password) return alert("Please enter email and password.");
 
-  // Save credentials before async call so we can restore them if the overlay is rebuilt
   const savedEmail = email;
   const savedPassword = password;
 
-  // Show a loading state on the submit button to prevent double-click
-  const submitBtn = document.querySelector('#email-login-form button[onclick*="loginWithEmail"]');
-  const originalBtnHtml = submitBtn ? submitBtn.innerHTML : null;
+  clearAuthLoginError();
+  bindAuthLoginFieldErrorReset();
+
+  const submitBtn = document.getElementById('email-login-submit-btn');
   if (submitBtn) {
+    submitBtn.dataset.originalHtml = submitBtn.dataset.originalHtml || submitBtn.innerHTML;
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span> Signing in...';
   }
 
   try {
     await signInWithEmailAndPassword(auth, email, password);
-    // Dismiss any lingering error popups from previous failed attempts
     try { closeAppPopup({ confirmed: false, value: null }); } catch (e) { /* ignore */ }
-    // Play success sound on successful email/password login
     try { playNotificationSound(); } catch (e) { /* ignore audio errors */ }
   } catch (error) {
     console.error('Email login failed:', error);
-    // Play error sound on failed email/password login
     try { playErrorSound(); } catch (e) { /* ignore audio errors */ }
+
     const authError = getAuthErrorMessage(error);
     const isCredentialFailure = error?.code === 'auth/invalid-credential' || error?.code === 'auth/user-not-found' || error?.code === 'auth/wrong-password';
     const detail = isCredentialFailure
-      ? `${authError.message}\n\nIf you already use Google for this account, click "Login with Google" instead. Otherwise, switch to Register to create a password-based account.`
+      ? `${authError.message}\n\nIf you already use Google for this account, click "Login with Google" instead.`
       : authError.message;
-    await showAppAlert(detail, authError.title);
-    if (isCredentialFailure && typeof showLoginOverlay === 'function') {
-      showLoginOverlay('register');
+
+    const errorEl = document.getElementById('auth-login-error');
+    if (errorEl && isCredentialFailure) {
+      showAuthLoginError('Invalid email or password');
+    } else if (errorEl) {
+      clearAuthLoginError();
     }
-    // Restore email/password into fields in case the overlay was rebuilt during the async flow
+
+    await showAppAlert(detail, authError.title);
+
     const restoredEmail = document.getElementById('authEmail');
     const restoredPassword = document.getElementById('authPassword');
     if (restoredEmail) restoredEmail.value = savedEmail;
     if (restoredPassword) restoredPassword.value = savedPassword;
-    // Restore button state
-    const restoredBtn = document.querySelector('#email-login-form button[onclick*="loginWithEmail"]');
-    if (restoredBtn && originalBtnHtml !== null) {
-      restoredBtn.disabled = false;
-      restoredBtn.innerHTML = originalBtnHtml;
-    }
+  } finally {
+    resetAuthLoginSubmitButton();
+    bindAuthLoginFieldErrorReset();
   }
 }
 
@@ -13299,13 +13370,28 @@ function saveWastageEdit() {
   showAppAlert('Waste/loss entry updated.', 'Updated');
 }
 
-function deleteWastageLossEntry(id) {
+async function deleteWastageLossEntry(id) {
   if (!id) return;
+
+  const entry = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).find(e => e.id === id);
+  if (!entry) return;
+
+  const confirmed = await showAppConfirm(
+    `Are you sure you want to delete the waste/loss entry for ${entry.item || 'this item'}?`,
+    'Delete Waste/Loss',
+    'Delete',
+    'Cancel'
+  );
+  if (!confirmed || !confirmed.confirmed) return;
+
   wastageLossHistory = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).filter(e => e.id !== id);
-  saveData().catch(() => {});
+  await saveData().catch(() => {});
+  if (navigator.onLine && currentUser && dbFirestore) {
+    try { await flushLocalSyncQueue({ force: true, skipStatusUpdate: true }); } catch (error) { console.warn('[SYNC] Failed to flush deleted waste/loss sync:', error); }
+  }
   renderWastageLossHistory();
   updateDashboard();
-  showAppAlert('Waste/loss entry deleted.', 'Deleted');
+  await showAppAlert('Waste/loss entry deleted.', 'Deleted');
 }
 
 function editPurchaseEntry(id) {
@@ -13362,13 +13448,28 @@ function savePurchaseEdit() {
   showAppAlert('Purchase entry updated.', 'Updated');
 }
 
-function deletePurchaseEntry(id) {
+async function deletePurchaseEntry(id) {
   if (!id) return;
+
+  const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(e => e.id === id);
+  if (!entry) return;
+
+  const confirmed = await showAppConfirm(
+    `Are you sure you want to delete the purchase for ${entry.item || 'this item'}?`,
+    'Delete Purchase',
+    'Delete',
+    'Cancel'
+  );
+  if (!confirmed || !confirmed.confirmed) return;
+
   purchaseHistory = (Array.isArray(purchaseHistory) ? purchaseHistory : []).filter(e => e.id !== id);
-  saveData().catch(() => {});
+  await saveData().catch(() => {});
+  if (navigator.onLine && currentUser && dbFirestore) {
+    try { await flushLocalSyncQueue({ force: true, skipStatusUpdate: true }); } catch (error) { console.warn('[SYNC] Failed to flush deleted purchase sync:', error); }
+  }
   renderPurchaseHistory();
   updateDashboard();
-  showAppAlert('Purchase entry deleted.', 'Deleted');
+  await showAppAlert('Purchase entry deleted.', 'Deleted');
 }
 
 function editSupplierEntry(id) {
@@ -14638,8 +14739,9 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
               <input type="password" id="authPassword" placeholder="Password" style="flex: 1; padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;">
               <button type="button" onclick="togglePINVisibility('authPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 1em;" title="Show/Hide Password">👁️</button>
             </div>
+            ${!isRegister ? `<div id="auth-login-error" style="display: none; color: #ffd7d7; font-size: 0.75em; margin-top: -2px; text-align: left; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 8px; width: 100%; box-sizing: border-box;">Invalid email or password</div>` : ''}
             ${isRegister ? `<div style="display: flex; gap: 8px; align-items: center;"><input type="password" id="authConfirmPassword" placeholder="Confirm Password" style="flex: 1; padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;"><button type="button" onclick="togglePINVisibility('authPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 1em;" title="Show/Hide Password">👁️</button></div>` : ''}
-            <button onclick="${submitFn}" class="btn" style="background: #28a745; color: white; margin: 0; font-weight: bold; padding: 12px; border-radius: 8px; border: none; width: 100%;">${submitText}</button>
+            <button id="email-login-submit-btn" onclick="${submitFn}" class="btn" style="background: #28a745; color: white; margin: 0; font-weight: bold; padding: 12px; border-radius: 8px; border: none; width: 100%;">${submitText}</button>
             
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
               <a href="#" onclick="showLoginOverlay('${toggleMode}')" style="color: white; font-size: 0.8em; text-decoration: underline; opacity: 0.8;">${toggleText}</a>
