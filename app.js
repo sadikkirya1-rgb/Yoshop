@@ -10,7 +10,7 @@ import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAut
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
 import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity } from './admin-utils.mjs';
-import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath } from './sync-utils.mjs';
+import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField } from './sync-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
@@ -1659,9 +1659,7 @@ const PROTECTED_EMPTY_OVERWRITE_FIELDS = [
   'suppliers',
   'dishCategories',
   'units',
-  'restockHistory',
-  'purchaseHistory',
-  'wastageLossHistory'
+  'restockHistory'
 ];
 
 function isNonEmptyArray(value) {
@@ -1728,7 +1726,9 @@ async function protectCloudPayloadFromEmptyOverwrite(shopDocRef, cloudPayload, a
   const allowedEmptyOverwriteFields = getAllowedEmptyOverwriteFields(action);
 
   const needsProtection = PROTECTED_EMPTY_OVERWRITE_FIELDS.some((field) =>
-    isEmptyArray(cloudPayload[field]) && !allowedEmptyOverwriteFields.has(field)
+    shouldProtectEmptyOverwriteField(field, action) &&
+    isEmptyArray(cloudPayload[field]) &&
+    !allowedEmptyOverwriteFields.has(field)
   ) || (
       Object.prototype.hasOwnProperty.call(cloudPayload, 'settings') &&
       !allowedEmptyOverwriteFields.has('settings')
@@ -1746,6 +1746,7 @@ async function protectCloudPayloadFromEmptyOverwrite(shopDocRef, cloudPayload, a
 
     PROTECTED_EMPTY_OVERWRITE_FIELDS.forEach((field) => {
       if (
+        shouldProtectEmptyOverwriteField(field, action) &&
         isEmptyArray(safePayload[field]) &&
         isNonEmptyArray(remoteData[field]) &&
         !allowedEmptyOverwriteFields.has(field)

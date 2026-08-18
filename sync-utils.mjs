@@ -65,3 +65,27 @@ export function getSyncQueueCollectionPath(uid) {
 export function getSyncQueueDocumentPath(uid, actionId) {
   return [...getSyncQueueCollectionPath(uid), actionId];
 }
+
+export function shouldProtectEmptyOverwriteField(field, action = {}) {
+  const protectedFields = new Set([
+    'menu',
+    'staff',
+    'customers',
+    'suppliers',
+    'dishCategories',
+    'units',
+    'restockHistory'
+  ]);
+
+  if (!field || !protectedFields.has(field)) {
+    return false;
+  }
+
+  const payload = action.payload || {};
+  const allowList = new Set([
+    ...(Array.isArray(action.allowEmptyOverwriteFields) ? action.allowEmptyOverwriteFields : []),
+    ...(Array.isArray(payload.allowEmptyOverwriteFields) ? payload.allowEmptyOverwriteFields : [])
+  ]);
+
+  return !allowList.has(field);
+}

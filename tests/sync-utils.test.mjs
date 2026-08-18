@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSettingsSyncPayload, buildTransactionSyncPayload, buildInvoiceNumber, normalizeInvoiceNumber, parseInvoiceSequence, getSyncQueueCollectionPath, getSyncQueueDocumentPath } from '../sync-utils.mjs';
+import { buildSettingsSyncPayload, buildTransactionSyncPayload, buildInvoiceNumber, normalizeInvoiceNumber, parseInvoiceSequence, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField } from '../sync-utils.mjs';
 
 test('sync queue path stays under the tenant-owned data collection', () => {
   const collectionPath = getSyncQueueCollectionPath('user-123');
@@ -44,4 +44,11 @@ test('buildInvoiceNumber and parser support the new date-based invoice format', 
   assert.equal(invoiceNumber, 'INV-07/08/2026/0007');
   assert.equal(normalized, 'INV-07/08/2026/0007');
   assert.equal(sequence, 7);
+});
+
+test('explicit purchase and waste deletes are allowed to clear cloud arrays', () => {
+  assert.equal(shouldProtectEmptyOverwriteField('purchaseHistory', {}), false);
+  assert.equal(shouldProtectEmptyOverwriteField('wastageLossHistory', {}), false);
+  assert.equal(shouldProtectEmptyOverwriteField('menu', {}), true);
+  assert.equal(shouldProtectEmptyOverwriteField('customers', { payload: { allowEmptyOverwriteFields: ['customers'] } }), false);
 });
