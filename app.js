@@ -1698,6 +1698,8 @@ function sanitizeForFirestore(value) {
   if (value === null) return null;
   if (value instanceof Date) return value.toISOString();
   if (value instanceof Uint8Array) return Array.from(value);
+  if (typeof value?.toDate === 'function') return value.toDate().toISOString();
+  if (typeof value?.toMillis === 'function') return new Date(value.toMillis()).toISOString();
   if (Array.isArray(value)) return value.map(v => sanitizeForFirestore(v));
   if (typeof value === 'object') {
     const prototype = Object.getPrototypeOf(value);
@@ -2217,8 +2219,14 @@ async function syncCloudAction(action) {
   function sanitizeForFirestore(value) {
     if (value === undefined) return null;
     if (value === null) return null;
+    if (value instanceof Date) return value.toISOString();
+    if (value instanceof Uint8Array) return Array.from(value);
+    if (typeof value?.toDate === 'function') return value.toDate().toISOString();
+    if (typeof value?.toMillis === 'function') return new Date(value.toMillis()).toISOString();
     if (Array.isArray(value)) return value.map(v => sanitizeForFirestore(v));
     if (typeof value === 'object') {
+      const prototype = Object.getPrototypeOf(value);
+      if (prototype !== Object.prototype && prototype !== null) return value;
       const out = {};
       Object.keys(value).forEach(k => {
         const v = value[k];
@@ -5462,7 +5470,10 @@ function renderMenu() {
 
         // Use the dish image directly - do NOT append cache-busters to Firebase Storage
         // URLs because Storage URLs are HMAC-signed and extra params break them
-        let displayImage = isValidMenuImage(dish.image) ? dish.image : getCachedDishImage(dish.name) || PLACEHOLDER_IMAGE;
+        const cachedImage = getCachedDishImage(dish.name);
+        let displayImage = isValidMenuImage(dish.image) && !isLegacyUserStorageUrl(dish.image)
+          ? dish.image
+          : (isValidMenuImage(cachedImage) && !isLegacyUserStorageUrl(cachedImage) ? cachedImage : PLACEHOLDER_IMAGE);
         if (!isValidMenuImage(dish.image) && getCachedDishImage(dish.name)) {
           dish.image = getCachedDishImage(dish.name);
         }
@@ -5495,6 +5506,13 @@ function renderMenu() {
             cardImg.onerror = function () {
               if (cardImg.dataset.fallbackApplied === 'true') return;
               cardImg.dataset.fallbackApplied = 'true';
+              cardImg.closest('.menu-item').dataset.failedImage = dish.image || cardImg.src;
+              delete lastKnownDishImages[dish.name];
+              persistImageCache().catch(() => { });
+              if (dish.image && dish.image === cardImg.src) {
+                dish.image = null;
+                enqueueEnterpriseRecordChange('products', dish, 'upsert').catch(console.warn);
+              }
               cardImg.removeAttribute('crossorigin');
               cardImg.src = PLACEHOLDER_IMAGE;
             };
@@ -5611,6 +5629,10 @@ function isValidMenuImage(image) {
   return typeof image === 'string' && image.trim() !== '' && image !== PLACEHOLDER_IMAGE;
 }
 
+function isLegacyUserStorageUrl(image) {
+  return typeof image === 'string' && /firebasestorage\.googleapis\.com\/v0\/b\/[^/]+\/o\/users%2F/i.test(image);
+}
+
 function cacheDishImage(name, image) {
   if (name && isValidMenuImage(image)) {
     lastKnownDishImages[name] = image;
@@ -5634,11 +5656,23 @@ function updateMenuUI() {
 
     // Surgically update the image if it changed. Do not overwrite existing images with placeholders.
     const img = card.querySelector('img');
-    const expectedImg = isValidMenuImage(dish.image) ? dish.image : null;
-    if (img && expectedImg && img.getAttribute('src') !== expectedImg) {
+    const expectedImg = isValidMenuImage(dish.image) && !isLegacyUserStorageUrl(dish.image) ? dish.image : null;
+    if (img && expectedImg && img.getAttribute('src') !== expectedImg && card.dataset.failedImage !== expectedImg) {
       try {
         img.crossOrigin = 'anonymous';
-        img.onerror = function () { console.warn('[IMG_LOAD_FAIL]', name, '->', img.src); img.src = PLACEHOLDER_IMAGE; };
+        img.onerror = function () {
+          const failedImage = expectedImg;
+          if (card.dataset.failedImage === failedImage) return;
+          card.dataset.failedImage = failedImage;
+          delete lastKnownDishImages[name];
+          persistImageCache().catch(() => { });
+          img.removeAttribute('crossorigin');
+          img.src = PLACEHOLDER_IMAGE;
+          if (dish.image === failedImage) {
+            dish.image = null;
+            enqueueEnterpriseRecordChange('products', dish, 'upsert').catch(console.warn);
+          }
+        };
       } catch (e) { /* ignore */ }
       img.src = expectedImg;
       cacheDishImage(name, expectedImg);
@@ -6813,9 +6847,9 @@ function updatePaymentTotals() {
   const canConfirm = isCustomerSelected || isValidTendered;
 
   if (isCustomerSelected) {
-    const customer = customers[parseInt(paymentSelect.value, 10)];
+    const customer = customers.find(entry => entry && String(entry.id) === String(paymentSelect.value));
     if (customer) {
-      const currentBalance = parseFloat(customer.balance) || 0;
+      const currentBalance = getCustomerAccountBalance(customer);
       const balanceChange = amountTendered - newTotal;
       const newBalance = currentBalance + balanceChange;
       const remainingBalance = Math.max(0, newTotal - amountTendered);
@@ -6903,8 +6937,9 @@ async function finalizePayment(isSplit = false) {
   if (discountAmount < 0) discountAmount = 0;
   const finalTotal = totals.total - discountAmount;
 
-  const customerIndex = isCustomerSelected ? parseInt(paymentSelect.value, 10) : -1;
-  const customer = isCustomerSelected ? customers[customerIndex] : null;
+  const customer = isCustomerSelected
+    ? customers.find(entry => entry && String(entry.id) === String(paymentSelect.value))
+    : null;
 
   const pickupDate = document.getElementById('pickupDate')?.value || null;
   const dropoffDate = document.getElementById('dropoffDate')?.value || null;
@@ -6987,7 +7022,7 @@ async function finalizePayment(isSplit = false) {
 
     // 1. Update customer balance in local state and db
     if (customer) {
-      const currentBalance = parseFloat(customer.balance) || 0;
+      const currentBalance = getCustomerAccountBalance(customer);
       customer.balance = currentBalance + balanceChange;
       customer.totalSales = (parseFloat(customer.totalSales) || 0) + finalTotal;
       customer.subtotalSales = (parseFloat(customer.subtotalSales) || 0) + totals.subtotal;
@@ -7138,7 +7173,7 @@ function renderDishesTable() {
     const profitValue = sellingPrice - costPrice;
 
     // Keep signed Firebase Storage URLs unchanged.
-    const displayImage = dish.image || PLACEHOLDER_IMAGE;
+    const displayImage = isLegacyUserStorageUrl(dish.image) ? PLACEHOLDER_IMAGE : (dish.image || PLACEHOLDER_IMAGE);
 
     const tr = document.createElement('tr');
     tr.dataset.menuIndex = i;
@@ -11300,21 +11335,26 @@ function toggleSelectAllCustomers(checked) {
 
 window.toggleSelectAllCustomers = toggleSelectAllCustomers;
 
+function getCustomerAccountBalance(customer) {
+  if (!customer || typeof customer !== 'object') return 0;
+  const customerTransactions = (Array.isArray(transactions) ? transactions : []).filter(transaction => {
+    if (transaction?.customerId) return customer?.id && String(transaction.customerId) === String(customer.id);
+    return !transaction?.customerId && transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
+  });
+
+  return buildInvoiceListItems({
+    customers: [customer],
+    transactions: customerTransactions
+  }).reduce((sum, row) => sum + (Number(row.balance) || 0), 0);
+}
+
 function renderCustomerList() {
   const tbody = document.getElementById('customerListBody');
   if (!tbody) return;
   tbody.innerHTML = '';
   const currencySymbol = getCurrencySymbol();
   customers.forEach((customer, i) => {
-    const customerTransactions = (Array.isArray(transactions) ? transactions : []).filter(transaction => {
-      const matchesCustomerId = customer?.id && transaction?.customerId && transaction.customerId === customer.id;
-      const matchesCustomerName = transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
-      return matchesCustomerId || matchesCustomerName;
-    });
-    const outstandingBalance = buildInvoiceListItems({
-      customers: [customer],
-      transactions: customerTransactions
-    }).reduce((sum, row) => sum + (Number(row.balance) || 0), 0);
+    const outstandingBalance = getCustomerAccountBalance(customer);
     const outstandingText = outstandingBalance === 0
       ? `${currencySymbol}0`
       : `<span style="${outstandingBalance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${outstandingBalance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(outstandingBalance))}</span>`;
@@ -11354,9 +11394,8 @@ function getCustomerQuickMessageText(customer, template) {
 
   if (customer && Array.isArray(transactions)) {
     const customerTransactions = transactions.filter(transaction => {
-      const matchesCustomerId = customer?.id && transaction?.customerId && transaction.customerId === customer.id;
-      const matchesCustomerName = transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
-      return matchesCustomerId || matchesCustomerName;
+      if (transaction?.customerId) return customer?.id && String(transaction.customerId) === String(customer.id);
+      return !transaction?.customerId && transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
     });
     customerBalance = buildInvoiceListItems({
       customers: [customer],
@@ -12230,10 +12269,10 @@ function populateCustomerDropdowns() {
   const currencySymbol = getCurrencySymbol();
   const optionsHtml = `
     <option value="">Walk-in Customer</option>
-    ${customers.map((c, i) => {
-      const bal = c.balance || 0;
+    ${customers.map((c) => {
+      const bal = getCustomerAccountBalance(c);
       const balStr = bal < 0 ? 'Debt: -' + currencySymbol + formatCurrency(Math.abs(bal)) : (bal > 0 ? 'Credit: ' + currencySymbol + formatCurrency(bal) : 'No Balance');
-      return `<option value="${i}">${c.name} (${balStr})</option>`;
+      return `<option value="${escapeHtml(String(c.id || ''))}">${escapeHtml(c.name)} (${balStr})</option>`;
     }).join('')}
   `;
   
@@ -12266,10 +12305,14 @@ function onPaymentCustomerChange() {
   const newBalanceRow = document.getElementById('paymentNewBalanceRow');
 
   if (!paymentSelect) return;
-  const customerIndex = paymentSelect.value;
-  if (customerIndex !== '') {
-    const customer = customers[parseInt(customerIndex, 10)];
-    const currentBalance = customer.balance || 0;
+  const customerId = paymentSelect.value;
+  if (customerId !== '') {
+    const customer = customers.find(entry => entry && String(entry.id) === String(customerId));
+    if (!customer) {
+      paymentSelect.value = '';
+      return onPaymentCustomerChange();
+    }
+    const currentBalance = getCustomerAccountBalance(customer);
     
     const currencySymbol = getCurrencySymbol();
     if (balanceRow && balanceVal) {
@@ -12347,9 +12390,30 @@ async function deleteCustomer(index) {
   const confirmed = await showAppConfirm(`Are you sure you want to delete customer "${customers[index].name}"?`, 'Delete Customer', 'Delete', 'Cancel');
   if (confirmed?.confirmed) {
     const customerToDelete = customers[index];
+    const linkedTransactions = (Array.isArray(transactions) ? transactions : [])
+      .filter(transaction => transaction?.customerId && customerToDelete?.id && String(transaction.customerId) === String(customerToDelete.id));
+    linkedTransactions.forEach(transaction => {
+      const transactionId = transaction.id || transaction.recordId || transaction.date;
+      enqueueLocalSyncAction({
+        entityType: 'sales',
+        operation: 'delete',
+        payload: { id: transactionId, recordId: transactionId, operation: 'delete' },
+        businessId: getEffectiveUid(),
+        userId: currentUser?.uid || getEffectiveUid(),
+        updatedBy: currentUser?.uid || getEffectiveUid(),
+        deviceId: getCurrentDeviceId()
+      }).catch(console.warn);
+    });
     enqueueEnterpriseRecordChange('customers', customerToDelete, 'delete').catch(console.warn);
+    transactions = (Array.isArray(transactions) ? transactions : []).filter(transaction => !linkedTransactions.includes(transaction));
     customers.splice(index, 1);
+    ['orderCustomerSelect', 'paymentCustomerSelect'].forEach(id => {
+      const select = document.getElementById(id);
+      if (select && select.value === String(customerToDelete.id)) select.value = '';
+    });
     saveData();
+    renderTransactions();
+    updateDashboard();
     renderCustomerList();
   }
 }

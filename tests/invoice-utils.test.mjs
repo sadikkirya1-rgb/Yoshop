@@ -51,6 +51,19 @@ test('buildInvoiceListItems keeps separate debt transactions for the same custom
   assert.deepEqual(rows.map(row => row.balance).sort((a, b) => a - b), [-80, -50]);
 });
 
+test('buildInvoiceListItems does not attach an old ID transaction to a new customer with the same name', () => {
+  const customer = { id: 'new-customer', name: 'Alex' };
+  const transactions = [{
+    id: 'old-sale',
+    customerId: 'old-customer',
+    customerNameReal: 'Alex',
+    total: 100,
+    amountPaid: 0
+  }];
+
+  assert.equal(buildInvoiceListItems({ customers: [customer], transactions }).length, 0);
+});
+
 test('buildInvoiceListItems includes fully paid account invoices even without an invoice number', () => {
   const customer = {
     id: 'cust-2',

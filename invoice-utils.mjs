@@ -6,6 +6,9 @@ function normalizeInvoiceNumber(invoiceNumber) {
 
 function findMatchingCustomer(customer, transaction) {
   if (!customer || !transaction) return null;
+  if (transaction?.customerId) {
+    return customer?.id && String(transaction.customerId) === String(customer.id) ? customer : null;
+  }
   const matchesCustomerId = customer?.id && transaction?.customerId && transaction.customerId === customer.id;
   const matchesCustomerName = transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
   const matchesLegacyCustomerName = transaction?.customerName && customer?.name && transaction.customerName === customer.name;
@@ -207,7 +210,7 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
         ? Number(transaction.balance)
         : Math.min(0, amountPaid - total);
 
-      const hasRealCustomer = Boolean(customer?.id || transaction.customerId);
+      const hasRealCustomer = Boolean(customer?.id);
       const shouldIncludeInvoice = hasRealCustomer && (balance <= 0 || transaction.amountPaid !== undefined);
       if (!shouldIncludeInvoice) return null;
 
