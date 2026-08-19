@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v51';
+const CACHE_NAME = 'yoshop-v52';
 
 const APP_SHELL_URLS = [
   '/',
@@ -7,9 +7,9 @@ const APP_SHELL_URLS = [
   '/assetlinks.json',
 
   '/style.css',
-  '/style.css?v=20260708-v1',
+  '/style.css?v=20260819-v1',
   '/app.js',
-  '/app.js?v=20260714-v1',
+  '/app.js?v=20260819-v1',
   '/invoice-utils.mjs',
 
   '/offline-architecture.mjs',
@@ -28,6 +28,7 @@ const APP_SHELL_URLS = [
   '/assets/icons/wind400.png',
   '/assets/icons/market.png',
   '/assets/icons/icon.png',
+  '/assets/icons/Cloud.svg.svg',
 
   'https://cdn.jsdelivr.net/npm/chart.js',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',

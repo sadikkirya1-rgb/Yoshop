@@ -14278,11 +14278,11 @@ async function updateVersionDisplay() {
       const match = text.match(/CACHE_NAME\s*=\s*['"]yoshop-(v\d+)['"]/);
       if (match) displayEl.textContent = match[1].toUpperCase();
     } else {
-      displayEl.textContent = '1.0.4'; // Fallback on non-200 response
+      displayEl.textContent = '1.0.5'; // Fallback on non-200 response
     }
   } catch (e) {
     console.warn('[Version] Failed to fetch service worker version:', e.message);
-    displayEl.textContent = '1.0.4'; // Fallback
+    displayEl.textContent = '1.0.5'; // Fallback
   }
 
   renderSubscriptionFooterInfo();
