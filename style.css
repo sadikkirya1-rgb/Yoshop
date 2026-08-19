@@ -1833,7 +1833,7 @@ body.dark-mode tr.u-cursor-pointer:hover {
 }
 
 .table-actions-cell {
-  white-space: normal;
+  white-space: nowrap;
   width: auto;
 }
 
@@ -1845,11 +1845,24 @@ body.dark-mode tr.u-cursor-pointer:hover {
   height: 28px;
   padding: 0;
   margin: 1px;
+  flex: 0 0 auto;
   border-radius: 6px;
 }
 
 .table-actions-cell .icon-btn:hover {
   background: rgba(255, 107, 53, 0.08);
+}
+
+/* Keep every table action group on one line on narrow screens. */
+table td:has(.btn),
+table td:has(.icon-btn) {
+  white-space: nowrap;
+}
+
+table td:has(> .btn) > .btn,
+table td:has(> .icon-btn) > .icon-btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 @media (max-width: 900px) {
@@ -2815,6 +2828,37 @@ section#menuTab.active {
 
 .u-flex-nowrap {
   flex-wrap: nowrap;
+}
+
+/* Keep action buttons on one line; narrow screens can scroll the group. */
+.receipt-actions,
+.app-popup-actions,
+.invoice-action-group,
+.dish-form-actions,
+.success-actions,
+.dashboard-filter-buttons,
+.dashboard-filter-buttons .button-group,
+.stock-filter-buttons,
+.button-group,
+.action-buttons {
+  display: flex;
+  flex-wrap: nowrap !important;
+  align-items: center;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
+.receipt-actions > .btn,
+.app-popup-actions > .btn,
+.invoice-action-group > .btn,
+.dish-form-actions .btn,
+.success-actions > .btn,
+.dashboard-filter-buttons .btn,
+.stock-filter-buttons .btn,
+.button-group > .btn,
+.action-buttons > .btn {
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .u-mt-10 {

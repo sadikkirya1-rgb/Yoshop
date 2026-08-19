@@ -443,7 +443,7 @@
           <div id="menuOrderSummary" class="menu-summary">
             <div class="total">Total: <span class="currency-symbol">$</span> <span id="menuTotal">0.00</span></div>
               <div id="menuItemCountLabel" class="menu-item-count" style="font-size:0.95rem; color:#334155; margin-top:4px;">Items: 0</div>
-            <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+            <div class="action-buttons" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
               <button class="btn btn-danger" onclick="clearCurrentOrder()" title="Clear Order" style="margin: 0;">X</button>
               <button class="btn" onclick="previewOrder()" style="margin: 0;">Preview</button>
               <button class="btn btn-success" onclick="processBill()" style="margin: 0;">Checkout</button>
@@ -710,7 +710,7 @@
               <label for="customerStatusMessageInput" style="display:block; margin-bottom:4px; font-size:0.85rem;">Notification message (send notice message by WhatsApp)</label>
               <input type="text" id="customerStatusMessageInput" placeholder="Optional custom message" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1;" />
             </div>
-            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+            <div class="action-buttons" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
               <select id="customerStatusTemplateSelect" onchange="applyCustomerQuickMessage(this.value)" style="padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1; min-width:180px;">
                 <option value="">Quick messages</option>
                 <option value="order_received">Order Received</option>
@@ -1294,7 +1294,7 @@
               title="Preview Report">Preview</button>
           </div>
         </div>
-        <div class="input-row u-mb-20" style="justify-content: flex-end; gap: 5px; flex-wrap: wrap;">
+        <div class="input-row action-buttons u-mb-20" style="justify-content: flex-end; gap: 5px; flex-wrap: wrap;">
           <button class="btn btn-primary-blue u-fs-08" onclick="downloadReportPDF('p')" title="Portrait A4">PDF
             (P)</button>
           <button class="btn btn-primary-blue u-fs-08" onclick="downloadReportPDF('l')" title="Landscape A4">PDF

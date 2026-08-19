@@ -9796,10 +9796,9 @@ function updateDashboard() {
   const filteredTransactions = getFilteredDashboardTransactions();
   const filteredExpenses = getFilteredDashboardExpenses();
   const allProducts = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
-  const categoriesForDashboard = new Set([
-    ...allProducts.map(d => d && d.category).filter(Boolean),
-    ...(Array.isArray(dishCategories) ? dishCategories : []).filter(Boolean)
-  ]);
+  const categoriesForDashboard = new Set(
+    normalizeCategoryList(Array.isArray(dishCategories) ? dishCategories : [])
+  );
 
   document.getElementById('menuCount').textContent = allProducts.length;
   document.getElementById('uniqueCategoriesCount').textContent = categoriesForDashboard.size;
@@ -11921,7 +11920,7 @@ function renderInvoices() {
 
         const actionWrapper = document.createElement('div');
         actionWrapper.className = 'invoice-action-group';
-        actionWrapper.style.cssText = 'display:inline-flex; flex-wrap:wrap; gap:4px; justify-content:flex-end; align-items:center; min-width:0;';
+        actionWrapper.style.cssText = 'display:inline-flex; flex-wrap:nowrap; gap:4px; justify-content:flex-end; align-items:center; min-width:0; overflow-x:auto; white-space:nowrap;';
         actionWrapper.appendChild(adjustButton);
         actionWrapper.appendChild(bcButton);
         actionWrapper.appendChild(a4Button);
