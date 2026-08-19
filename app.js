@@ -4335,7 +4335,9 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
   }
 
   if (syncIcon) {
-    syncIcon.textContent = shouldPulse ? '' : (state || '🔴');
+    syncIcon.innerHTML = shouldPulse
+      ? '<img class="cloud-sync-icon" src="assets/icons/Cloud.svg.svg" alt="">'
+      : (state || '🔴');
     syncIcon.classList.toggle('sync-pulse', shouldPulse);
     syncIcon.classList.toggle('sync-icon-spinning', shouldPulse);
   }
@@ -4354,7 +4356,7 @@ async function syncNow() {
   const syncBtn = document.getElementById('header-sync-status');
 
   if (statusEl) {
-    statusEl.innerHTML = '<span class="spinner" style="width:14px; height:14px; border-width:2px; margin:0;"></span>';
+    statusEl.innerHTML = '<img class="cloud-sync-icon cloud-sync-icon-small" src="assets/icons/Cloud.svg.svg" alt="Syncing">';
   }
   if (syncBtn) syncBtn.disabled = true;
 
