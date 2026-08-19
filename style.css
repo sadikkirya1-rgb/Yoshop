@@ -2902,6 +2902,24 @@ section#menuTab.active {
   white-space: nowrap !important;
 }
 
+
+/* Keep table content inline; table wrappers provide horizontal scrolling on mobile. */
+table:not(.payment-modal-content table) th,
+table:not(.payment-modal-content table) td,
+table:not(.payment-modal-content table) td.u-text-break {
+  white-space: nowrap !important;
+  word-break: normal !important;
+  overflow: visible !important;
+}
+
+/* Payment details are the intentional exception because the card must remain readable. */
+.payment-modal-content table th,
+.payment-modal-content table td {
+  white-space: normal !important;
+  word-break: normal !important;
+  overflow: visible !important;
+}
+
 .u-float-right {
   float: right;
 }
