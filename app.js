@@ -4182,12 +4182,11 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null) 
 
     // Always process the result, even if empty, to ensure UI stays consistent
     if (cloudTransactions.length > 0 || (Array.isArray(transactions) && transactions.length > 0)) {
-      // Merge cloud results with existing local transactions to build a complete local archive
-      // We use the date ISO string as a unique identifier for deduplication
-      // 1. Add current local transactions (preserving unsynced ones)
+      const pendingLocalTransactions = (Array.isArray(transactions) ? transactions : [])
+        .filter(transaction => transaction && transaction.synced !== true);
       const mergedTransactions = cloudTransactions.length > 0
-        ? mergeTransactionsPreservingDuplicates(transactions, cloudTransactions.map(t => ({ ...t, synced: true })))
-        : transactions;
+        ? mergeTransactionsPreservingDuplicates(pendingLocalTransactions, cloudTransactions.map(t => ({ ...t, synced: true })))
+        : pendingLocalTransactions;
 
       // 2. Keep a healthy local archive for offline reports
       transactions = deduplicateTransactions(mergedTransactions.slice(0, 1000));
@@ -4320,7 +4319,7 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
   const syncBadgeEl = document.getElementById('sync-badge');
   const syncBtn = document.getElementById('header-sync-status');
   const syncIcon = syncBtn ? syncBtn.querySelector('.header-sync-icon') : null;
-  const shouldPulse = /syncing/i.test(String(title || '')) || state === '🔄' || isSyncing === true;
+  const shouldPulse = /syncing/i.test(String(title || '')) || state === 'syncing' || isSyncing === true;
 
   if (statusEl) {
     statusEl.textContent = '';
@@ -4336,8 +4335,9 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
   }
 
   if (syncIcon) {
-    syncIcon.textContent = state || '🔴';
+    syncIcon.textContent = shouldPulse ? '' : (state || '🔴');
     syncIcon.classList.toggle('sync-pulse', shouldPulse);
+    syncIcon.classList.toggle('sync-icon-spinning', shouldPulse);
   }
 
   if (syncBadgeEl) {
@@ -4422,7 +4422,7 @@ async function updateOnlineStatus() {
 
   if (pendingCount > 0) {
     renderSyncStatus({
-      state: '🔄',
+      state: 'syncing',
       label: '',
       title: `Online • syncing ${pendingCount} item(s) to cloud...`,
       background: '#f59e0b',
@@ -8651,19 +8651,21 @@ async function deleteTransaction(index) {
   const txToDelete = transactions[index];
   transactions.splice(index, 1);
 
-  // Delete from Cloud Sub-collection
   const effectiveUid = getEffectiveUid();
   if (effectiveUid && dbFirestore) {
-    const txRef = collection(dbFirestore, "users", effectiveUid, "transactions");
-    const q = query(txRef, where("date", "==", txToDelete.date), where("total", "==", txToDelete.total));
-    getDocs(q).then(snap => {
-      snap.forEach(async (doc) => {
-        await deleteDoc(doc.ref);
-      });
-    }).catch(e => console.error("Cloud delete failed:", e));
+    try {
+      const txRef = collection(dbFirestore, "users", effectiveUid, "transactions");
+      const q = txToDelete.id
+        ? query(txRef, where("id", "==", txToDelete.id))
+        : query(txRef, where("date", "==", txToDelete.date), where("total", "==", txToDelete.total));
+      const snap = await getDocs(q);
+      await Promise.all(snap.docs.map(transactionDoc => deleteDoc(transactionDoc.ref)));
+    } catch (error) {
+      console.error("Cloud delete failed:", error);
+    }
   }
 
-  saveData();
+  await saveData(false);
   renderTransactions();
   updateDashboard();
   await showAppAlert("Transaction deleted.", "Deleted");
@@ -9671,6 +9673,83 @@ function getFilteredDashboardAdjustments() {
   return adjustmentList;
 }
 
+async function clearAllAdjustments() {
+  const transactionRecords = Array.isArray(transactions) ? transactions : [];
+  const customerRecords = Array.isArray(customers) ? customers : [];
+  const transactionAdjustments = transactionRecords.reduce((total, transaction) => {
+    const entries = Array.isArray(transaction?.adjustments) && transaction.adjustments.length
+      ? transaction.adjustments
+      : (transaction?.lastAdjustment ? [transaction.lastAdjustment] : []);
+    return total + entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0);
+  }, 0);
+  const customerAdjustments = customerRecords.reduce((total, customer) => {
+    const entries = Array.isArray(customer?.adjustments) ? customer.adjustments : [];
+    return total + entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0);
+  }, 0);
+  const adjustmentCount = transactionRecords.reduce((count, transaction) => {
+    return count + (Array.isArray(transaction?.adjustments) ? transaction.adjustments.length : (transaction?.lastAdjustment ? 1 : 0));
+  }, 0) + customerRecords.reduce((count, customer) => count + (Array.isArray(customer?.adjustments) ? customer.adjustments.length : 0), 0);
+
+  if (adjustmentCount === 0) {
+    await showAppAlert('There are no saved adjustments to clear.', 'No Adjustments');
+    return;
+  }
+
+  const confirmed = await showAppConfirm(
+    `Clear ${adjustmentCount} adjustment record(s) totaling ${formatCurrency(transactionAdjustments + customerAdjustments)}? This will restore the related invoice and customer balances.`,
+    'Clear Adjustments',
+    'Clear All',
+    'Cancel'
+  );
+  if (!confirmed?.confirmed) return;
+
+  const transactionSyncs = [];
+  transactionRecords.forEach(transaction => {
+    const entries = Array.isArray(transaction?.adjustments) && transaction.adjustments.length
+      ? transaction.adjustments
+      : (transaction?.lastAdjustment ? [transaction.lastAdjustment] : []);
+    if (entries.length === 0) return;
+
+    const adjustmentTotal = entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0);
+    transaction.amountPaid = Math.max(0, (Number(transaction.amountPaid) || 0) - adjustmentTotal);
+    transaction.balance = Math.min(0, transaction.amountPaid - (Number(transaction.total) || 0));
+    transaction.adjustments = [];
+    transaction.lastAdjustment = null;
+    transaction.synced = false;
+    transaction.syncStatus = 'pending';
+    transactionSyncs.push(enqueueTransactionSync(transaction));
+  });
+
+  const customerSyncs = [];
+  customerRecords.forEach(customer => {
+    const entries = Array.isArray(customer?.adjustments) ? customer.adjustments : [];
+    if (entries.length === 0) return;
+
+    const adjustmentTotal = entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0);
+    customer.balance = (Number(customer.balance) || 0) - adjustmentTotal;
+    customer.totalPaid = Math.max(0, (Number(customer.totalPaid) || 0) - adjustmentTotal);
+    customer.adjustments = [];
+    customer.lastTransactionDate = customer.lastTransactionDate || null;
+    const updatedCustomer = enrichEnterpriseRecord('customers', customer, customer);
+    Object.assign(customer, updatedCustomer);
+    customerSyncs.push(enqueueEnterpriseRecordChange('customers', customer, 'upsert'));
+  });
+
+  renderTransactions();
+  renderCustomerList();
+  updateDashboard();
+  void Promise.allSettled([...transactionSyncs, ...customerSyncs])
+    .then(() => saveData(false))
+    .then(() => {
+      if (navigator.onLine && currentUser && dbFirestore) {
+        return flushLocalSyncQueue({ force: true });
+      }
+      return null;
+    })
+    .catch(error => console.warn('[SYNC] Failed to flush cleared adjustments:', error));
+  await showAppAlert('All adjustment amounts were cleared and queued for cloud sync.', 'Adjustments Cleared');
+}
+
 function initializeDashboardFilters() {
 
   // Always default to today on app load
@@ -9780,6 +9859,7 @@ function updateDashboard() {
 }
 
 window.updateDashboard = updateDashboard;
+window.clearAllAdjustments = clearAllAdjustments;
 window.setDashboardFilter = setDashboardFilter;
 window.applyDashboardDateFilter = applyDashboardDateFilter;
 window.savePurchaseEntry = savePurchaseEntry;
@@ -13385,14 +13465,16 @@ async function deleteWastageLossEntry(id) {
   if (!confirmed || !confirmed.confirmed) return;
 
   wastageLossHistory = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).filter(e => e.id !== id);
-  await saveData(true, { allowEmptyOverwriteFields: ['wastageLossHistory'] }).catch(() => {});
-  if (navigator.onLine && currentUser && dbFirestore) {
-    try {
-      await flushLocalSyncQueue({ force: true });
-    } catch (error) { console.warn('[SYNC] Failed to flush deleted waste/loss sync:', error); }
-  }
   renderWastageLossHistory();
   updateDashboard();
+  void saveData(true, { allowEmptyOverwriteFields: ['wastageLossHistory'] })
+    .then(() => {
+      if (navigator.onLine && currentUser && dbFirestore) {
+        return flushLocalSyncQueue({ force: true });
+      }
+      return null;
+    })
+    .catch(error => console.warn('[SYNC] Failed to flush deleted waste/loss sync:', error));
   await showAppAlert('Waste/loss entry deleted.', 'Deleted');
 }
 
@@ -13465,14 +13547,16 @@ async function deletePurchaseEntry(id) {
   if (!confirmed || !confirmed.confirmed) return;
 
   purchaseHistory = (Array.isArray(purchaseHistory) ? purchaseHistory : []).filter(e => e.id !== id);
-  await saveData(true, { allowEmptyOverwriteFields: ['purchaseHistory'] }).catch(() => {});
-  if (navigator.onLine && currentUser && dbFirestore) {
-    try {
-      await flushLocalSyncQueue({ force: true });
-    } catch (error) { console.warn('[SYNC] Failed to flush deleted purchase sync:', error); }
-  }
   renderPurchaseHistory();
   updateDashboard();
+  void saveData(true, { allowEmptyOverwriteFields: ['purchaseHistory'] })
+    .then(() => {
+      if (navigator.onLine && currentUser && dbFirestore) {
+        return flushLocalSyncQueue({ force: true });
+      }
+      return null;
+    })
+    .catch(error => console.warn('[SYNC] Failed to flush deleted purchase sync:', error));
   await showAppAlert('Purchase entry deleted.', 'Deleted');
 }
 
@@ -13921,8 +14005,13 @@ function setupRealTimeSync(uid) {
               // SAFE MERGE: Prefer cloud data only when it has actual content.
               // Never let an empty/null cloud field overwrite non-empty local data.
               // This prevents backgrounding sync races from wiping local state.
-              const safeArray = (cloudVal, localVal) => {
+              const safeArray = (cloudVal, localVal, fieldName = '') => {
                 if (Array.isArray(cloudVal) && cloudVal.length > 0) return cloudVal;
+                if (
+                  Array.isArray(cloudVal) &&
+                  cloudVal.length === 0 &&
+                  (fieldName === 'purchaseHistory' || fieldName === 'wastageLossHistory')
+                ) return cloudVal;
                 if (Array.isArray(cloudVal) && cloudVal.length === 0 && Array.isArray(localVal) && localVal.length === 0) return cloudVal;
                 return Array.isArray(localVal) && localVal.length > 0 ? localVal : (cloudVal || localVal || []);
               };
@@ -13939,8 +14028,8 @@ function setupRealTimeSync(uid) {
                 customers: hydrateEnterpriseRecords('customers', safeArray(cloudData.customers, customers)),
                 units: hydrateEnterpriseRecords('units', safeArray(cloudData.units, units)),
                 suppliers: hydrateEnterpriseRecords('suppliers', safeArray(cloudData.suppliers, supplierList)),
-                purchaseHistory: hydrateEnterpriseRecords('purchaseOrders', safeArray(cloudData.purchaseHistory, purchaseHistory)),
-                wastageLossHistory: hydrateEnterpriseRecords('expenses', safeArray(cloudData.wastageLossHistory, wastageLossHistory)),
+                purchaseHistory: hydrateEnterpriseRecords('purchaseOrders', safeArray(cloudData.purchaseHistory, purchaseHistory, 'purchaseHistory')),
+                wastageLossHistory: hydrateEnterpriseRecords('expenses', safeArray(cloudData.wastageLossHistory, wastageLossHistory, 'wastageLossHistory')),
                 restockHistory: hydrateEnterpriseRecords('inventoryHistory', safeArray(cloudData.restockHistory, restockHistory)),
                 appAdminSettings: pickNewestSettingsRecord(appAdminSettings, cloudData.appAdminSettings, defaultAppAdminSettings)
               };
