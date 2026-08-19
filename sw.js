@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v52';
+const CACHE_NAME = 'yoshop-v53';
 
 const APP_SHELL_URLS = [
   '/',
@@ -165,7 +165,7 @@ self.addEventListener('fetch', (event) => {
         }
 
         if (request.destination === 'image') {
-          return new Response('', { status: 204 });
+          return new Response(null, { status: 204 });
         }
 
         return new Response('Offline: resource not available', {

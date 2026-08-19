@@ -2385,7 +2385,7 @@ async function persistImageCache() {
 }
 
 // ===== Data Handling =====
-const PLACEHOLDER_IMAGE = 'https://placehold.co/100';
+const PLACEHOLDER_IMAGE = '/assets/icons/android192x192.png';
 let defaultMenu = [];
 let menu = [];
 let stockTableFilter = 'all';
@@ -5473,7 +5473,7 @@ function renderMenu() {
           ? `<p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">${stockLabel}</p>`
           : '';
         item.innerHTML = `
-              <img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.src='https://placehold.co/100';">
+              <img src="${displayImage}" crossorigin="anonymous" alt="">
               <div class="menu-item-body">
                 <div class="menu-item-header">
                   <h4>${dish.name}</h4>
@@ -5493,8 +5493,10 @@ function renderMenu() {
           if (cardImg) {
             cardImg.crossOrigin = 'anonymous';
             cardImg.onerror = function () {
-              console.warn('[IMG_LOAD_FAIL] ', dish.name, '->', cardImg.src);
-              cardImg.src = 'https://placehold.co/100';
+              if (cardImg.dataset.fallbackApplied === 'true') return;
+              cardImg.dataset.fallbackApplied = 'true';
+              cardImg.removeAttribute('crossorigin');
+              cardImg.src = PLACEHOLDER_IMAGE;
             };
           }
         } catch (e) { console.warn('Failed to attach img diagnostics', e); }
@@ -7135,17 +7137,14 @@ function renderDishesTable() {
     const sellingPrice = dish.price || 0;
     const profitValue = sellingPrice - costPrice;
 
-    // Add cache-buster for consistency in the products table
-    let displayImage = dish.image || "https://placehold.co/100";
-    if (displayImage.startsWith('http') && navigator.onLine) {
-      displayImage += (displayImage.includes('?') ? '&' : '?') + 'nocache=' + Date.now();
-    }
+    // Keep signed Firebase Storage URLs unchanged.
+    const displayImage = dish.image || PLACEHOLDER_IMAGE;
 
     const tr = document.createElement('tr');
     tr.dataset.menuIndex = i;
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('dishesTableBody','selectAllProducts'); updateDeleteMarkedButtonVisibility('dishesTableBody','deleteMarkedProductsBtn')"></td>
         <td>${rowIndex + 1}</td>
-        <td><img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.removeAttribute('crossorigin'); this.src='https://placehold.co/100';"></td>
+        <td><img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.onerror=null; this.removeAttribute('crossorigin'); this.src='${PLACEHOLDER_IMAGE}';"></td>
         <td>${dish.name}${dish.type === 'service' ? ' <small style="font-size:0.75rem; color:#0d6efd;">(Service)</small>' : ''}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(sellingPrice)}</td>

@@ -2836,8 +2836,6 @@ section#menuTab.active {
 .invoice-action-group,
 .dish-form-actions,
 .success-actions,
-.dashboard-filter-buttons,
-.dashboard-filter-buttons .button-group,
 .stock-filter-buttons,
 .button-group,
 .action-buttons {
@@ -2853,12 +2851,18 @@ section#menuTab.active {
 .invoice-action-group > .btn,
 .dish-form-actions .btn,
 .success-actions > .btn,
-.dashboard-filter-buttons .btn,
 .stock-filter-buttons .btn,
 .button-group > .btn,
 .action-buttons > .btn {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+.dashboard-filter-buttons,
+.dashboard-filter-buttons .button-group {
+  flex-wrap: wrap !important;
+  overflow-x: visible;
+  white-space: normal;
 }
 
 .u-mt-10 {
