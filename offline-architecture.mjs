@@ -228,6 +228,8 @@ function canDedupeSyncAction(action = {}) {
     'staff',
     'units',
     'inventoryHistory',
+    'purchaseOrders',
+    'expenses',
     'settings',
     'appAdminSettings',
     'businessProfile'

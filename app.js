@@ -2252,6 +2252,10 @@ async function syncCloudAction(action) {
     const txRef = collection(dbFirestore, 'users', currentUser.uid, 'transactions');
     const payload = action.payload || {};
     const txId = payload.id || action.id;
+    if (payload.operation === 'delete' || action.operation === 'delete') {
+      await deleteDoc(doc(txRef, String(txId)));
+      return;
+    }
     await setDoc(doc(txRef, txId), sanitizeForFirestore({
       ...payload,
       synced: true,
@@ -8652,24 +8656,46 @@ async function deleteTransaction(index) {
 
   const txToDelete = transactions[index];
   transactions.splice(index, 1);
-
-  const effectiveUid = getEffectiveUid();
-  if (effectiveUid && dbFirestore) {
-    try {
-      const txRef = collection(dbFirestore, "users", effectiveUid, "transactions");
-      const q = txToDelete.id
-        ? query(txRef, where("id", "==", txToDelete.id))
-        : query(txRef, where("date", "==", txToDelete.date), where("total", "==", txToDelete.total));
-      const snap = await getDocs(q);
-      await Promise.all(snap.docs.map(transactionDoc => deleteDoc(transactionDoc.ref)));
-    } catch (error) {
-      console.error("Cloud delete failed:", error);
-    }
-  }
-
-  await saveData(false);
   renderTransactions();
   updateDashboard();
+
+  const effectiveUid = getEffectiveUid();
+  const transactionId = txToDelete.id || txToDelete.recordId || txToDelete.date;
+  const deleteAction = effectiveUid && dbFirestore
+    ? enqueueLocalSyncAction({
+      entityType: 'sales',
+      operation: 'delete',
+      payload: {
+        id: transactionId,
+        recordId: transactionId,
+        operation: 'delete'
+      },
+      businessId: effectiveUid,
+      userId: currentUser?.uid || effectiveUid,
+      staffId: getCurrentStaffId(),
+      updatedBy: currentUser?.uid || effectiveUid,
+      deviceId: getCurrentDeviceId()
+    })
+    : Promise.resolve(null);
+
+  void Promise.all([
+    saveData(false),
+    deleteAction,
+    (async () => {
+      if (!effectiveUid || !dbFirestore) return;
+      const txRef = collection(dbFirestore, "users", effectiveUid, "transactions");
+      const references = [];
+      if (transactionId) {
+        references.push(deleteDoc(doc(txRef, String(transactionId))));
+      }
+      const q = query(txRef, where("date", "==", txToDelete.date), where("total", "==", txToDelete.total));
+      const snap = await getDocs(q);
+      references.push(...snap.docs.map(transactionDoc => deleteDoc(transactionDoc.ref)));
+      await Promise.all(references);
+    })()
+  ])
+    .then(() => flushLocalSyncQueue({ force: true }))
+    .catch(error => console.error("Cloud delete failed:", error));
   await showAppAlert("Transaction deleted.", "Deleted");
 }
 async function reopenTransaction(index) {
