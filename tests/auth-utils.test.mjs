@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getAuthErrorMessage } from '../auth-utils.mjs';
+import { getAuthErrorMessage, isDeletedAccountStatus } from '../auth-utils.mjs';
 
 test('returns a clear message for invalid credentials', () => {
   const result = getAuthErrorMessage({ code: 'auth/invalid-credential' });
@@ -17,4 +17,10 @@ test('returns guidance when email/password provider is disabled', () => {
 test('falls back to a generic message for unknown errors', () => {
   const result = getAuthErrorMessage({ message: 'Unexpected failure' });
   assert.match(result.message, /Unexpected failure/i);
+});
+
+test('recognizes deleted account status regardless of casing or whitespace', () => {
+  assert.equal(isDeletedAccountStatus(' DELETED '), true);
+  assert.equal(isDeletedAccountStatus('active'), false);
+  assert.equal(isDeletedAccountStatus(undefined), false);
 });

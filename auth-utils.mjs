@@ -35,3 +35,7 @@ export function getAuthErrorMessage(error) {
     message: message || 'Unable to sign in. Please try again or use Google sign-in.'
   };
 }
+
+export function isDeletedAccountStatus(status) {
+  return String(status || '').trim().toLowerCase() === 'deleted';
+}

@@ -17,7 +17,7 @@ import { createCloudRepositoryService } from './cloud-service.mjs';
 import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry } from './record-utils.mjs';
-import { getAuthErrorMessage } from './auth-utils.mjs';
+import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics } from './invoice-utils.mjs';
 
@@ -2914,8 +2914,11 @@ async function deleteShop(shopUid, shopName) {
     // Stop sync if we deleted our own data
     if (shopUid === currentUser?.uid) isInitialLoadComplete = false;
 
-    // 3. Delete the user metadata document
-    await deleteDoc(doc(dbFirestore, "users", shopUid));
+    // Keep a tombstone so the Firebase Auth identity cannot recreate access on its next login.
+    await setDoc(doc(dbFirestore, "users", shopUid), {
+      status: 'deleted',
+      deletedAt: new Date().toISOString()
+    }, { merge: true });
 
     alert(`Success: "${shopName}" and all its Firestore data have been deleted.`);
     refreshAppAdminShops();
@@ -14627,6 +14630,19 @@ async function mainInit() {
       updateAuthUI(user);
 
       if (user) {
+        try {
+          await user.reload();
+        } catch (authRefreshError) {
+          if (authRefreshError?.code === 'auth/user-not-found') {
+            console.warn('[AUTH] Firebase Auth account no longer exists:', user.uid);
+            await signOut(auth);
+            userMetadata = null;
+            await showAppAlert('This Firebase account has been deleted and can no longer be used to log in.', 'Account Deleted');
+            return;
+          }
+          console.warn('[AUTH] Could not refresh Firebase Auth session:', authRefreshError);
+        }
+
         console.log("Logged in, syncing cloud data in background...");
         syncUserPresence(true).catch(() => {});
 
@@ -14636,17 +14652,32 @@ async function mainInit() {
           const userSnap = await getDoc(userRef);
 
           const data = userSnap.exists() ? userSnap.data() : {};
-          const status = String(data.status || 'active').trim().toLowerCase();
+          const status = String(data.status || '').trim().toLowerCase();
+
+          if (!userSnap.exists() || isDeletedAccountStatus(status)) {
+            console.warn('[AUTH] Rejecting login for a deleted or unregistered app account:', user.uid);
+            await signOut(auth);
+            userMetadata = null;
+            await showAppAlert(
+              isDeletedAccountStatus(status)
+                ? 'This account has been deleted and cannot be used to log in.'
+                : 'This Firebase account is not registered for Yoshop. Please use Register to create an account.',
+              'Account Access Denied'
+            );
+            return;
+          }
+
+          const normalizedStatus = status || 'active';
 
           // Save metadata locally for permission checks
-          userMetadata = { ...data, status, uid: user.uid };
+          userMetadata = { ...data, status: normalizedStatus, uid: user.uid };
           renderSubscriptionFooterInfo();
           renderFooterClock();
 
           await setDoc(doc(dbFirestore, "users", user.uid), {
             email: user.email,
             lastLogin: new Date().toISOString(),
-            status: status
+            status: normalizedStatus
           }, { merge: true });
         } catch (e) {
           handleFirebaseError(e, "User Metadata Sync", `users/${user.uid}`);
