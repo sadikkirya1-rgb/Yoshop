@@ -5471,9 +5471,9 @@ function renderMenu() {
         // Use the dish image directly - do NOT append cache-busters to Firebase Storage
         // URLs because Storage URLs are HMAC-signed and extra params break them
         const cachedImage = getCachedDishImage(dish.name);
-        let displayImage = isValidMenuImage(dish.image) && !isLegacyUserStorageUrl(dish.image)
+        let displayImage = isValidMenuImage(dish.image)
           ? dish.image
-          : (isValidMenuImage(cachedImage) && !isLegacyUserStorageUrl(cachedImage) ? cachedImage : PLACEHOLDER_IMAGE);
+          : (isValidMenuImage(cachedImage) ? cachedImage : PLACEHOLDER_IMAGE);
         if (!isValidMenuImage(dish.image) && getCachedDishImage(dish.name)) {
           dish.image = getCachedDishImage(dish.name);
         }
@@ -5484,7 +5484,7 @@ function renderMenu() {
           ? `<p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">${stockLabel}</p>`
           : '';
         item.innerHTML = `
-              <img src="${displayImage}" crossorigin="anonymous" alt="">
+              <img src="${displayImage}" alt="">
               <div class="menu-item-body">
                 <div class="menu-item-header">
                   <h4>${dish.name}</h4>
@@ -5502,7 +5502,6 @@ function renderMenu() {
         try {
           const cardImg = item.querySelector('img');
           if (cardImg) {
-            cardImg.crossOrigin = 'anonymous';
             cardImg.onerror = function () {
               if (cardImg.dataset.fallbackApplied === 'true') return;
               cardImg.dataset.fallbackApplied = 'true';
@@ -5513,7 +5512,6 @@ function renderMenu() {
                 dish.image = null;
                 enqueueEnterpriseRecordChange('products', dish, 'upsert').catch(console.warn);
               }
-              cardImg.removeAttribute('crossorigin');
               cardImg.src = PLACEHOLDER_IMAGE;
             };
           }
@@ -5656,17 +5654,15 @@ function updateMenuUI() {
 
     // Surgically update the image if it changed. Do not overwrite existing images with placeholders.
     const img = card.querySelector('img');
-    const expectedImg = isValidMenuImage(dish.image) && !isLegacyUserStorageUrl(dish.image) ? dish.image : null;
+    const expectedImg = isValidMenuImage(dish.image) ? dish.image : null;
     if (img && expectedImg && img.getAttribute('src') !== expectedImg && card.dataset.failedImage !== expectedImg) {
       try {
-        img.crossOrigin = 'anonymous';
         img.onerror = function () {
           const failedImage = expectedImg;
           if (card.dataset.failedImage === failedImage) return;
           card.dataset.failedImage = failedImage;
           delete lastKnownDishImages[name];
           persistImageCache().catch(() => { });
-          img.removeAttribute('crossorigin');
           img.src = PLACEHOLDER_IMAGE;
           if (dish.image === failedImage) {
             dish.image = null;
@@ -7172,14 +7168,13 @@ function renderDishesTable() {
     const sellingPrice = dish.price || 0;
     const profitValue = sellingPrice - costPrice;
 
-    // Keep signed Firebase Storage URLs unchanged.
-    const displayImage = isLegacyUserStorageUrl(dish.image) ? PLACEHOLDER_IMAGE : (dish.image || PLACEHOLDER_IMAGE);
+    const displayImage = isValidMenuImage(dish.image) ? dish.image : PLACEHOLDER_IMAGE;
 
     const tr = document.createElement('tr');
     tr.dataset.menuIndex = i;
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('dishesTableBody','selectAllProducts'); updateDeleteMarkedButtonVisibility('dishesTableBody','deleteMarkedProductsBtn')"></td>
         <td>${rowIndex + 1}</td>
-        <td><img src="${displayImage}" crossorigin="anonymous" alt="" onerror="this.onerror=null; this.removeAttribute('crossorigin'); this.src='${PLACEHOLDER_IMAGE}';"></td>
+        <td><img src="${displayImage}" alt="" onerror="this.onerror=null; this.src='${PLACEHOLDER_IMAGE}';"></td>
         <td>${dish.name}${dish.type === 'service' ? ' <small style="font-size:0.75rem; color:#0d6efd;">(Service)</small>' : ''}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>
         <td class="u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(sellingPrice)}</td>
