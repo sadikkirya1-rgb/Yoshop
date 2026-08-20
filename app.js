@@ -7,6 +7,7 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, orderBy, limit, getDocs, deleteDoc, where, arrayUnion } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-functions.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
 import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity } from './admin-utils.mjs';
@@ -164,6 +165,7 @@ console.log("Firebase initialized for project:", firebaseConfig.projectId);
 
 const storage = getStorage(app);
 const auth = getAuth(app);
+const functions = getFunctions(app);
 let currentUser = null;
 let userMetadata = null; // Stores status and subscription info
 let currentUserRole = sessionStorage.getItem('currentUserRole') || localStorage.getItem('currentUserRole');
@@ -857,34 +859,14 @@ async function setupTenantShopParameters(uid) {
  */
 async function generateBusinessId() {
   try {
-    if (!dbFirestore) return `yoshop-${String(Date.now() % 100000).padStart(5, '0')}`;
-
-    const effectiveUid = typeof getEffectiveUid === 'function' ? getEffectiveUid() : (currentUser?.uid || '');
-    const isMasterAdmin = (effectiveUid === MASTER_APP_ADMIN_UID || (currentUser && currentUser.email === 'sadikkirya@gmail.com'));
-
-    // Non-admin tenants cannot query the global /users collection due to Firestore security rules
-    if (!isMasterAdmin) {
-      return `yoshop-${String(Date.now() % 100000).padStart(5, '0')}`;
-    }
-
-    const usersSnap = await getDocs(collection(dbFirestore, 'users'));
-    const taken = new Set();
-
-    usersSnap.forEach(docSnap => {
-      const data = docSnap.data() || {};
-      const candidate = (data.businessId || data.shopId || '').toString().trim();
-      if (candidate) taken.add(candidate.toLowerCase());
-    });
-
-    let next = 1;
-    while (taken.has(`yoshop-${String(next).padStart(3, '0')}`.toLowerCase())) {
-      next += 1;
-    }
-
-    return `yoshop-${String(next).padStart(3, '0')}`;
+    const allocateBusinessId = httpsCallable(functions, 'getNextBusinessId');
+    const result = await allocateBusinessId();
+    const businessId = String(result.data?.businessId || '').trim();
+    if (!/^yoshop-\d{3,}$/i.test(businessId)) throw new Error('Invalid business ID returned by Firebase.');
+    return businessId.toLowerCase();
   } catch (error) {
-    console.warn('Failed to generate business ID from Firestore. Falling back to timestamp-based ID.', error);
-    return `yoshop-${String(Date.now() % 100000).padStart(5, '0')}`;
+    console.error('Failed to allocate business ID from Firebase:', error);
+    throw error;
   }
 }
 
@@ -2900,28 +2882,20 @@ async function deleteShop(shopUid, shopName) {
       await saveData(false, { skipEnterpriseMirror: true });
     }
 
-    // 1. Delete transactions sub-collection (all historical data)
-    const txRef = collection(dbFirestore, "users", shopUid, "transactions");
-    const txSnap = await getDocs(txRef);
-    if (!txSnap.empty) {
-      const txDeletes = txSnap.docs.map(d => deleteDoc(d.ref));
-      await Promise.all(txDeletes);
-    }
+    const deleteAccount = httpsCallable(functions, 'deleteAccountCompletely');
+    await deleteAccount({ uid: shopUid });
 
-    // 2. Delete the main shop_profile document
-    await deleteDoc(doc(dbFirestore, "users", shopUid, "data", "shop_profile"));
-
-    // Stop sync if we deleted our own data
+    // Stop sync if we deleted our own data.
     if (shopUid === currentUser?.uid) isInitialLoadComplete = false;
 
-    // Keep a tombstone so the Firebase Auth identity cannot recreate access on its next login.
-    await setDoc(doc(dbFirestore, "users", shopUid), {
-      status: 'deleted',
-      deletedAt: new Date().toISOString()
-    }, { merge: true });
+    // Remove the deleted tenant from already-rendered admin views immediately.
+    requestCache.delete('admin_shops_all');
+    subscriptionsAdminState.selectedUids.delete(shopUid);
+    lastShopsRefreshId += 1;
+    lastShopsTableRefreshId += 1;
 
-    alert(`Success: "${shopName}" and all its Firestore data have been deleted.`);
-    refreshAppAdminShops();
+    await Promise.all([refreshAppAdminShops(), refreshAppAdminShopsTable(), refreshAppAdminSubscriptions()]);
+    alert(`Success: "${shopName}" and its Firebase Auth, Firestore, and Storage data have been deleted.`);
   } catch (error) {
     handleFirebaseError(error, "Delete Shop", `users/${shopUid}`);
   }
