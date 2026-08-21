@@ -9,15 +9,21 @@
 
 const {setGlobalOptions} = require("firebase-functions");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const functionsV1 = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const logger = require("firebase-functions/logger");
 
-admin.initializeApp();
+admin.initializeApp({storageBucket: "yoshop-b502f.firebasestorage.app"});
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
 
 const MASTER_ADMIN_UID = "Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2";
 const MASTER_ADMIN_EMAIL = "sadikkirya@gmail.com";
+const callableOptions = {
+	region: "us-central1",
+	// Callable handlers still enforce Firebase Auth and operation-level permissions.
+	cors: true
+};
 
 function isAppAdmin(request) {
 	const auth = request.auth;
@@ -27,9 +33,9 @@ function isAppAdmin(request) {
 	));
 }
 
-function assertAppAdmin(request) {
-	if (!isAppAdmin(request)) {
-		throw new HttpsError("permission-denied", "Only the app administrator can perform this operation.");
+function assertCanDeleteAccount(request, uid) {
+	if (!request.auth || (request.auth.uid !== uid && !isAppAdmin(request))) {
+		throw new HttpsError("permission-denied", "You are not allowed to delete this account.");
 	}
 }
 
@@ -38,7 +44,7 @@ function getBusinessNumber(value) {
 	return match ? Number.parseInt(match[1], 10) : null;
 }
 
-exports.getNextBusinessId = onCall(async (request) => {
+exports.getNextBusinessId = onCall(callableOptions, async (request) => {
 	if (!request.auth) {
 		throw new HttpsError("unauthenticated", "You must be signed in to allocate an account ID.");
 	}
@@ -61,16 +67,11 @@ exports.getNextBusinessId = onCall(async (request) => {
 	});
 });
 
-exports.deleteAccountCompletely = onCall(async (request) => {
-	assertAppAdmin(request);
+async function deleteTenantData(uid) {
+	const normalizedUid = String(uid || "").trim();
+	if (!normalizedUid) return null;
 
-	const uid = String(request.data?.uid || "").trim();
-	if (!uid) throw new HttpsError("invalid-argument", "A user UID is required.");
-	if (uid === MASTER_ADMIN_UID) {
-		throw new HttpsError("failed-precondition", "The master administrator account cannot be deleted here.");
-	}
-
-	const userRef = db.collection("users").doc(uid);
+	const userRef = db.collection("users").doc(normalizedUid);
 	const userSnap = await userRef.get();
 	const userData = userSnap.exists ? userSnap.data() || {} : {};
 	const profileRef = userRef.collection("data").doc("shop_profile");
@@ -80,9 +81,21 @@ exports.deleteAccountCompletely = onCall(async (request) => {
 
 	await db.recursiveDelete(userRef);
 
-	const storagePrefixes = [`users/${uid}/`];
+	const storagePrefixes = [`users/${normalizedUid}/`];
 	if (businessId) storagePrefixes.push(`shops/${businessId}/`);
 	await Promise.all(storagePrefixes.map((prefix) => bucket.deleteFiles({prefix})));
+	return businessId || null;
+}
+
+exports.deleteAccountCompletely = onCall(callableOptions, async (request) => {
+	const uid = String(request.data?.uid || "").trim();
+	if (!uid) throw new HttpsError("invalid-argument", "A user UID is required.");
+	if (uid === MASTER_ADMIN_UID) {
+		throw new HttpsError("failed-precondition", "The master administrator account cannot be deleted here.");
+	}
+	assertCanDeleteAccount(request, uid);
+
+	const businessId = await deleteTenantData(uid);
 
 	try {
 		await admin.auth().deleteUser(uid);
@@ -92,6 +105,15 @@ exports.deleteAccountCompletely = onCall(async (request) => {
 
 	logger.info("Deleted account and tenant data", {uid, businessId: businessId || null});
 	return {deleted: true, uid, businessId: businessId || null};
+});
+
+// Also clean tenant data when an administrator deletes a user directly in Firebase Auth.
+exports.cleanupDeletedUserData = functionsV1.runWith({
+	runtime: "nodejs20",
+	region: "us-central1",
+}).auth.user().onDelete(async (user) => {
+	const businessId = await deleteTenantData(user.uid);
+	logger.info("Cleaned data for Auth-deleted account", {uid: user.uid, businessId});
 });
 
 // For cost control, you can set the maximum number of containers that can be

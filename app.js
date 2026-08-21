@@ -6,7 +6,7 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 
 import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, orderBy, limit, getDocs, deleteDoc, where, arrayUnion } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
-import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile, deleteUser } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
+import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-functions.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
@@ -2891,6 +2891,7 @@ async function deleteShop(shopUid, shopName) {
     // Remove the deleted tenant from already-rendered admin views immediately.
     requestCache.delete('admin_shops_all');
     subscriptionsAdminState.selectedUids.delete(shopUid);
+    removeDeletedShopFromAdminTables(shopUid);
     lastShopsRefreshId += 1;
     lastShopsTableRefreshId += 1;
 
@@ -2899,6 +2900,10 @@ async function deleteShop(shopUid, shopName) {
   } catch (error) {
     handleFirebaseError(error, "Delete Shop", `users/${shopUid}`);
   }
+}
+
+function removeDeletedShopFromAdminTables(uid) {
+  document.querySelectorAll(`[data-shop-uid="${uid}"]`).forEach(row => row.remove());
 }
 
 let subscriptionsAdminState = { filter: 'all', selectedUids: new Set(), rows: [] };
@@ -3094,6 +3099,7 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
     const fragment = document.createDocumentFragment();
     filteredRows.forEach((row, index) => {
       const tr = document.createElement('tr');
+      tr.dataset.shopUid = row.uid;
       const expiryText = row.subscriptionExpires ? (() => {
         const expiryDate = new Date(row.subscriptionExpires);
         const isExpired = expiryDate < new Date();
@@ -3106,7 +3112,7 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
       tr.innerHTML = `
         <td class="u-text-center">${index + 1}</td>
         <td class="u-text-center"><input type="checkbox" class="subscription-row-checkbox" data-uid="${row.uid}" ${isSelected ? 'checked' : ''}></td>
-        <td class="u-text-center"><img src="${row.logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color); background:transparent;" onerror="this.src='assets/icons/icon.png';"></td>
+        <td class="u-text-center"><img src="${row.logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color); background:transparent;" onerror="clearBrokenTenantLogo('${row.uid}', this);"></td>
         <td class="u-bold">${row.shopName}</td>
         <td class="u-fs-08"><strong>${businessId}</strong></td>
         <td class="u-fs-08"><code style="font-size:0.75em; white-space:normal; word-break:break-all;">${row.uid}</code></td>
@@ -3161,6 +3167,22 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
   } catch (error) {
     handleFirebaseError(error, 'Load Subscription View', 'users');
     tbody.innerHTML = '<tr><td colspan="11" class="u-text-center" style="color:red;">Error loading subscriptions.</td></tr>';
+  }
+}
+
+async function clearBrokenTenantLogo(uid, imageElement) {
+  if (imageElement) {
+    imageElement.onerror = null;
+    imageElement.src = 'assets/icons/icon.png';
+  }
+  if (!uid || !dbFirestore) return;
+
+  try {
+    await setDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'), {
+      settings: { logo: '' }
+    }, { merge: true });
+  } catch (error) {
+    console.warn('Could not clear stale tenant logo URL:', error);
   }
 }
 
@@ -3478,9 +3500,10 @@ async function refreshAppAdminShopsTable() {
         else subStyle = 'font-weight: bold;';
       }
 
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-          <td class="u-text-center"><img src="${logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color);" onerror="this.src='assets/icons/icon.png';"></td>
+        const tr = document.createElement('tr');
+        tr.dataset.shopUid = uid;
+        tr.innerHTML = `
+          <td class="u-text-center"><img src="${logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color);" onerror="clearBrokenTenantLogo('${uid}', this);"></td>
           <td class="u-bold">${shopSettings.name || 'Unnamed Shop'}</td>
           <td class="u-fs-08"><strong>${businessId}</strong></td>
           <td class="u-fs-08"><code style="font-size:0.75em; white-space:normal; word-break:break-all;">${uid}</code></td>
@@ -4738,7 +4761,7 @@ async function loginWithEmail() {
     const authError = getAuthErrorMessage(error);
     const isCredentialFailure = error?.code === 'auth/invalid-credential' || error?.code === 'auth/user-not-found' || error?.code === 'auth/wrong-password';
     const detail = isCredentialFailure
-      ? `${authError.message}\n\nIf you already use Google for this account, click "Login with Google" instead.`
+      ? `Account not found or the password is incorrect. If this account was deleted, please register again and wait for app administrator approval.\n\nIf you already use Google for this account, click "Login with Google" instead.`
       : authError.message;
 
     const errorEl = document.getElementById('auth-login-error');
@@ -5085,7 +5108,9 @@ async function submitAuthAction() {
     } else if (activeAuthAction === 'deleteAccount') {
       const confirmed = await showAppConfirm("FINAL WARNING: All your data will be lost. Are you absolutely sure?", 'Delete Account', 'Delete', 'Cancel');
       if (confirmed?.confirmed) {
-        await deleteUser(currentUser);
+        const deleteAccount = httpsCallable(functions, 'deleteAccountCompletely');
+        await deleteAccount({ uid: currentUser.uid });
+        await signOut(auth);
         await showAppAlert("Account deleted.", 'Account Deleted');
         location.reload();
         return;
@@ -14312,11 +14337,11 @@ async function updateVersionDisplay() {
       const match = text.match(/CACHE_NAME\s*=\s*['"]yoshop-(v\d+)['"]/);
       if (match) displayEl.textContent = match[1].toUpperCase();
     } else {
-      displayEl.textContent = '1.0.5'; // Fallback on non-200 response
+      displayEl.textContent = '1.0.6'; // Fallback on non-200 response
     }
   } catch (e) {
     console.warn('[Version] Failed to fetch service worker version:', e.message);
-    displayEl.textContent = '1.0.5'; // Fallback
+    displayEl.textContent = '1.0.6'; // Fallback
   }
 
   renderSubscriptionFooterInfo();
@@ -17023,7 +17048,7 @@ Object.assign(window, {
   renderShopNoticesInSettings, showNoticesPage, closeNoticesPage, addOrUpdateAdminNoticeNotification, removeAdminNoticeNotification, openAdminNoticeFromNotification, checkForAdminNoticeForCurrentShop,
   clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage,
   toggleAdminAccessForm, saveAdminAccessEntry, editAdminAccessEntry, deleteAdminAccessEntry, toggleAdminAccessStatus, clearYoShopLocalData, resetLocalDatabase,
-  refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus,
+  refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, clearBrokenTenantLogo, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus,
   switchAppAdminView, updateTargetUserStatus, updateTargetSubscription, updateTargetSubscriptionDate, setFreePlan, updateTargetShopSubscriptionState, generateAutoBarcode, toggleReportCategoryDropdown
   , toggleReportOptionsDropdown, changeReportZoom,
 

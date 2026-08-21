@@ -30,6 +30,11 @@ service firebase.storage {
 
     // Allow authenticated users to upload product/dish images to shops
     // This supports multi-tenant shops where each shop has its own folder
+    match /shops/{shopId}/branding/{allPaths=**} {
+      allow read: if true;
+      allow write: if isAuthenticated() && isValidImageUpload();
+    }
+
     match /shops/{shopId}/{allPaths=**} {
       allow read: if isAuthenticated();
       allow write: if isAuthenticated() && isValidImageUpload();
