@@ -168,6 +168,8 @@ const auth = getAuth(app);
 const functions = getFunctions(app);
 let currentUser = null;
 let userMetadata = null; // Stores status and subscription info
+let registrationInProgress = false;
+let pendingApprovalNotice = false;
 let currentUserRole = sessionStorage.getItem('currentUserRole') || localStorage.getItem('currentUserRole');
 let localRepository = null;
 let localRepositoryReady = false;
@@ -2984,6 +2986,20 @@ async function runBulkSubscriptionAction(action) {
   refreshAppAdminSubscriptions();
 }
 
+function compareBusinessIds(leftValue, rightValue) {
+  const getNumber = (value) => {
+    const match = String(value || '').trim().match(/^yoshop-(\d+)$/i);
+    return match ? Number.parseInt(match[1], 10) : null;
+  };
+
+  const leftNumber = getNumber(leftValue);
+  const rightNumber = getNumber(rightValue);
+  if (leftNumber === null && rightNumber === null) return String(leftValue || '').localeCompare(String(rightValue || ''));
+  if (leftNumber === null) return 1;
+  if (rightNumber === null) return -1;
+  return leftNumber - rightNumber;
+}
+
 async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.filter) {
   if (currentUserRole !== 'appAdmin') return;
 
@@ -3075,6 +3091,7 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
       if (filter === 'suspended') return row.bucket === 'suspended';
       return true;
     });
+    filteredRows.sort((left, right) => compareBusinessIds(left.businessId, right.businessId));
 
     filteredRows.forEach(row => {
       if (row.bucket === 'active') stats.active += 1;
@@ -3388,7 +3405,7 @@ async function refreshAppAdminShops() {
             <button class="btn btn-success u-fs-08 u-flex-1" onclick="setFreePlan('${uid}')" style="margin:0; padding:4px;">Promo Plan</button>
           </div>
         `;
-      shopCards.push(card);
+      shopCards.push({ card, businessId });
     }
 
     // Final UI update: only if we are still the latest request
@@ -3401,8 +3418,10 @@ async function refreshAppAdminShops() {
 
       // ===== PRODUCTION OPTIMIZATION: Improved pagination for 100+ shops =====
       const shopsPerPage = 25; // Increased from 10 for better loading
-      const initialShops = shopCards.slice(0, shopsPerPage);
-      const remainingShops = shopCards.slice(shopsPerPage);
+      shopCards.sort((left, right) => compareBusinessIds(left.businessId, right.businessId));
+      const sortedCards = shopCards.map(({ card }) => card);
+      const initialShops = sortedCards.slice(0, shopsPerPage);
+      const remainingShops = sortedCards.slice(shopsPerPage);
 
       initialShops.forEach(card => container.appendChild(card));
 
@@ -3522,7 +3541,7 @@ async function refreshAppAdminShopsTable() {
             </div>
           </td>
         `;
-      rows.push(tr);
+      rows.push({ row: tr, businessId });
     }
 
     if (currentRefreshId === lastShopsTableRefreshId) {
@@ -3534,8 +3553,10 @@ async function refreshAppAdminShopsTable() {
 
       // Show first 20 rows, add "Show More" button if needed
       const rowsPerPage = 20;
-      const initialRows = rows.slice(0, rowsPerPage);
-      const remainingRows = rows.slice(rowsPerPage);
+      rows.sort((left, right) => compareBusinessIds(left.businessId, right.businessId));
+      const sortedRows = rows.map(({ row }) => row);
+      const initialRows = sortedRows.slice(0, rowsPerPage);
+      const remainingRows = sortedRows.slice(rowsPerPage);
 
       initialRows.forEach(row => tbody.appendChild(row));
 
@@ -4472,7 +4493,7 @@ function setAppShellLocked(isLocked) {
 function showLoggedOutScreen() {
   setAppShellLocked(true);
   updateAuthUI(null);
-  showLoginOverlay();
+  showLoginOverlay(pendingApprovalNotice ? 'pendingApproval' : 'login');
 }
 
 function updateAuthUI(user) {
@@ -4541,8 +4562,7 @@ function updateAuthUI(user) {
           Login with Google
         </button>
       `;
-    // Ensure login overlay is visible
-    showLoginOverlay();
+    showLoginOverlay(pendingApprovalNotice ? 'pendingApproval' : 'login');
     const lockBtn = document.getElementById('nav-lock-btn');
     if (lockBtn) lockBtn.style.display = 'none';
   }
@@ -4784,6 +4804,7 @@ async function loginWithEmail() {
 }
 
 async function registerWithEmail() {
+  const submitBtn = document.getElementById('email-login-submit-btn');
   const emailInput = document.getElementById('authEmail');
   const passwordInput = document.getElementById('authPassword');
   const nameInput = document.getElementById('authName');
@@ -4829,6 +4850,12 @@ async function registerWithEmail() {
       }
       alert("Email login successfully added to your account! You can now log in with either Google or this password.");
     } else {
+      registrationInProgress = true;
+      if (submitBtn) {
+        submitBtn.disabled = true;
+        submitBtn.dataset.originalHtml = submitBtn.dataset.originalHtml || submitBtn.innerHTML;
+        submitBtn.innerHTML = '<span class="spinner"></span> Creating account...';
+      }
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       const businessId = await generateBusinessId();
       if (name) {
@@ -4856,16 +4883,22 @@ async function registerWithEmail() {
         lastUpdated: new Date().toISOString()
       }, { merge: true });
 
-      // Run tenant initialization locally (IndexedDB, caches)
-      try { await setupTenantShopParameters(userCredential.user.uid); } catch (e) { console.warn('Tenant init warning', e); }
-
-      alert("Registration successful! You are now logged in.");
+      pendingApprovalNotice = true;
+      await signOut(auth);
+      showLoginOverlay('pendingApproval');
     }
   } catch (error) {
+    pendingApprovalNotice = false;
     if (error.code === 'auth/email-already-in-use') {
       alert("This email is already registered. If you previously used Google, try logging in with Google first, then add a password.");
     } else {
       alert("Registration failed: " + error.message);
+    }
+  } finally {
+    registrationInProgress = false;
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = submitBtn.dataset.originalHtml || 'Register';
     }
   }
 }
@@ -14602,6 +14635,8 @@ async function mainInit() {
     onAuthStateChanged(auth, async (user) => {
       currentUser = user;
 
+      if (user && registrationInProgress) return;
+
       // Detect if the logged in person is the Super Admin BEFORE updating UI
       if (user && isRecognizedAppAdminUser(user)) {
         console.log("👑 App Admin detected (" + user.email + "). Granting master access.");
@@ -14663,6 +14698,15 @@ async function mainInit() {
                 : 'This Firebase account is not registered for Yoshop. Please use Register to create an account.',
               'Account Access Denied'
             );
+            return;
+          }
+
+          if (status === 'pending') {
+            console.warn('[AUTH] Rejecting login for an account awaiting app administrator approval:', user.uid);
+            pendingApprovalNotice = true;
+            await signOut(auth);
+            userMetadata = null;
+            showLoginOverlay('pendingApproval');
             return;
           }
 
@@ -14902,6 +14946,21 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
     document.body.appendChild(overlay);
   }
   overlay.style.display = 'flex';
+
+  if (mode === 'pendingApproval') {
+    overlay.style.flexDirection = 'column';
+    overlay.style.alignItems = 'center';
+    overlay.style.justifyContent = 'center';
+    overlay.innerHTML = `
+      <div style="width:min(440px,92vw); padding:34px 28px; border-radius:22px; background:rgba(255,255,255,0.97); color:#243447; box-shadow:0 20px 60px rgba(0,0,0,0.28); text-align:center;">
+        <div style="width:76px; height:76px; margin:0 auto 18px; border-radius:50%; display:grid; place-items:center; background:#fff4d6; color:#b7791f; font-size:38px;">!</div>
+        <h2 style="margin:0 0 10px; color:#243447;">Approval Required</h2>
+        <p style="margin:0 auto 24px; max-width:340px; line-height:1.6; color:#526273;">Your account was created successfully and is waiting for app administrator approval. You will be able to log in after approval.</p>
+        <button type="button" class="btn" onclick="pendingApprovalNotice=false; showLoginOverlay('login');" style="width:100%; max-width:260px; margin:0; padding:12px 18px; border:0; border-radius:10px; background:#f0822b; color:white; font-weight:700;">Back to Login</button>
+      </div>
+    `;
+    return;
+  }
 
   if (!currentUser) {
     if (window._marketingInterval) clearInterval(window._marketingInterval);

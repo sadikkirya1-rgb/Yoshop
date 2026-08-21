@@ -13,6 +13,14 @@ service firebase.storage {
       return request.auth != null;
     }
 
+    function isShopOwner(shopId) {
+      return isAuthenticated()
+        && (
+          firestore.get(/databases/yoshop/documents/users/$(request.auth.uid)).data.businessId == shopId
+          || firestore.get(/databases/yoshop/documents/users/$(request.auth.uid)).data.shopId == shopId
+        );
+    }
+
     function isValidImageUpload() {
       return request.resource != null
         && request.resource.contentType.matches('image/(jpeg|png|gif|webp|jpg)')
@@ -32,12 +40,12 @@ service firebase.storage {
     // This supports multi-tenant shops where each shop has its own folder
     match /shops/{shopId}/branding/{allPaths=**} {
       allow read: if true;
-      allow write: if isAuthenticated() && isValidImageUpload();
+      allow write: if (isShopOwner(shopId) || isAdmin()) && isValidImageUpload();
     }
 
     match /shops/{shopId}/{allPaths=**} {
-      allow read: if isAuthenticated();
-      allow write: if isAuthenticated() && isValidImageUpload();
+      allow read: if isShopOwner(shopId) || isAdmin();
+      allow write: if (isShopOwner(shopId) || isAdmin()) && isValidImageUpload();
     }
 
     // Default: deny all other access

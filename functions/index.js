@@ -11,10 +11,11 @@ const {setGlobalOptions} = require("firebase-functions");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
 const functionsV1 = require("firebase-functions/v1");
 const admin = require("firebase-admin");
+const {getFirestore} = require("firebase-admin/firestore");
 const logger = require("firebase-functions/logger");
 
 admin.initializeApp({storageBucket: "yoshop-b502f.firebasestorage.app"});
-const db = admin.firestore();
+const db = getFirestore(admin.app(), "yoshop");
 const bucket = admin.storage().bucket();
 
 const MASTER_ADMIN_UID = "Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2";
@@ -51,18 +52,21 @@ exports.getNextBusinessId = onCall(callableOptions, async (request) => {
 
 	const allocatorRef = db.collection("system").doc("businessIdAllocator");
 	return db.runTransaction(async (transaction) => {
+		const allocatorSnap = await transaction.get(allocatorRef);
 		const usersSnap = await transaction.get(db.collection("users").select("businessId", "shopId"));
-		const usedNumbers = new Set();
+		let lastAllocatedNumber = getBusinessNumber(allocatorSnap.data()?.lastAllocated) || 0;
 		usersSnap.forEach((userDoc) => {
 			const data = userDoc.data() || {};
 			const number = getBusinessNumber(data.businessId || data.shopId);
-			if (number !== null) usedNumbers.add(number);
+			if (number !== null) lastAllocatedNumber = Math.max(lastAllocatedNumber, number);
 		});
 
-		let nextNumber = 1;
-		while (usedNumbers.has(nextNumber)) nextNumber += 1;
+		const nextNumber = lastAllocatedNumber + 1;
 		const businessId = `yoshop-${String(nextNumber).padStart(3, "0")}`;
-		transaction.set(allocatorRef, {lastAllocated: businessId, updatedAt: admin.firestore.FieldValue.serverTimestamp()}, {merge: true});
+		transaction.set(allocatorRef, {
+			lastAllocated: businessId,
+			updatedAt: admin.firestore.FieldValue.serverTimestamp()
+		}, {merge: true});
 		return {businessId};
 	});
 });
