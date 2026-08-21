@@ -482,6 +482,10 @@ function normalizeProductCatalog(products = []) {
   return getCanonicalProductCatalog(Array.isArray(products) ? products : [], { includeOnlySellable: false });
 }
 
+function isProductListedInProductsSection(record = {}) {
+  return record.type !== 'stock';
+}
+
 function getProductCatalogMatchIndex(name = '', barcode = '') {
   const match = findMatchingProductEntry(menu, name, barcode);
   return match ? match.index : -1;
@@ -5768,6 +5772,7 @@ async function addDish(buttonElement) {
   const name = document.getElementById('dishName').value.trim();
   const barcode = document.getElementById('dishBarcode').value.trim();
   const category = document.getElementById('dishCategory').value;
+  const unit = document.getElementById('dishUnit').value;
   const type = 'product';
   const imageInput = document.getElementById('dishImage');
 
@@ -7194,7 +7199,8 @@ function renderDishesTable() {
   const tbody = document.getElementById('dishesTableBody');
   tbody.innerHTML = '';
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
-  const productsForTable = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
+  const productsForTable = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true })
+    .filter(isProductListedInProductsSection);
   // Show only products/sellable items in the Products table
   productsForTable.forEach((dish, rowIndex) => {
     const i = menu.indexOf(dish); // Get the original index for edit/delete functions
@@ -7248,6 +7254,17 @@ async function deleteProductImageFromStorage(imageUrl) {
   }
 }
 
+function removeProductLayerFromStockItem(item) {
+  if (!item || item.stock === undefined) return false;
+
+  item.category = null;
+  item.type = 'stock';
+  delete item.recipe;
+  delete item.type;
+  delete item.barcode;
+  return true;
+}
+
 async function deleteMarkedProducts() {
   const body = document.getElementById('dishesTableBody');
   if (!body) return;
@@ -7274,6 +7291,11 @@ async function deleteMarkedProducts() {
   for (const index of indicesToDelete) {
     const item = menu[index];
     if (!item) continue;
+    if (item.stock !== undefined) {
+      removeProductLayerFromStockItem(item);
+      enqueueEnterpriseRecordChange('products', item, 'upsert').catch(console.warn);
+      continue;
+    }
     if (item.image && item.image.startsWith('https')) {
       await deleteProductImageFromStorage(item.image);
     }
@@ -7287,6 +7309,7 @@ async function deleteMarkedProducts() {
   try { renderDishesTable(); } catch (e) { console.error('Error updating dishes:', e); }
   try { renderInventoryReport(); } catch (e) { console.error('Error updating inventory:', e); }
   try { updateDashboard(); } catch (e) { console.error('Error updating dashboard:', e); }
+  populateRecipeIngredientSelect();
   updateDeleteMarkedButtonVisibility('dishesTableBody', 'deleteMarkedProductsBtn');
 }
 
@@ -7294,19 +7317,24 @@ async function deleteItem(i) {
   const index = Number(i); // Ensure index is a number
   const item = menu[index];
   if (!item) return;
+  const preserveStock = document.getElementById('addDishTab')?.classList.contains('active') === true;
 
   if (typeof showAppConfirm === 'function') {
     const resp = await showAppConfirm(`Are you sure you want to delete ${item.name}?`, 'Delete Item', 'Delete', 'Cancel');
     if (!resp || !resp.confirmed) return;
   }
 
-  if (item.image && item.image.startsWith('https')) {
-    await deleteProductImageFromStorage(item.image);
+  if (preserveStock && item.stock !== undefined) {
+    removeProductLayerFromStockItem(item);
+    enqueueEnterpriseRecordChange('products', item, 'upsert').catch(console.warn);
+  } else {
+    if (item.image && item.image.startsWith('https')) {
+      await deleteProductImageFromStorage(item.image);
+    }
+
+    enqueueEnterpriseRecordChange('products', item, 'delete').catch(console.warn);
+    menu.splice(index, 1);
   }
-
-  enqueueEnterpriseRecordChange('products', item, 'delete').catch(console.warn);
-
-  menu.splice(index, 1);
   saveData(); // Persist the deletion
 
   // Safely update all views with error handling to prevent one failure from stopping the rest
@@ -7315,6 +7343,7 @@ async function deleteItem(i) {
   try { renderDishesTable(); } catch (e) { console.error("Error updating dishes:", e); }
   try { renderInventoryReport(); } catch (e) { console.error("Error updating inventory:", e); }
   try { updateDashboard(); } catch (e) { console.error("Error updating dashboard:", e); }
+  populateRecipeIngredientSelect();
 
 }
 
@@ -12701,6 +12730,7 @@ function convertToProduct(index) {
   document.getElementById('dishName').value = item.name;
   document.getElementById('dishBarcode').value = item.barcode || '';
   document.getElementById('dishSellingPrice').value = parseFloat(item.price) || 0;
+  item.type = 'product';
 
   // Automatically assign a category & unit
   const defaultCat = item.category || (dishCategories.length > 0 ? dishCategories[0] : "");
@@ -12960,6 +12990,7 @@ async function saveNewStockItem() {
     const newItem = enrichEnterpriseRecord('products', {
       name,
       category: null,
+      type: 'stock',
       costPrice,
       stock,
       unit,
@@ -13002,6 +13033,7 @@ async function saveNewStockItem() {
     renderStockListTable();
     renderMenu();
     renderDishesTable();
+    populateRecipeIngredientSelect();
   } catch (e) { console.error('[DEBUG_STOCK] render after save failed', e); }
   console.log('[DEBUG_STOCK] saveNewStockItem end');
   } catch (errSave) {
@@ -14862,12 +14894,13 @@ async function mainInit() {
     const dishCatEl = document.getElementById('dishCategory');
     if (dishNameEl) {
       dishNameEl.addEventListener('input', () => {
-        // Auto-fill price and category from stock if creating a new entry
+          // Auto-fill product details from stock if creating a new entry
         if (document.getElementById('dishIndex').value === '') {
           const name = dishNameEl.value.trim();
           const stockMatch = menu.find(i => i.name.toLowerCase() === name.toLowerCase() && i.stock !== undefined);
           if (stockMatch) {
             if (stockMatch.category) dishCatEl.value = stockMatch.category;
+              if (document.getElementById('dishUnit')) document.getElementById('dishUnit').value = stockMatch.unit || '';
             document.getElementById('dishSellingPrice').value = stockMatch.price || 0;
             updateRecipeTotals();
           }
