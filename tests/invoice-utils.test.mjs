@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary } from '../invoice-utils.mjs';
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [
@@ -91,6 +91,64 @@ test('buildInvoiceListItems includes fully paid account invoices even without an
   assert.equal(rows[0].balance, 0);
 });
 
+test('buildInvoiceListItems applies each adjustment once to the outstanding balance', () => {
+  const [row] = buildInvoiceListItems({
+    customers: [{ id: 'cust-adjusted', name: 'Dana' }],
+    transactions: [{
+      id: 'tx-adjusted',
+      date: '2024-10-01T10:00:00.000Z',
+      customerId: 'cust-adjusted',
+      customerNameReal: 'Dana',
+      total: 300000,
+      amountPaid: 0,
+      adjustments: [{ amount: 100000, date: '2024-10-02T10:00:00.000Z' }]
+    }]
+  });
+
+  assert.equal(row.amountPaid, 0);
+  assert.equal(row.balance, -200000);
+});
+
+test('buildInvoiceListItems keeps a partially adjusted invoice balance when amountPaid is missing', () => {
+  const [row] = buildInvoiceListItems({
+    customers: [{ id: 'cust-legacy-adjusted', name: 'Evan' }],
+    transactions: [{
+      id: 'tx-legacy-adjusted',
+      date: '2024-10-01T10:00:00.000Z',
+      customerId: 'cust-legacy-adjusted',
+      customerNameReal: 'Evan',
+      total: 300000,
+      adjustments: [{ amount: 150000, date: '2024-10-02T10:00:00.000Z' }]
+    }]
+  });
+
+  assert.equal(row.amountPaid, 0);
+  assert.equal(row.balance, -150000);
+});
+
+test('calculateInvoicePaymentSummary ignores a legacy duplicate adjustment payment', () => {
+  const summary = calculateInvoicePaymentSummary({
+    total: 300000,
+    amountPaid: 150000,
+    balance: 0,
+    adjustments: [{ amount: 150000 }]
+  });
+
+  assert.equal(summary.amountPaid, 150000);
+  assert.equal(summary.balance, -150000);
+});
+
+test('calculateInvoicePaymentSummary keeps BC preview balance when paid amount includes adjustment', () => {
+  const summary = calculateInvoicePaymentSummary({
+    total: 300000,
+    amountPaid: 150000,
+    balance: -150000,
+    adjustments: [{ amount: 150000 }]
+  });
+
+  assert.equal(summary.balance, -150000);
+});
+
 test('calculateTotalExpenses sums expense records with flexible amount fields', () => {
   const expenses = [
     { amount: 15 },
@@ -152,6 +210,18 @@ test('calculateDashboardRevenueMetrics excludes outstanding balances from dashbo
   assert.equal(summary.totalRevenue, 120);
   assert.equal(summary.totalCost, 7);
   assert.equal(summary.netProfit, 113);
+});
+
+test('calculateDashboardRevenueMetrics includes adjustments in settled revenue once', () => {
+  const summary = calculateDashboardRevenueMetrics({
+    transactions: [{
+      total: 300000,
+      amountPaid: 0,
+      adjustments: [{ amount: 100000 }]
+    }]
+  });
+
+  assert.equal(summary.totalRevenue, 100000);
 });
 
 test('summarizePurchaseImpact separates purchase totals, internal deductions, stock value impact, and service expense', () => {

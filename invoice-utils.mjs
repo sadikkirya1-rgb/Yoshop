@@ -35,6 +35,34 @@ function getRelevantAdjustments(transaction = {}, customer = null) {
   return fallbackAdjustment;
 }
 
+function getRecordedAmountPaid(transaction = {}, total = 0) {
+  const recordedAmount = transaction.amountPaid ?? transaction.totalPaid ?? transaction.paidAmount;
+  if (recordedAmount !== undefined) return Number(recordedAmount) || 0;
+  return getRelevantAdjustments(transaction).length > 0 ? 0 : total;
+}
+
+export function calculateInvoicePaymentSummary(transaction = {}, totalOverride = null) {
+  const total = totalOverride === null ? Number(transaction.total || 0) : Number(totalOverride || 0);
+  const amountPaid = getRecordedAmountPaid(transaction, total);
+  const adjustments = getRelevantAdjustments(transaction);
+  const adjustmentTotal = adjustments.reduce((sum, adjustment) => sum + (Number(adjustment?.amount) || 0), 0);
+  const storedBalance = Number(transaction.balance);
+  const amountPaidAlreadyIncludesAdjustment = adjustmentTotal > 0
+    && Number.isFinite(storedBalance)
+    && Math.abs((amountPaid - total) - storedBalance) < 0.01;
+  const legacyAdjustmentAlreadyIncluded = adjustmentTotal > 0
+    && amountPaid > 0
+    && (storedBalance === 0 || amountPaidAlreadyIncludesAdjustment);
+  const settledAmount = amountPaid + (legacyAdjustmentAlreadyIncluded ? 0 : adjustmentTotal);
+
+  return {
+    total,
+    amountPaid,
+    adjustmentTotal,
+    balance: Math.min(0, settledAmount - total)
+  };
+}
+
 function getTransactionItemsSignature(transaction = {}) {
   const items = Array.isArray(transaction?.items) ? transaction.items : [];
   const normalizedItems = items
@@ -203,12 +231,9 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
     .map(transaction => {
       const customer = customerList.find(customer => findMatchingCustomer(customer, transaction)) || null;
       const total = Number(transaction.total || 0);
-      const amountPaid = transaction.amountPaid !== undefined
-        ? Number(transaction.amountPaid)
-        : total;
-      const balance = transaction.balance !== undefined
-        ? Number(transaction.balance)
-        : Math.min(0, amountPaid - total);
+      const paymentSummary = calculateInvoicePaymentSummary(transaction, total);
+      const amountPaid = paymentSummary.amountPaid;
+      const balance = paymentSummary.balance;
 
       const hasRealCustomer = Boolean(customer?.id);
       const shouldIncludeInvoice = hasRealCustomer && (balance <= 0 || transaction.amountPaid !== undefined);
@@ -217,16 +242,15 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
       const mergedAdjustments = getRelevantAdjustments(transaction, customer);
       const lastAdjustment = mergedAdjustments.length > 0 ? mergedAdjustments[mergedAdjustments.length - 1] : (transaction.lastAdjustment || null);
 
-      const adjustmentTotal = mergedAdjustments.reduce((sum, adj) => sum + (Number(adj?.amount) || 0), 0);
       const effectiveBalance = (() => {
         if (mergedAdjustments.length > 0) {
-          return Math.min(0, amountPaid - total + adjustmentTotal);
+          return paymentSummary.balance;
         }
 
         const txnBalance = transaction.balance !== undefined ? Number(transaction.balance) : balance;
         const computedBalance = Number.isFinite(txnBalance) && txnBalance !== 0 ? txnBalance : (balance ?? 0);
         if (computedBalance !== 0) return computedBalance;
-        return Math.min(0, amountPaid - total + adjustmentTotal);
+        return paymentSummary.balance;
       })();
 
       const normalizedBalance = Number.isFinite(effectiveBalance) ? effectiveBalance : 0;
@@ -345,8 +369,8 @@ export function calculateDashboardRevenueMetrics({ transactions = [], menu = [] 
     if (!transaction || typeof transaction !== 'object') return summary;
 
     const total = Number(transaction.total || 0);
-    const amountPaid = Number(transaction.amountPaid ?? transaction.totalPaid ?? transaction.paidAmount ?? transaction.total ?? 0);
-    const settledRevenue = Math.max(0, Math.min(total, Number.isFinite(amountPaid) ? amountPaid : total));
+    const paymentSummary = calculateInvoicePaymentSummary(transaction, total);
+    const settledRevenue = Math.max(0, Math.min(total, total + paymentSummary.balance));
 
     const transactionCost = (Array.isArray(transaction.items) ? transaction.items : []).reduce((itemSum, item) => {
       const dish = menuList.find(d => d.name === item.name);

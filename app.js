@@ -20,7 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -2297,11 +2297,14 @@ async function flushLocalSyncQueue(options = {}) {
   }
   isSyncing = true;
 
-  const results = await repositoryService.flushSyncQueue(options);
-
-  isSyncing = false;
-  if (statusEl) {
-    statusEl.classList.remove('sync-pulse');
+  let results = [];
+  try {
+    results = await repositoryService.flushSyncQueue(options);
+  } finally {
+    isSyncing = false;
+    if (statusEl) {
+      statusEl.classList.remove('sync-pulse');
+    }
   }
 
   try {
@@ -2443,9 +2446,10 @@ function normalizeInvoicePrintData(source = {}) {
   const subtotal = Number(source.subtotal ?? source.subTotal ?? 0);
   const tax = Number(source.taxAmount ?? source.tax ?? source.vatAmount ?? source.vat ?? 0);
   const discount = source.discount || { amount: Number(source.discount?.amount ?? source.discountAmount ?? 0) };
-  const amountPaid = Number(source.amountPaid ?? source.totalPaid ?? source.paidAmount ?? 0);
   const total = Number(source.total ?? source.grandTotal ?? source.amount ?? subtotal + tax - discount.amount);
-  const balance = Number(source.balance ?? source.outstandingBalance ?? (amountPaid - total));
+  const paymentSummary = calculateInvoicePaymentSummary(source, total);
+  const amountPaid = paymentSummary.amountPaid;
+  const balance = paymentSummary.balance;
   const transactionId = String(source.id || source.transactionId || source.recordId || source.invoiceNumber || source.invoiceNo || source.date || '').trim();
 
   return {
@@ -8676,8 +8680,8 @@ function populateReceiptContent(transaction) {
   const paidAmountLine = (isAdjustmentReceipt || isDebtReceipt) && transaction.amountPaid !== undefined
     ? `<div class="summary-line"><span>Paid Amount</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(transaction.amountPaid)}</span></div>`
     : '';
-  const balanceLine = (isAdjustmentReceipt || isDebtReceipt) && transaction.balance !== undefined
-    ? `<div class="summary-line"><span>Balance</span> <span style="color:#dc3545; font-weight:bold;"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(transaction.balance)}</span></div>`
+  const balanceLine = transaction.balance !== undefined
+    ? `<div class="summary-line"><span>Balance</span> <span style="color:${Number(transaction.balance) === 0 ? '#28a745' : '#dc3545'}; font-weight:bold;"><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(Math.abs(Number(transaction.balance) || 0))}</span></div>`
     : '';
   const promoMessage = escapeHtml(getReceiptPromoMessage());
   const receiptHtml = `
@@ -9696,12 +9700,30 @@ function getDashboardDateRange() {
 function getFilteredDashboardTransactions() {
   const { startDate, endDate } = getDashboardDateRange();
   const allTx = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
-  return allTx.filter(tx => {
-    const txDate = new Date(tx.date);
-    if (Number.isNaN(txDate.getTime())) return false;
-    if (startDate && txDate < startDate) return false;
-    if (endDate && txDate > endDate) return false;
+  const isDateInRange = dateValue => {
+    const date = new Date(dateValue);
+    if (Number.isNaN(date.getTime())) return false;
+    if (startDate && date < startDate) return false;
+    if (endDate && date > endDate) return false;
     return true;
+  };
+
+  return allTx.flatMap(tx => {
+    const txDate = new Date(tx.date);
+    const transactionDateInRange = !Number.isNaN(txDate.getTime()) && isDateInRange(tx.date);
+    const adjustments = Array.isArray(tx.adjustments) && tx.adjustments.length > 0
+      ? tx.adjustments.filter(Boolean)
+      : (tx.lastAdjustment ? [tx.lastAdjustment] : []);
+    const filteredAdjustments = adjustments.filter(adjustment => isDateInRange(adjustment.date));
+
+    if (!transactionDateInRange && filteredAdjustments.length === 0) return [];
+    return [{
+      ...tx,
+      amountPaid: transactionDateInRange ? tx.amountPaid : 0,
+      adjustments: filteredAdjustments,
+      lastAdjustment: filteredAdjustments[filteredAdjustments.length - 1] || null,
+      date: transactionDateInRange ? tx.date : filteredAdjustments[0].date
+    }];
   });
 }
 
@@ -12157,6 +12179,8 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
     if (amtWrapper) amtWrapper.style.display = 'block';
     confirmBtn.style.display = 'inline-flex';
     cancelBtn.style.display = 'inline-flex';
+    confirmBtn.textContent = 'Save Adjustment';
+    cancelBtn.textContent = 'Cancel';
     titleEl.textContent = `Record Adjustment — ${selectedMethod}`;
     const helperText = messageEl.querySelector('.adjHelperText');
     const selector = document.getElementById('adjMethodSelector');
@@ -12198,12 +12222,11 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
     activeTransaction.lastAdjustment = adjustment;
     activeTransaction.lastTransactionDate = adjustment.date;
     const adjustmentTotal = activeTransaction.adjustments.reduce((sum, entry) => sum + (parseFloat(entry?.amount) || 0), 0);
-    const updatedAmountPaid = (parseFloat(activeTransaction.amountPaid) || 0) + amount;
-    activeTransaction.amountPaid = updatedAmountPaid;
-    activeTransaction.balance = Math.min(0, updatedAmountPaid - (parseFloat(activeTransaction.total) || 0) + adjustmentTotal);
+    const amountPaid = parseFloat(activeTransaction.amountPaid) || 0;
+    activeTransaction.balance = Math.min(0, amountPaid + adjustmentTotal - (parseFloat(activeTransaction.total) || 0));
 
     if (typeof enqueueLocalSyncAction === 'function') {
-      enqueueLocalSyncAction({
+      await enqueueLocalSyncAction({
         entityType: 'sales',
         payload: activeTransaction,
         businessId: getEffectiveUid(),
@@ -12211,10 +12234,15 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
         staffId: getCurrentStaffId(),
         updatedBy: currentUser?.uid || getEffectiveUid(),
         deviceId: getCurrentDeviceId()
-      }).catch(console.warn);
+      });
     }
 
-    saveData();
+    await saveData(false);
+    if (navigator.onLine && currentUser && dbFirestore) {
+      await flushLocalSyncQueue({ force: true }).catch(error => {
+        console.warn('[SYNC] Adjustment flush failed:', error);
+      });
+    }
     renderInvoices();
     renderTransactions();
     previewOrder(activeTransaction);
