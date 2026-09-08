@@ -9854,8 +9854,11 @@ async function clearAllAdjustments() {
     if (entries.length === 0) return;
 
     const adjustmentTotal = entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0);
-    transaction.amountPaid = Math.max(0, (Number(transaction.amountPaid) || 0) - adjustmentTotal);
+    if (transaction.adjustmentsAppliedToAmountPaid === true) {
+      transaction.amountPaid = Math.max(0, (Number(transaction.amountPaid) || 0) - adjustmentTotal);
+    }
     transaction.balance = Math.min(0, transaction.amountPaid - (Number(transaction.total) || 0));
+    transaction.adjustmentsAppliedToAmountPaid = false;
     transaction.adjustments = [];
     transaction.lastAdjustment = null;
     transaction.synced = false;
@@ -11935,6 +11938,21 @@ function renderInvoices() {
     customers: Array.isArray(customers) ? customers : [],
     transactions: Array.isArray(transactions) ? transactions : []
   });
+  let repairedInvoiceData = false;
+  invoiceRows.forEach(row => {
+    const transaction = row?.transaction;
+    if (!transaction) return;
+    const storedAmountPaid = Number(transaction.amountPaid);
+    const storedBalance = Number(transaction.balance);
+    if (Math.abs(storedAmountPaid - row.amountPaid) < 0.01 && Math.abs(storedBalance - row.balance) < 0.01) return;
+    transaction.amountPaid = row.amountPaid;
+    transaction.balance = row.balance;
+    transaction.adjustmentsAppliedToAmountPaid = true;
+    repairedInvoiceData = true;
+  });
+  if (repairedInvoiceData && typeof saveData === 'function') {
+    Promise.resolve(saveData(false)).catch(error => console.warn('[INVOICE] Failed to persist repaired payment data:', error));
+  }
 
   const dateFilteredRows = invoiceRows.filter(row => {
     const txDate = row?.date ? row.date.split('T')[0] : '';
@@ -12217,13 +12235,18 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
       note: ''
     };
 
+    const currentPaymentSummary = calculateInvoicePaymentSummary(activeTransaction);
     activeTransaction.adjustments = Array.isArray(activeTransaction.adjustments) ? activeTransaction.adjustments : [];
     activeTransaction.adjustments.push(adjustment);
     activeTransaction.lastAdjustment = adjustment;
     activeTransaction.lastTransactionDate = adjustment.date;
-    const adjustmentTotal = activeTransaction.adjustments.reduce((sum, entry) => sum + (parseFloat(entry?.amount) || 0), 0);
-    const amountPaid = parseFloat(activeTransaction.amountPaid) || 0;
-    activeTransaction.balance = Math.min(0, amountPaid + adjustmentTotal - (parseFloat(activeTransaction.total) || 0));
+    const amountPaid = Math.min(
+      Number(activeTransaction.total) || 0,
+      currentPaymentSummary.amountPaid + amount
+    );
+    activeTransaction.amountPaid = amountPaid;
+    activeTransaction.adjustmentsAppliedToAmountPaid = true;
+    activeTransaction.balance = Math.min(0, amountPaid - (parseFloat(activeTransaction.total) || 0));
 
     if (typeof enqueueLocalSyncAction === 'function') {
       await enqueueLocalSyncAction({

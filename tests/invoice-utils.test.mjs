@@ -105,7 +105,7 @@ test('buildInvoiceListItems applies each adjustment once to the outstanding bala
     }]
   });
 
-  assert.equal(row.amountPaid, 0);
+  assert.equal(row.amountPaid, 100000);
   assert.equal(row.balance, -200000);
 });
 
@@ -122,11 +122,11 @@ test('buildInvoiceListItems keeps a partially adjusted invoice balance when amou
     }]
   });
 
-  assert.equal(row.amountPaid, 0);
+  assert.equal(row.amountPaid, 150000);
   assert.equal(row.balance, -150000);
 });
 
-test('calculateInvoicePaymentSummary ignores a legacy duplicate adjustment payment', () => {
+test('calculateInvoicePaymentSummary adds adjustments to the recorded paid amount', () => {
   const summary = calculateInvoicePaymentSummary({
     total: 300000,
     amountPaid: 150000,
@@ -134,19 +134,82 @@ test('calculateInvoicePaymentSummary ignores a legacy duplicate adjustment payme
     adjustments: [{ amount: 150000 }]
   });
 
-  assert.equal(summary.amountPaid, 150000);
-  assert.equal(summary.balance, -150000);
+  assert.equal(summary.amountPaid, 300000);
+  assert.equal(summary.balance, 0);
 });
 
-test('calculateInvoicePaymentSummary keeps BC preview balance when paid amount includes adjustment', () => {
+test('calculateInvoicePaymentSummary recalculates stale paid and balance values', () => {
   const summary = calculateInvoicePaymentSummary({
     total: 300000,
     amountPaid: 150000,
     balance: -150000,
-    adjustments: [{ amount: 150000 }]
+    adjustments: [{ amount: 50000 }]
   });
 
-  assert.equal(summary.balance, -150000);
+  assert.equal(summary.amountPaid, 200000);
+  assert.equal(summary.balance, -100000);
+});
+
+test('calculateInvoicePaymentSummary does not double-count adjustments saved in paid amount', () => {
+  const summary = calculateInvoicePaymentSummary({
+    total: 300000,
+    amountPaid: 200000,
+    balance: -100000,
+    adjustmentsAppliedToAmountPaid: true,
+    adjustments: [{ amount: 50000 }]
+  });
+
+  assert.equal(summary.amountPaid, 200000);
+  assert.equal(summary.balance, -100000);
+});
+
+test('calculateInvoicePaymentSummary repairs an overpaid stale invoice using its stored balance', () => {
+  const summary = calculateInvoicePaymentSummary({
+    total: 300000,
+    amountPaid: 395000,
+    balance: -150000,
+    adjustments: [{ amount: 50000 }]
+  });
+
+  assert.equal(summary.amountPaid, 200000);
+  assert.equal(summary.balance, -100000);
+});
+
+test('calculateInvoicePaymentSummary repairs an overwritten paid value using balance change', () => {
+  const summary = calculateInvoicePaymentSummary({
+    total: 300000,
+    amountPaid: 395000,
+    balance: 0,
+    balanceChange: -150000,
+    adjustmentsAppliedToAmountPaid: true,
+    adjustments: [{ amount: 50000 }]
+  });
+
+  assert.equal(summary.amountPaid, 200000);
+  assert.equal(summary.balance, -100000);
+});
+
+test('calculateInvoicePaymentSummary never displays paid above the invoice total', () => {
+  const summary = calculateInvoicePaymentSummary({
+    total: 300000,
+    amountPaid: 395000,
+    adjustments: [{ amount: 50000 }]
+  });
+
+  assert.equal(summary.amountPaid, 300000);
+  assert.equal(summary.balance, 0);
+});
+
+test('calculateInvoicePaymentSummary includes a new adjustment in paid and balance values', () => {
+  const summary = calculateInvoicePaymentSummary({
+    total: 300000,
+    amountPaid: 0,
+    balance: -200000,
+    adjustments: [{ amount: 100000 }]
+  });
+
+  assert.equal(summary.amountPaid, 100000);
+  assert.equal(summary.balance, -200000);
 });
 
 test('calculateTotalExpenses sums expense records with flexible amount fields', () => {

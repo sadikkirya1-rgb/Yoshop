@@ -43,23 +43,34 @@ function getRecordedAmountPaid(transaction = {}, total = 0) {
 
 export function calculateInvoicePaymentSummary(transaction = {}, totalOverride = null) {
   const total = totalOverride === null ? Number(transaction.total || 0) : Number(totalOverride || 0);
-  const amountPaid = getRecordedAmountPaid(transaction, total);
+  let amountPaid = getRecordedAmountPaid(transaction, total);
   const adjustments = getRelevantAdjustments(transaction);
   const adjustmentTotal = adjustments.reduce((sum, adjustment) => sum + (Number(adjustment?.amount) || 0), 0);
   const storedBalance = Number(transaction.balance);
-  const amountPaidAlreadyIncludesAdjustment = adjustmentTotal > 0
-    && Number.isFinite(storedBalance)
-    && Math.abs((amountPaid - total) - storedBalance) < 0.01;
-  const legacyAdjustmentAlreadyIncluded = adjustmentTotal > 0
-    && amountPaid > 0
-    && (storedBalance === 0 || amountPaidAlreadyIncludesAdjustment);
-  const settledAmount = amountPaid + (legacyAdjustmentAlreadyIncluded ? 0 : adjustmentTotal);
+  const storedBalanceChange = Number(transaction.balanceChange);
+  let paymentIncludesAdjustments = transaction.adjustmentsAppliedToAmountPaid === true;
+  if (amountPaid > total) {
+    const originalBalance = Number.isFinite(storedBalanceChange) && storedBalanceChange < 0
+      ? storedBalanceChange
+      : storedBalance;
+    if (Number.isFinite(originalBalance) && originalBalance < 0) {
+      const balanceDerivedPaid = total + originalBalance;
+      if (balanceDerivedPaid >= 0) {
+        amountPaid = balanceDerivedPaid;
+        paymentIncludesAdjustments = false;
+      }
+    }
+  }
+  const effectiveAmountPaid = Math.min(
+    total,
+    amountPaid + (paymentIncludesAdjustments ? 0 : adjustmentTotal)
+  );
 
   return {
     total,
-    amountPaid,
+    amountPaid: effectiveAmountPaid,
     adjustmentTotal,
-    balance: Math.min(0, settledAmount - total)
+    balance: Math.min(0, effectiveAmountPaid - total)
   };
 }
 
@@ -242,18 +253,7 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
       const mergedAdjustments = getRelevantAdjustments(transaction, customer);
       const lastAdjustment = mergedAdjustments.length > 0 ? mergedAdjustments[mergedAdjustments.length - 1] : (transaction.lastAdjustment || null);
 
-      const effectiveBalance = (() => {
-        if (mergedAdjustments.length > 0) {
-          return paymentSummary.balance;
-        }
-
-        const txnBalance = transaction.balance !== undefined ? Number(transaction.balance) : balance;
-        const computedBalance = Number.isFinite(txnBalance) && txnBalance !== 0 ? txnBalance : (balance ?? 0);
-        if (computedBalance !== 0) return computedBalance;
-        return paymentSummary.balance;
-      })();
-
-      const normalizedBalance = Number.isFinite(effectiveBalance) ? effectiveBalance : 0;
+      const normalizedBalance = Number.isFinite(paymentSummary.balance) ? paymentSummary.balance : 0;
       const previewData = {
         date: transaction.date || new Date().toISOString(),
         customerName: transaction.customerNameReal || transaction.customerName || customer?.name || 'Unknown Customer',
