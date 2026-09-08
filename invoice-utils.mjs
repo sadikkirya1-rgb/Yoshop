@@ -276,6 +276,7 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
           : `Invoice paid in full for ${transaction.customerNameReal || transaction.customerName || customer?.name || 'customer account'}`,
         amountPaid,
         balance: normalizedBalance,
+        adjustmentsAppliedToAmountPaid: transaction.adjustmentsAppliedToAmountPaid === true,
         lastAdjustment,
         adjustments: mergedAdjustments,
         invoiceNumber: normalizeInvoiceNumber(transaction.invoiceNumber)

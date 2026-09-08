@@ -163,6 +163,27 @@ test('calculateInvoicePaymentSummary does not double-count adjustments saved in 
   assert.equal(summary.balance, -100000);
 });
 
+test('buildInvoiceListItems preserves payment state for invoice previews', () => {
+  const [row] = buildInvoiceListItems({
+    customers: [{ id: 'cust-preview', name: 'Preview Customer' }],
+    transactions: [{
+      id: 'tx-preview',
+      date: '2024-10-01T10:00:00.000Z',
+      customerId: 'cust-preview',
+      customerNameReal: 'Preview Customer',
+      total: 300000,
+      amountPaid: 200000,
+      balance: -100000,
+      adjustmentsAppliedToAmountPaid: true,
+      adjustments: [{ amount: 50000 }]
+    }]
+  });
+
+  assert.equal(row.amountPaid, 200000);
+  assert.equal(row.previewData.amountPaid, 200000);
+  assert.equal(row.previewData.adjustmentsAppliedToAmountPaid, true);
+});
+
 test('calculateInvoicePaymentSummary repairs an overpaid stale invoice using its stored balance', () => {
   const summary = calculateInvoicePaymentSummary({
     total: 300000,

@@ -7414,7 +7414,8 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     : `<div class="logo-circle">${(storeName || 'Y').charAt(0).toUpperCase()}</div>`;
 
   const rawItems = Array.isArray(source.items) ? source.items : [];
-  let subtotal = Number(source.subtotal ?? source.subTotal ?? 0);
+  const hasStoredSubtotal = source.subtotal !== undefined || source.subTotal !== undefined;
+  let subtotal = hasStoredSubtotal ? Number(source.subtotal ?? source.subTotal ?? 0) : 0;
   let grandTotal = Number(source.total ?? source.grandTotal ?? source.amount ?? 0);
   let balance = Number(source.balance ?? source.outstandingBalance ?? 0);
   const itemsHtml = rawItems.length > 0 ? rawItems.map((item, index) => {
@@ -7422,7 +7423,6 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     const qty = Number(item?.qty || item?.quantity || 1);
     const price = Number(item?.price || item?.unitPrice || item?.cost || 0);
     const total = qty * price;
-    subtotal += total;
     return `
       <tr>
         <td>${index + 1}</td>
@@ -7437,7 +7437,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
       </tr>`;
 
   const taxAmount = Number(source.taxAmount ?? source.tax ?? source.vatAmount ?? source.vat ?? 0);
-  if (!subtotal && rawItems.length > 0) {
+  if (!hasStoredSubtotal && rawItems.length > 0) {
     subtotal = rawItems.reduce((sum, item) => sum + (Number(item?.price || item?.unitPrice || item?.cost || 0) * Number(item?.qty || item?.quantity || 1)), 0);
   }
   if (!grandTotal || grandTotal === 0) {
