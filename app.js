@@ -6572,6 +6572,8 @@ function setPaymentProcessingState(isProcessing, message = '', tone = 'info') {
   const confirmBtn = document.getElementById('confirmPaymentBtn');
   const statusEl = document.getElementById('paymentStatusMessage');
   if (confirmBtn) {
+    confirmBtn.hidden = false;
+    confirmBtn.style.display = 'inline-flex';
     confirmBtn.disabled = isProcessing;
     if (isProcessing) {
       const originalText = confirmBtn.dataset.originalText || confirmBtn.textContent;
@@ -6886,6 +6888,11 @@ function updatePaymentTotals() {
   const isValidTendered = amountTendered >= newTotal && tenderedInput && tenderedInput.value !== '';
   const canConfirm = isCustomerSelected || isValidTendered;
 
+  if (confirmBtn) {
+    confirmBtn.hidden = false;
+    confirmBtn.style.display = 'inline-flex';
+  }
+
   if (isCustomerSelected) {
     const customer = customers.find(entry => entry && String(entry.id) === String(paymentSelect.value));
     if (customer) {
@@ -6914,6 +6921,8 @@ function updatePaymentTotals() {
         }
       }
       if (confirmBtn) {
+        confirmBtn.hidden = false;
+        confirmBtn.style.display = 'inline-flex';
         confirmBtn.disabled = false;
         confirmBtn.style.opacity = canConfirm ? '1' : '0.5';
         confirmBtn.style.cursor = canConfirm ? 'pointer' : 'not-allowed';
@@ -6925,6 +6934,8 @@ function updatePaymentTotals() {
     if (remainingBalanceRow) remainingBalanceRow.style.display = 'flex';
     if (remainingBalanceEl) remainingBalanceEl.innerHTML = `<span style="${amountTendered >= newTotal ? 'color:#28a745' : 'color:#dc3545'}; font-weight:bold;">${currencySymbol}${formatCurrency(Math.max(0, newTotal - amountTendered))}</span>`;
     if (confirmBtn) {
+      confirmBtn.hidden = false;
+      confirmBtn.style.display = 'inline-flex';
       confirmBtn.disabled = false;
       confirmBtn.style.opacity = canConfirm ? '1' : '0.5';
       confirmBtn.style.cursor = canConfirm ? 'pointer' : 'not-allowed';

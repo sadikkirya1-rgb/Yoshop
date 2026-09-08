@@ -1654,6 +1654,18 @@ body.dark-mode .app-popup-card p {
   margin-top: 15px;
 }
 
+.payment-action-buttons {
+  min-height: 48px;
+  justify-content: center;
+  gap: 8px;
+}
+
+.payment-action-buttons .confirm-payment-btn {
+  display: inline-flex !important;
+  visibility: visible !important;
+  opacity: 1;
+}
+
 @media print {
   body * {
     visibility: hidden;
