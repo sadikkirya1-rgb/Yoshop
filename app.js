@@ -10971,6 +10971,7 @@ function renderStaffList() {
       `<td>${i + 1}</td>` +
       `<td>${member.name} ${isActive ? '' : '<small>(Inactive)</small>'}</td>` +
       `<td>${member.role}</td>` +
+      `<td>${escapeHtml(member.email || '—')}</td>` +
       `<td>****</td>` +
       `<td><button class="btn u-fs-08" style="padding: 4px 8px; margin: 0;" onclick="openStaffPermissionsModal(${i})">Manage</button></td>` +
       `<td style="text-align: right; white-space: nowrap;">
@@ -10985,11 +10986,13 @@ function renderStaffList() {
 function addStaff() {
   const nameInput = document.getElementById('staffNameInput');
   const roleInput = document.getElementById('staffRoleInput');
+  const emailInput = document.getElementById('staffEmailInput');
   const pinInput = document.getElementById('staffPinInput');
   const indexInput = document.getElementById('staffIndex');
 
   const name = nameInput.value.trim();
   const role = roleInput.value;
+  const email = emailInput.value.trim();
   const pin = pinInput.value.trim();
   const index = indexInput.value;
 
@@ -11008,6 +11011,7 @@ function addStaff() {
       ...existingStaff,
       name,
       role,
+      email,
       permissions
     }, existingStaff);
 
@@ -11022,6 +11026,7 @@ function addStaff() {
     const staffData = enrichEnterpriseRecord('staff', {
       name,
       role,
+      email,
       pin,
       permissions,
       isActive: true
@@ -11034,6 +11039,7 @@ function addStaff() {
 
   nameInput.value = '';
   roleInput.value = '';
+  emailInput.value = '';
   pinInput.value = '';
   indexInput.value = '';
   checkboxes.forEach(cb => cb.checked = (cb.value === 'menuTab'));
@@ -11047,6 +11053,7 @@ function editStaff(index) {
   const member = staff[index];
   document.getElementById('staffNameInput').value = member.name;
   document.getElementById('staffRoleInput').value = member.role;
+  document.getElementById('staffEmailInput').value = member.email || '';
   document.getElementById('staffPinInput').value = member.pin;
   document.getElementById('staffIndex').value = index;
 
@@ -11541,6 +11548,24 @@ function buildCustomerStatusMessage(customer, template = '', customMessage = '')
   return message;
 }
 
+function getCustomerEmailAddress(customer) {
+  if (!customer || typeof customer !== 'object') return '';
+  const email = customer.email || customer.contact || customer.customerEmail || customer.mainEmail || '';
+  return String(email || '').trim();
+}
+
+function openCustomerEmailComposer(customer, template = '', customMessage = '') {
+  const email = getCustomerEmailAddress(customer);
+  if (!email) {
+    return showAppAlert('This customer does not have an email address.', 'Missing Email');
+  }
+
+  const subject = `${settings?.name || 'YoShop'} update`;
+  const body = buildCustomerStatusMessage(customer, template, customMessage);
+  const mailtoUrl = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = mailtoUrl;
+}
+
 function sendCustomerStatusNotification(index) {
   const customer = customers[index];
   if (!customer) return showAppAlert('Customer not found.', 'Send Notification');
@@ -11608,8 +11633,63 @@ async function sendAllCustomersStatusNotification() {
   });
 }
 
+function sendCustomerStatusNotificationByEmail(index) {
+  const customer = customers[index];
+  if (!customer) return showAppAlert('Customer not found.', 'Send Email Notification');
+
+  const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
+  const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
+
+  openCustomerEmailComposer(customer, template, customMessage);
+}
+
+function sendSelectedCustomersStatusNotificationByEmail() {
+  const selectedRows = Array.from(document.querySelectorAll('.customer-row-select:checked'));
+  if (!selectedRows.length) {
+    return showAppAlert('Select at least one customer to send the email notification.', 'No Customer Selected');
+  }
+
+  const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
+  const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
+
+  selectedRows.forEach(checkbox => {
+    const index = parseInt(checkbox.value, 10);
+    const customer = customers[index];
+    if (!customer) return;
+    openCustomerEmailComposer(customer, template, customMessage);
+  });
+}
+
+async function sendAllCustomersStatusNotificationByEmail() {
+  const customersWithEmail = (Array.isArray(customers) ? customers : []).filter(customer => getCustomerEmailAddress(customer));
+  if (!customersWithEmail.length) {
+    return showAppAlert('No customers with email addresses were found.', 'Bulk Email Send');
+  }
+
+  const confirmed = await showAppConfirm(
+    `Send this email message to ${customersWithEmail.length} customers?`,
+    'Bulk Email Send',
+    'Send',
+    'Cancel'
+  );
+
+  if (!confirmed) {
+    return;
+  }
+
+  const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
+  const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
+
+  customersWithEmail.forEach(customer => {
+    openCustomerEmailComposer(customer, template, customMessage);
+  });
+}
+
 window.applyCustomerQuickMessage = applyCustomerQuickMessage;
 window.sendAllCustomersStatusNotification = sendAllCustomersStatusNotification;
+window.sendCustomerStatusNotificationByEmail = sendCustomerStatusNotificationByEmail;
+window.sendSelectedCustomersStatusNotificationByEmail = sendSelectedCustomersStatusNotificationByEmail;
+window.sendAllCustomersStatusNotificationByEmail = sendAllCustomersStatusNotificationByEmail;
 
 function getTransactionWhatsAppNumber(transaction) {
   if (!transaction || typeof transaction !== 'object') return '';

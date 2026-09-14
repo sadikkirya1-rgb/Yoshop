@@ -644,6 +644,7 @@
               <option value="shopAdmin">ShopAdmin</option>
               <option value="staff" selected>Staff</option>
             </select>
+            <input type="email" id="staffEmailInput" placeholder="Staff Email" style="min-width: 220px;">
             <input type="password" id="staffPinInput" placeholder="4-digit PIN" maxlength="4" style="width: 100px;">
             <button type="button" onclick="togglePINVisibility('staffPinInput')" class="btn"
               style="padding: 5px 10px; margin: 0;">👁️</button>
@@ -673,6 +674,7 @@
                 <th>#</th>
                 <th>Name</th>
                 <th>Role</th>
+                <th>Email</th>
                 <th>PIN</th>
                 <th>Access</th>
                 <th style="text-align: right;">Action</th>
@@ -707,7 +709,7 @@
           </div>
           <div class="input-row u-mt-10" style="gap: 10px; flex-wrap: wrap; align-items:flex-end;">
             <div style="flex: 1 1 320px; min-width: 220px;">
-              <label for="customerStatusMessageInput" style="display:block; margin-bottom:4px; font-size:0.85rem;">Notification message (send notice message by WhatsApp)</label>
+              <label for="customerStatusMessageInput" style="display:block; margin-bottom:4px; font-size:0.85rem;">Notification message (used for WhatsApp and email)</label>
               <input type="text" id="customerStatusMessageInput" placeholder="Optional custom message" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1;" />
             </div>
             <div class="action-buttons" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
@@ -721,8 +723,10 @@
                 <option value="special_offer">Special Offer</option>
                 <option value="welcome">Welcome / General Care</option>
               </select>
-              <button class="btn btn-success" type="button" onclick="sendSelectedCustomersStatusNotification()" title="Send to selected customers" style="white-space: nowrap;">📩 Selected</button>
-              <button class="btn btn-primary" type="button" onclick="sendAllCustomersStatusNotification()" title="Send to all customers with WhatsApp" style="white-space: nowrap;">📢 All</button>
+              <button class="btn btn-success" type="button" onclick="sendSelectedCustomersStatusNotification()" title="Send to selected customers by WhatsApp" style="white-space: nowrap;">📩 WhatsApp Selected</button>
+              <button class="btn btn-primary" type="button" onclick="sendAllCustomersStatusNotification()" title="Send to all customers with WhatsApp" style="white-space: nowrap;">📢 WhatsApp All</button>
+              <button class="btn btn-secondary" type="button" onclick="sendSelectedCustomersStatusNotificationByEmail()" title="Send to selected customers by email" style="white-space: nowrap;">✉️ Email Selected</button>
+              <button class="btn btn-info" type="button" onclick="sendAllCustomersStatusNotificationByEmail()" title="Send to all customers with email" style="white-space: nowrap;">📧 Email All</button>
             </div>
           </div>
           <table class="u-mt-15 table-excel">
