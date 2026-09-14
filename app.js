@@ -11554,6 +11554,38 @@ function getCustomerEmailAddress(customer) {
   return String(email || '').trim();
 }
 
+async function sendCustomerEmailViaBackend(customer, template = '', customMessage = '') {
+  const email = getCustomerEmailAddress(customer);
+  if (!email) {
+    return showAppAlert('This customer does not have an email address.', 'Missing Email');
+  }
+
+  try {
+    const sendCustomerNotification = httpsCallable(functions, 'sendCustomerNotificationEmail');
+    const subject = `${settings?.name || 'YoShop'} update`;
+    const message = buildCustomerStatusMessage(customer, template, customMessage);
+    const result = await sendCustomerNotification({
+      to: email,
+      subject,
+      message,
+      customerName: customer.name || 'Customer'
+    });
+
+    const delivered = result?.data?.success;
+    if (delivered) {
+      await showAppAlert(`Email sent successfully to ${email}.`, 'Email Sent');
+      return true;
+    }
+
+    throw new Error(result?.data?.message || 'Email delivery failed.');
+  } catch (error) {
+    console.error('sendCustomerEmailViaBackend failed:', error);
+    const message = error?.message || 'Could not send email automatically.';
+    await showAppAlert(`${message} Please check your email configuration or use the mail app fallback.`, 'Email Send Failed');
+    return false;
+  }
+}
+
 function openCustomerEmailComposer(customer, template = '', customMessage = '') {
   const email = getCustomerEmailAddress(customer);
   if (!email) {
@@ -11633,17 +11665,17 @@ async function sendAllCustomersStatusNotification() {
   });
 }
 
-function sendCustomerStatusNotificationByEmail(index) {
+async function sendCustomerStatusNotificationByEmail(index) {
   const customer = customers[index];
   if (!customer) return showAppAlert('Customer not found.', 'Send Email Notification');
 
   const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
 
-  openCustomerEmailComposer(customer, template, customMessage);
+  await sendCustomerEmailViaBackend(customer, template, customMessage);
 }
 
-function sendSelectedCustomersStatusNotificationByEmail() {
+async function sendSelectedCustomersStatusNotificationByEmail() {
   const selectedRows = Array.from(document.querySelectorAll('.customer-row-select:checked'));
   if (!selectedRows.length) {
     return showAppAlert('Select at least one customer to send the email notification.', 'No Customer Selected');
@@ -11652,12 +11684,12 @@ function sendSelectedCustomersStatusNotificationByEmail() {
   const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
 
-  selectedRows.forEach(checkbox => {
+  for (const checkbox of selectedRows) {
     const index = parseInt(checkbox.value, 10);
     const customer = customers[index];
-    if (!customer) return;
-    openCustomerEmailComposer(customer, template, customMessage);
-  });
+    if (!customer) continue;
+    await sendCustomerEmailViaBackend(customer, template, customMessage);
+  }
 }
 
 async function sendAllCustomersStatusNotificationByEmail() {
@@ -11680,9 +11712,9 @@ async function sendAllCustomersStatusNotificationByEmail() {
   const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
 
-  customersWithEmail.forEach(customer => {
-    openCustomerEmailComposer(customer, template, customMessage);
-  });
+  for (const customer of customersWithEmail) {
+    await sendCustomerEmailViaBackend(customer, template, customMessage);
+  }
 }
 
 window.applyCustomerQuickMessage = applyCustomerQuickMessage;
@@ -12855,6 +12887,13 @@ function editStockItem(index) {
   document.getElementById('newStockItemPrice').value = item.price || 0;
   document.getElementById('newStockItemStock').value = item.stock || 0;
   document.getElementById('newStockItemLowStockThreshold').value = item.lowStockThreshold ?? '';
+  document.getElementById('newStockItemImageBase64').value = item.image || '';
+  document.getElementById('newStockItemCreateProduct').checked = item.type === 'product';
+  const preview = document.getElementById('newStockItemImagePreview');
+  if (preview) {
+    preview.src = item.image || 'https://placehold.co/100';
+    preview.style.display = item.image ? 'block' : 'none';
+  }
 
   // Store the index of the item being edited
   const formContainer = document.getElementById('newStockItemFormContainer');
@@ -13022,6 +13061,8 @@ async function saveNewStockItem() {
   const lowStockThreshold = lowStockInput === '' ? undefined : Number(lowStockInput);
   const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
   const itemIndexNumber = itemIndex === undefined || itemIndex === null || itemIndex === '' ? null : Number.parseInt(itemIndex, 10);
+  const createProduct = document.getElementById('newStockItemCreateProduct')?.checked === true;
+  const localImageBase64 = document.getElementById('newStockItemImageBase64')?.value || '';
 
   if (!name) {
     return showAppAlert("Please enter an item name.", 'Item Name Required');
@@ -13047,6 +13088,11 @@ async function saveNewStockItem() {
 
   const existingMatchIndex = itemIndexNumber === null || Number.isNaN(itemIndexNumber) ? getProductCatalogMatchIndex(name) : -1;
 
+  let uploadedImage = localImageBase64 || undefined;
+  if (typeof uploadedImage === 'string' && uploadedImage.startsWith('data:image')) {
+    uploadedImage = await uploadImage(uploadedImage, `stock-items/${Date.now()}.jpg`);
+  }
+
   if (itemIndexNumber !== null && !Number.isNaN(itemIndexNumber)) {
     // Update existing item
     const index = parseInt(itemIndex, 10);
@@ -13057,6 +13103,7 @@ async function saveNewStockItem() {
     item.unit = unit;
     item.costPrice = costPrice;
     item.stock = stock;
+    item.image = uploadedImage || item.image || undefined;
     if (lowStockInput === '') delete item.lowStockThreshold;
     else item.lowStockThreshold = lowStockThreshold;
     menu[index] = enrichEnterpriseRecord('products', item, item);
@@ -13092,6 +13139,9 @@ async function saveNewStockItem() {
       // Recalculate price based on markup in case cost changed
       item.price = costPrice * (1 + ((settings.defaultMarkup || 200) / 100));
     }
+    if (createProduct) {
+      item.type = 'product';
+    }
     enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
     await showAppAlert(`Item "${name}" updated successfully.`, 'Stock Item Updated');
   } else if (existingMatchIndex >= 0) {
@@ -13109,7 +13159,8 @@ async function saveNewStockItem() {
         const markup = (settings.defaultMarkup || 200) / 100;
         return costPrice * (1 + markup);
       })(),
-      image: existingItem?.image || undefined
+      image: uploadedImage || existingItem?.image || undefined,
+      type: createProduct ? 'product' : (existingItem?.type || 'stock')
     });
     menu[existingMatchIndex] = enrichEnterpriseRecord('products', updatedItem, existingItem);
     enqueueEnterpriseRecordChange('products', menu[existingMatchIndex], 'upsert').catch(console.warn);
@@ -13135,13 +13186,13 @@ async function saveNewStockItem() {
     const newItem = enrichEnterpriseRecord('products', {
       name,
       category: null,
-      type: 'stock',
+      type: createProduct ? 'product' : 'stock',
       costPrice,
       stock,
       unit,
       lowStockThreshold,
       price,
-      image: undefined
+      image: uploadedImage || undefined
     });
 
     const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
@@ -13245,7 +13296,42 @@ function clearNewStockItemForm() {
   document.getElementById('newStockItemPrice').value = '';
   document.getElementById('newStockItemStock').value = '';
   document.getElementById('newStockItemLowStockThreshold').value = '';
+  document.getElementById('newStockItemImageBase64').value = '';
+  document.getElementById('newStockItemImage').value = '';
+  document.getElementById('newStockItemCreateProduct').checked = false;
+  const preview = document.getElementById('newStockItemImagePreview');
+  if (preview) {
+    preview.src = 'https://placehold.co/100';
+    preview.style.display = 'none';
+  }
   delete document.getElementById('newStockItemFormContainer').dataset.editingIndex;
+}
+
+function previewStockItemImage(input) {
+  const preview = document.getElementById('newStockItemImagePreview');
+  const hiddenInput = document.getElementById('newStockItemImageBase64');
+  const file = input?.files?.[0];
+  if (!file || !preview || !hiddenInput) return;
+
+  const reader = new FileReader();
+  reader.onload = function (event) {
+    preview.src = event.target.result;
+    hiddenInput.value = event.target.result;
+    preview.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearStockItemImage() {
+  const input = document.getElementById('newStockItemImage');
+  const hidden = document.getElementById('newStockItemImageBase64');
+  const preview = document.getElementById('newStockItemImagePreview');
+  if (input) input.value = '';
+  if (hidden) hidden.value = '';
+  if (preview) {
+    preview.src = 'https://placehold.co/100';
+    preview.style.display = 'none';
+  }
 }
 
 function populatePurchaseFormOptions() {

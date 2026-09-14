@@ -13,6 +13,7 @@ const functionsV1 = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const {getFirestore} = require("firebase-admin/firestore");
 const logger = require("firebase-functions/logger");
+const sgMail = require("@sendgrid/mail");
 
 admin.initializeApp({storageBucket: "yoshop-b502f.firebasestorage.app"});
 const db = getFirestore(admin.app(), "yoshop");
@@ -109,6 +110,52 @@ exports.deleteAccountCompletely = onCall(callableOptions, async (request) => {
 
 	logger.info("Deleted account and tenant data", {uid, businessId: businessId || null});
 	return {deleted: true, uid, businessId: businessId || null};
+});
+
+exports.sendCustomerNotificationEmail = onCall(callableOptions, async (request) => {
+	if (!request.auth) {
+		throw new HttpsError("unauthenticated", "You must be signed in to send customer emails.");
+	}
+
+	const to = String(request.data?.to || "").trim();
+	const subject = String(request.data?.subject || "YoShop update").trim() || "YoShop update";
+	const message = String(request.data?.message || "").trim();
+	const customerName = String(request.data?.customerName || "Customer").trim() || "Customer";
+
+	if (!to) {
+		throw new HttpsError("invalid-argument", "A recipient email address is required.");
+	}
+	if (!message) {
+		throw new HttpsError("invalid-argument", "A message body is required.");
+	}
+
+	const sendgridApiKey = process.env.SENDGRID_API_KEY;
+	const fromEmail = String(process.env.EMAIL_FROM || "").trim();
+
+	if (!sendgridApiKey || !fromEmail) {
+		throw new HttpsError(
+			"failed-precondition",
+			"Email delivery is not configured yet. Set SENDGRID_API_KEY and EMAIL_FROM in the Firebase Functions environment before using automated customer emails."
+		);
+	}
+
+	try {
+		sgMail.setApiKey(sendgridApiKey);
+		await sgMail.send({
+			to,
+			from: fromEmail,
+			replyTo: fromEmail,
+			subject: subject || `YoShop update for ${customerName}`,
+			text: message,
+			html: `<p>${message.replace(/\n/g, "<br>")}</p>`
+		});
+
+		logger.info("Sent customer notification email", {to, subject, customerName});
+		return {success: true, recipient: to};
+	} catch (error) {
+		logger.error("Failed to send customer notification email", {error: error.message, to, subject, customerName});
+		throw new HttpsError("internal", error.message || "Failed to send customer notification email.");
+	}
 });
 
 // Also clean tenant data when an administrator deletes a user directly in Firebase Auth.
