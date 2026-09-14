@@ -961,6 +961,9 @@
           <div class="input-row">
             <input type="text" id="newStockItemName" placeholder="Item Name" class="u-flex-grow-1">
             <select id="newStockItemUnit"></select>
+            <select id="newStockItemCategory">
+              <option value="">Select Category (optional)</option>
+            </select>
           </div>
           <div class="input-row">
             <input type="number" id="newStockItemCost" placeholder="Cost Price" step="0.01" min="0">
@@ -972,10 +975,6 @@
           <div class="input-row" style="align-items: center; gap: 12px; flex-wrap: wrap;">
             <input type="file" id="newStockItemImage" accept="image/*" onchange="previewStockItemImage(this)" style="max-width: 280px;">
             <button type="button" class="btn btn-secondary" onclick="clearStockItemImage()">Clear Image</button>
-            <label style="display:flex; align-items:center; gap:6px; margin-left:auto; font-size:0.85rem;">
-              <input type="checkbox" id="newStockItemCreateProduct">
-              Create as sellable product
-            </label>
           </div>
           <div class="input-row" style="align-items:center; gap:12px; margin-top:4px;">
             <img id="newStockItemImagePreview" src="https://placehold.co/100" alt="Stock item preview" style="display:none; max-width:90px; max-height:90px; border-radius:8px; border:1px solid #cbd5e1; background:#f8fafc;">
@@ -1012,6 +1011,7 @@
               <th class="u-text-right">Stock</th> <!-- 4 -->
               <th class="u-text-right">Low Stock</th>
               <th class="u-text-right">Total</th> <!-- 5 -->
+              <th>Status</th>
               <th class="u-text-right">Action</th> <!-- 6 -->
             </tr>
           </thead>

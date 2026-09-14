@@ -12856,6 +12856,10 @@ function renderStockListTable() {
     const tr = document.createElement('tr');
 
 
+    const stockStatusBadge = item.type === 'product'
+      ? '<span style="display:inline-block; padding:4px 8px; border-radius:999px; background:#d1fae5; color:#166534; font-weight:700; font-size:0.78rem;">Added to Shop</span>'
+      : '<span style="display:inline-block; padding:4px 8px; border-radius:999px; background:#e5e7eb; color:#374151; font-weight:600; font-size:0.78rem;">Stock Only</span>';
+
     tr.innerHTML = `
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('stockListBody','selectAllStock')"></td>
         <td>${rowIndex + 1}</td>
@@ -12870,11 +12874,12 @@ function renderStockListTable() {
         <td class="u-fs-08 u-text-right">${Number(stock).toFixed(1)}</td>
         <td class="u-fs-08 u-text-right">${getLowStockThreshold(item)}</td>
         <td class="u-fs-08 u-text-right"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(totalCost)}</td>
+        <td class="u-fs-08">${stockStatusBadge}</td>
         <td class="u-text-right table-actions-cell">
-          <button class="icon-btn" title="Adjust Stock" onclick="toggleStockAdjustmentForm(true, ${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413-1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/></svg></button>
-          <button class="icon-btn" title="Edit Item" onclick="editStockItem(${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg></button>
-          <button class="icon-btn" title="Add to Shop" onclick="convertToProduct(${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#28a745" viewBox="0 0 16 16"><path d="M3 2v4.586l7 7L14.586 9l-7-7H3zM2 2a1 1 0 0 1 1-1h4.586a1 1 0 0 1 .707.293l7 7a1 1 0 0 1 0 1.414l-4.586 4.586a1 1 0 0 1-1.414 0l-7-7A1 1 0 0 1 2 6.586V2z"/><path d="M5.5 5a.5.5 0 1 1 0-1 .5.5 0 0 1 0 1zm0 1a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg></button>
-          <button class="icon-btn" title="Delete Item" onclick="deleteItem(${index})"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
+          <button class="icon-btn" title="Add Shop" onclick="convertToProduct(${index})" style="display:inline-flex; align-items:center; justify-content:center; gap:6px; width:94px; height:auto; padding:6px 12px; border:1px solid #22c55e; background:linear-gradient(180deg, #4ade80 0%, #22c55e 100%); color:#ffffff; font-weight:800; border-radius:6px; box-shadow:0 2px 4px rgba(34,197,94,0.25);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M0 2.5A1.5 1.5 0 0 1 1.5 1h13A1.5 1.5 0 0 1 16 2.5v1.1a.5.5 0 0 1-.5.5h-1.11l-.56 8.03A1.5 1.5 0 0 1 12.34 14H3.66a1.5 1.5 0 0 1-1.49-1.87L1.61 4.1H.5a.5.5 0 0 1-.5-.5V2.5zm3.84 1.1 1.7 6.97h5.92l1.7-6.97H3.84zm4.16 8.4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm-4 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zm8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3z"/></svg><span>Add Shop</span></button>
+          <button class="icon-btn" title="Adjust Stock" aria-label="Adjust Stock" onclick="toggleStockAdjustmentForm(true, ${index})" style="display:inline-flex; align-items:center; justify-content:center; gap:6px; width:94px; height:auto; padding:6px 12px; border:1px solid #94a3b8; background:linear-gradient(180deg, #e2e8f0 0%, #cbd5e1 100%); color:#0f172a; font-weight:700; border-radius:6px; box-shadow:0 2px 4px rgba(148,163,184,0.2);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M9.405 1.05c-.413-1.4-2.397-1.4-2.81 0l-.1.34a1.464 1.464 0 0 1-2.105.872l-.31-.17c-1.283-.698-2.686.705-1.987 1.987l.169.311a1.464 1.464 0 0 1-.872 2.105l-.34.1c-1.4.413-1.4 2.397 0 2.81l.34.1a1.464 1.464 0 0 1 .872 2.105l-.17.31c-.698 1.283.705 2.686 1.987 1.987l.311-.169a1.464 1.464 0 0 1 2.105.872l.1.34c.413 1.4 2.397 1.4 2.81 0l.1-.34a1.464 1.464 0 0 1 2.105-.872l.31.17c1.283.698 2.686-.705 1.987-1.987l-.169-.311a1.464 1.464 0 0 1 .872-2.105l.34-.1c1.4-.413-1.4-2.397 0-2.81l-.34-.1a1.464 1.464 0 0 1-.872-2.105l.17-.31c.698-1.283-.705-2.686-1.987-1.987l-.311.169a1.464 1.464 0 0 1-2.105-.872l-.1-.34zM8 10.93a2.929 2.929 0 1 1 0-5.86 2.929 2.929 0 0 1 0 5.858z"/></svg><span>Adjust</span></button>
+          <button class="icon-btn" title="Edit Item" aria-label="Edit Item" onclick="editStockItem(${index})" style="display:inline-flex; align-items:center; justify-content:center; gap:6px; width:82px; height:auto; padding:6px 12px; border:1px solid #60a5fa; background:linear-gradient(180deg, #dbeafe 0%, #bfdbfe 100%); color:#1d4ed8; font-weight:700; border-radius:6px; box-shadow:0 2px 4px rgba(96,165,250,0.2);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168l10-10zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207 11.207 2.5zm1.586 3L10.5 3.207 4 9.707V12h2.293l6.5-6.5-.207-.207z"/></svg><span>Edit</span></button>
+          <button class="icon-btn" title="Delete Item" aria-label="Delete Item" onclick="deleteItem(${index})" style="display:inline-flex; align-items:center; justify-content:center; gap:6px; width:86px; height:auto; padding:6px 12px; border:1px solid #fca5a5; background:linear-gradient(180deg, #fee2e2 0%, #fecaca 100%); color:#b91c1c; font-weight:700; border-radius:6px; box-shadow:0 2px 4px rgba(239,68,68,0.2);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg><span>Delete</span></button>
         </td>
       `;
     tbody.appendChild(tr);
@@ -12897,8 +12902,8 @@ function editStockItem(index) {
   document.getElementById('newStockItemPrice').value = item.price || 0;
   document.getElementById('newStockItemStock').value = item.stock || 0;
   document.getElementById('newStockItemLowStockThreshold').value = item.lowStockThreshold ?? '';
+  document.getElementById('newStockItemCategory').value = item.category || '';
   document.getElementById('newStockItemImageBase64').value = item.image || '';
-  document.getElementById('newStockItemCreateProduct').checked = item.type === 'product';
   const preview = document.getElementById('newStockItemImagePreview');
   if (preview) {
     preview.src = item.image || 'https://placehold.co/100';
@@ -12914,29 +12919,34 @@ function convertToProduct(index) {
   const item = menu[index];
   if (!item) return;
 
-  // Switch to Products tab
-  const productsBtn = document.querySelector('nav button[onclick*="addDishTab"]');
-  if (productsBtn) showTab('addDishTab', productsBtn);
+  if (item.type === 'product') {
+    showAppAlert(`"${item.name}" is already in the shop.`, 'Already Added');
+    return;
+  }
 
-  // Open the form and pre-fill
-  toggleAddDishForm(true);
-  document.getElementById('dishIndex').value = index;
-  document.getElementById('dishName').value = item.name;
-  document.getElementById('dishBarcode').value = item.barcode || '';
-  document.getElementById('dishSellingPrice').value = parseFloat(item.price) || 0;
+  const defaultCat = item.category || (dishCategories.length > 0 ? dishCategories[0] : '');
+  const markup = (settings.defaultMarkup || 200) / 100;
+  const fallbackPrice = Number(item.costPrice || 0) * (1 + markup);
+
   item.type = 'product';
+  item.category = defaultCat || '';
+  item.price = Number(item.price) > 0 ? Number(item.price) : fallbackPrice;
+  item.unit = item.unit || '';
 
-  // Automatically assign a category & unit
-  const defaultCat = item.category || (dishCategories.length > 0 ? dishCategories[0] : "");
-  document.getElementById('dishCategory').value = defaultCat;
-  if (document.getElementById('dishUnit')) document.getElementById('dishUnit').value = item.unit || '';
+  if (!item.barcode) {
+    item.barcode = `${(defaultCat || 'SP').substring(0, 2).toUpperCase()}-${Date.now().toString().slice(-6)}`;
+  }
 
-  document.getElementById('dishImageBase64').value = item.image || '';
-  document.getElementById('dishImagePreview').src = item.image || 'https://placehold.co/100';
+  menu[index] = enrichEnterpriseRecord('products', item, item);
+  enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
+  saveData();
 
-  // Trigger auto-barcode generation for the new product
-  generateAutoBarcode();
-  updateRecipeTotals();
+  renderStockListTable();
+  renderMenu();
+  renderDishesTable();
+  updateDashboard();
+
+  showAppAlert(`"${item.name}" has been added to the shop immediately.`, 'Added to Shop');
 }
 
 function toggleStockAdjustmentForm(show, index = null) {
@@ -13035,10 +13045,24 @@ function toggleNewStockItemForm(show) {
     formContainer.style.display = 'block';
     if (toggleButton) toggleButton.style.display = 'none';
     populateUnitDropdown();
+    populateStockCategoryDropdown();
     clearNewStockItemForm();
   } else {
     formContainer.style.display = 'none';
     if (toggleButton) toggleButton.style.display = 'inline-block';
+  }
+}
+
+function populateStockCategoryDropdown() {
+  const select = document.getElementById('newStockItemCategory');
+  if (!select) return;
+
+  const currentValue = select.value || '';
+  select.innerHTML = '<option value="">Select Category (optional)</option>' +
+    dishCategories.map(cat => `<option value="${escapeHtml(cat)}">${escapeHtml(cat)}</option>`).join('');
+
+  if (currentValue && dishCategories.includes(currentValue)) {
+    select.value = currentValue;
   }
 }
 
@@ -13069,9 +13093,9 @@ async function saveNewStockItem() {
   const stock = parseInt(document.getElementById('newStockItemStock').value, 10);
   const lowStockInput = document.getElementById('newStockItemLowStockThreshold').value.trim();
   const lowStockThreshold = lowStockInput === '' ? undefined : Number(lowStockInput);
+  const category = document.getElementById('newStockItemCategory')?.value?.trim() || '';
   const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
   const itemIndexNumber = itemIndex === undefined || itemIndex === null || itemIndex === '' ? null : Number.parseInt(itemIndex, 10);
-  const createProduct = document.getElementById('newStockItemCreateProduct')?.checked === true;
   const localImageBase64 = document.getElementById('newStockItemImageBase64')?.value || '';
 
   if (!name) {
@@ -13111,6 +13135,7 @@ async function saveNewStockItem() {
 
     item.name = name;
     item.unit = unit;
+    item.category = category || '';
     item.costPrice = costPrice;
     item.stock = stock;
     item.image = uploadedImage || item.image || undefined;
@@ -13149,9 +13174,6 @@ async function saveNewStockItem() {
       // Recalculate price based on markup in case cost changed
       item.price = costPrice * (1 + ((settings.defaultMarkup || 200) / 100));
     }
-    if (createProduct) {
-      item.type = 'product';
-    }
     enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
     await showAppAlert(`Item "${name}" updated successfully.`, 'Stock Item Updated');
   } else if (existingMatchIndex >= 0) {
@@ -13170,7 +13192,7 @@ async function saveNewStockItem() {
         return costPrice * (1 + markup);
       })(),
       image: uploadedImage || existingItem?.image || undefined,
-      type: createProduct ? 'product' : (existingItem?.type || 'stock')
+      type: existingItem?.type || 'stock'
     });
     menu[existingMatchIndex] = enrichEnterpriseRecord('products', updatedItem, existingItem);
     enqueueEnterpriseRecordChange('products', menu[existingMatchIndex], 'upsert').catch(console.warn);
@@ -13195,8 +13217,8 @@ async function saveNewStockItem() {
     }
     const newItem = enrichEnterpriseRecord('products', {
       name,
-      category: null,
-      type: createProduct ? 'product' : 'stock',
+      category: category || null,
+      type: 'stock',
       costPrice,
       stock,
       unit,
@@ -13306,9 +13328,9 @@ function clearNewStockItemForm() {
   document.getElementById('newStockItemPrice').value = '';
   document.getElementById('newStockItemStock').value = '';
   document.getElementById('newStockItemLowStockThreshold').value = '';
+  document.getElementById('newStockItemCategory').value = '';
   document.getElementById('newStockItemImageBase64').value = '';
   document.getElementById('newStockItemImage').value = '';
-  document.getElementById('newStockItemCreateProduct').checked = false;
   const preview = document.getElementById('newStockItemImagePreview');
   if (preview) {
     preview.src = 'https://placehold.co/100';
@@ -17375,6 +17397,7 @@ Object.assign(window, {
   toggleAddCustomerForm, addCustomer, editCustomer, deleteCustomer, toggleTheme, exportReportToCSV,
   renderStockListTable, editStockItem, toggleStockAdjustmentForm,
   saveStockAdjustment, toggleNewStockItemForm, saveNewStockItem,
+  previewStockItemImage, clearStockItemImage,
   triggerAppUpdate, exportTransactionsToCSV, backupAllData, restoreData, syncRestoredBackupToCloud, prepareLogin,
   manualBarcodeInput, startCameraScan, closeCameraScanner, startMobileConnection, login, loginWithEmail, registerWithEmail, handleForgotPassword, logout, syncNow, renderSyncHealthPanel, closeMobileConnectModal, generateAndPrintBarcodes, requestNotificationPermission,
   showLoginOverlay, testLocalNotification, toggleNotifications, dismissNotification, selectLoginRole, resetLoginStage,
