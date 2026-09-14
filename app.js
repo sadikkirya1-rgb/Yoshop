@@ -20,7 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -7474,33 +7474,33 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   <style>
     :root { --primary-light: #ff6b35; --primary-hover-light: #ff854f; --bg-light: #f0f2f5; --card-light: #fff; --text-light: #333; --border-light: #eee; --primary-dark: #ff854f; --primary-hover-dark: #ff6b35; --primary: #ff6b35; --primary-hover: #ff854f; --secondary:#10b981; --light:#f8fafc; --border:#dbe4ee; --text:#334155; }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', Arial, sans-serif; }
-    body { background:#edf2f7; padding:30px; color:var(--text); }
-    .invoice { width:210mm; min-height:297mm; background:white; margin:auto; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(0,0,0,.15); }
-    .header { background:linear-gradient(135deg,#2563eb,#1d4ed8,#10b981); color:white; padding:30px; display:flex; justify-content:space-between; align-items:center; }
-    .logo { display:flex; align-items:center; gap:15px; }
-    .logo-circle { width:70px; height:70px; background:white; color:#2563eb; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:34px; font-weight:bold; }
-    .logo h1 { font-size:30px; }
-    .logo p { opacity:.9; }
+    body { background:#edf2f7; padding:8px; color:var(--text); }
+    .invoice { width:210mm; min-height:0; background:white; margin:auto; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(0,0,0,.15); }
+    .header { background:linear-gradient(135deg,#2563eb,#1d4ed8,#10b981); color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; }
+    .logo { display:flex; align-items:center; gap:10px; }
+    .logo-circle { width:46px; height:46px; background:white; color:#2563eb; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:24px; font-weight:bold; }
+    .logo h1 { font-size:20px; }
+    .logo p { opacity:.9; font-size:0.76rem; }
     .invoice-title { text-align:right; }
-    .invoice-title h2 { font-size:38px; }
-    .content { padding:28px; }
-    .cards { display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:22px; }
-    .card { background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%); border:1px solid #dbe4ee; border-left:5px solid var(--primary); padding:18px; border-radius:12px; box-shadow:0 6px 16px rgba(15,23,42,0.04); }
-    .card h3 { color:var(--primary); margin-bottom:10px; font-size:1rem; text-transform:uppercase; letter-spacing:0.05em; }
-    .card p { margin:6px 0; line-height:1.45; color:#475569; }
-    .badge { display:inline-block; padding:6px 14px; background:#10b981; color:white; border-radius:30px; font-size:13px; font-weight:bold; }
-    table { width:100%; border-collapse:collapse; margin-top:18px; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
+    .invoice-title h2 { font-size:24px; }
+    .content { padding:12px 16px 10px; }
+    .cards { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
+    .card { background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%); border:1px solid #dbe4ee; border-left:5px solid var(--primary); padding:8px 10px; border-radius:12px; box-shadow:0 6px 16px rgba(15,23,42,0.04); }
+    .card h3 { color:var(--primary); margin-bottom:6px; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.05em; }
+    .card p { margin:3px 0; line-height:1.2; color:#475569; font-size:0.76rem; }
+    .badge { display:inline-block; padding:4px 8px; background:#10b981; color:white; border-radius:30px; font-size:10px; font-weight:bold; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
     thead { background:linear-gradient(135deg,#ff7b42,#ff6b35); color:white; }
-    th { padding:14px; font-size:0.9rem; text-transform:uppercase; letter-spacing:0.03em; }
-    td { padding:13px; border-bottom:1px solid #e5e7eb; }
+    th { padding:8px 6px; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; }
+    td { padding:6px 8px; border-bottom:1px solid #e5e7eb; font-size:0.72rem; }
     tbody tr:nth-child(even) { background:#f8fafc; }
-    .summary { margin-top:26px; width:380px; margin-left:auto; background:#f8fafc; border:1px solid #dbe4ee; border-radius:14px; padding:10px; box-shadow:0 8px 18px rgba(15,23,42,0.05); }
+    .summary { margin-top:12px; width:290px; margin-left:auto; background:#f8fafc; border:1px solid #dbe4ee; border-radius:14px; padding:6px; box-shadow:0 8px 18px rgba(15,23,42,0.05); }
     .summary table { margin-top:0; border:none; }
-    .summary td { padding:11px 12px; border:none; }
-    .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:20px; font-weight:bold; border-radius:10px; }
-    .footer { margin-top:30px; text-align:center; }
-    .footer p { font-size:1rem; }
-    .note { margin-top:18px; padding:16px 18px; background:linear-gradient(135deg,#eff6ff,#f8fafc); border-left:5px solid var(--primary); border-radius:10px; color:#475569; font-size:0.94rem; }
+    .summary td { padding:6px 8px; border:none; font-size:0.72rem; }
+    .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:15px; font-weight:bold; border-radius:10px; }
+    .footer { margin-top:12px; text-align:center; }
+    .footer p { font-size:0.82rem; }
+    .note { margin-top:10px; padding:10px 12px; background:linear-gradient(135deg,#eff6ff,#f8fafc); border-left:5px solid var(--primary); border-radius:10px; color:#475569; font-size:0.76rem; }
     .actions { display:flex; justify-content:center; gap:12px; margin:25px auto; }
     .preview-controls { position:sticky; top:0; z-index:100; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; row-gap:8px; padding:10px 12px; width:100%; max-width:100%; box-sizing:border-box; background:rgba(255,255,255,0.95); border-bottom:1px solid #ddd; backdrop-filter:blur(6px); }
     .preview-controls .zoom-group,
@@ -7638,13 +7638,11 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
             <div class="card">
               <h3>Payment</h3>
               <p>Invoice Type: <b>${safeReceiptType}</b></p>
-              <p>Table/Account: <b>${safeTableNo}</b></p>
               <p>Method: <b>${safePaymentMethod}</b></p>
               <p>Status: <span class="badge">${safePaymentStatus}</span></p>
               <p>Served By: <b>${safeServedBy}</b></p>
               ${showServiceModeStatus ? `<p>Order Status: <b>${safeOrderStatus}</b></p>` : ''}
               ${serviceTypeHtml}
-              <p>Cashier: <b>${safeCashier}</b></p>
               <p>Amount Paid: <b>${paidText}</b></p>
               <p>Balance: <b>${balanceText}</b></p>
             </div>
@@ -9941,6 +9939,9 @@ function updateDashboard() {
     transactions: filteredTransactions,
     menu
   });
+  const dashboardPaymentMethodTotals = calculateDashboardPaymentMethodTotals({
+    transactions: filteredTransactions
+  });
 
   const totalRevenue = dashboardRevenueMetrics.totalRevenue;
   const totalCost = dashboardRevenueMetrics.totalCost;
@@ -9988,6 +9989,8 @@ function updateDashboard() {
   document.getElementById('profitPercentage').textContent = profitMargin.toFixed(2);
   document.getElementById('netProfit').textContent = formatCurrency(netProfit);
   document.getElementById('totalRevenue').textContent = formatCurrency(effectiveRevenue);
+  document.getElementById('amountPaidDigitally').textContent = formatCurrency(dashboardPaymentMethodTotals.digital);
+  document.getElementById('amountPaidCash').textContent = formatCurrency(dashboardPaymentMethodTotals.cash);
   document.getElementById('totalBills').textContent = totalBills;
   document.getElementById('totalPurchases').textContent = formatCurrency(filteredPurchasesTotal);
   document.getElementById('totalExpenses').textContent = formatCurrency(expensesCardAmount);

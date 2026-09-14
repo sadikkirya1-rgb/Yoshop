@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from '../invoice-utils.mjs';
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [
@@ -306,6 +306,37 @@ test('calculateDashboardRevenueMetrics includes adjustments in settled revenue o
   });
 
   assert.equal(summary.totalRevenue, 100000);
+});
+
+test('calculateDashboardPaymentMethodTotals separates cash and digital collections using settled payment data', () => {
+  const summary = calculateDashboardPaymentMethodTotals({
+    transactions: [
+      {
+        total: 100,
+        amountPaid: 100,
+        paymentMethod: 'Cash'
+      },
+      {
+        total: 200,
+        amountPaid: 120,
+        paymentMethod: 'Mobile Payment',
+        balance: -80
+      },
+      {
+        total: 150,
+        amountPaid: 0,
+        paymentMethod: 'On Account'
+      },
+      {
+        total: 75,
+        amountPaid: 75,
+        paymentMethod: 'Card'
+      }
+    ]
+  });
+
+  assert.equal(summary.cash, 100);
+  assert.equal(summary.digital, 195);
 });
 
 test('summarizePurchaseImpact separates purchase totals, internal deductions, stock value impact, and service expense', () => {

@@ -394,6 +394,38 @@ export function calculateDashboardRevenueMetrics({ transactions = [], menu = [] 
   };
 }
 
+export function calculateDashboardPaymentMethodTotals({ transactions = [] } = {}) {
+  const transactionList = Array.isArray(transactions) ? transactions : [];
+
+  return transactionList.reduce((totals, transaction) => {
+    if (!transaction || typeof transaction !== 'object') return totals;
+
+    const paymentMethod = typeof transaction.paymentMethod === 'string'
+      ? transaction.paymentMethod.trim().toLowerCase()
+      : '';
+
+    const isCash = paymentMethod === 'cash';
+    const isDigital = paymentMethod.includes('card')
+      || paymentMethod.includes('mobile')
+      || paymentMethod.includes('momo')
+      || paymentMethod.includes('wallet');
+
+    if (!isCash && !isDigital) return totals;
+
+    const total = Number(transaction.total || 0);
+    const paymentSummary = calculateInvoicePaymentSummary(transaction, total);
+    const paidAmount = Math.max(0, Number(paymentSummary.amountPaid || 0));
+
+    if (isCash) {
+      totals.cash += paidAmount;
+    } else {
+      totals.digital += paidAmount;
+    }
+
+    return totals;
+  }, { cash: 0, digital: 0 });
+}
+
 export function summarizeDebtInvoices({ customers = [], transactions = [] } = {}) {
   const invoiceRows = buildInvoiceListItems({ customers, transactions });
   const outstandingDebt = invoiceRows.reduce((sum, row) => {
