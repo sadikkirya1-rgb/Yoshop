@@ -11465,6 +11465,7 @@ function renderCustomerList() {
       : `<span style="${outstandingBalance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${outstandingBalance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(outstandingBalance))}</span>`;
 
     const whatsappCell = customer.whatsapp ? `<a href="https://wa.me/${encodeURIComponent(customer.whatsapp.replace(/\s+/g, ''))}" target="_blank" rel="noreferrer" style="color:#25D366; text-decoration:none; font-weight:600;">${escapeHtml(customer.whatsapp)}</a>` : '<span style="color:#888;">N/A</span>';
+    const emailCell = customer.email ? `<a href="mailto:${encodeURIComponent(customer.email)}" style="color:#0d6efd; text-decoration:none; font-weight:600;">${escapeHtml(customer.email)}</a>` : '<span style="color:#888;">N/A</span>';
     const whatsappAction = '';
     const sendStatusAction = '';
     const tr = document.createElement('tr');
@@ -11472,6 +11473,7 @@ function renderCustomerList() {
                         <td>${i + 1}</td>
                         <td>${escapeHtml(customer.name)}</td>
                         <td style="white-space:nowrap;">${whatsappCell}</td>
+                        <td style="white-space:nowrap;">${emailCell}</td>
                         <td>${escapeHtml(customer.address || '')}</td>
                         <td>${outstandingText}</td>
                         <td style="text-align: right; white-space: nowrap;">
@@ -12574,6 +12576,7 @@ function onPaymentCustomerChange() {
 function addCustomer() {
   const nameInput = document.getElementById('customerNameInput');
   const contactInput = document.getElementById('customerContactInput');
+  const emailInput = document.getElementById('customerEmailInput');
   const addressInput = document.getElementById('customerAddressInput');
   const index = document.getElementById('customerIndex').value;
 
@@ -12586,6 +12589,7 @@ function addCustomer() {
   const customerData = enrichEnterpriseRecord('customers', {
     name: nameInput.value.trim(),
     contact: contactInput.value.trim(),
+    email: emailInput?.value.trim() || '',
     whatsapp: whatsappInput?.value.trim() || '',
     address: addressInput.value.trim(),
     balance: existingCustomer?.balance || 0,
@@ -12616,6 +12620,7 @@ function editCustomer(index) {
   toggleAddCustomerForm(true);
   document.getElementById('customerNameInput').value = customer.name;
   document.getElementById('customerContactInput').value = customer.contact;
+  document.getElementById('customerEmailInput').value = customer.email || '';
   document.getElementById('customerWhatsAppInput').value = customer.whatsapp || '';
   document.getElementById('customerAddressInput').value = customer.address;
   document.getElementById('customerIndex').value = index;
@@ -12854,7 +12859,12 @@ function renderStockListTable() {
     tr.innerHTML = `
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('stockListBody','selectAllStock')"></td>
         <td>${rowIndex + 1}</td>
-        <td class="u-fs-08 u-text-break">${item.name}</td> 
+        <td class="u-fs-08 u-text-break">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <img src="${item.image || 'https://placehold.co/40x40?text=No+Image'}" alt="${escapeHtml(item.name || 'Stock item')}" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #d9d9d9; background:#f7f7f7;">
+            <span>${item.name}</span>
+          </div>
+        </td>
         <td class="u-fs-08">${item.unit || 'N/A'}</td>
         <td class="u-fs-08 u-text-right u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(costPrice)}</td>
         <td class="u-fs-08 u-text-right">${Number(stock).toFixed(1)}</td>

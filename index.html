@@ -694,9 +694,12 @@
             <input type="hidden" id="customerIndex">
             <div class="input-row">
               <input type="text" id="customerNameInput" placeholder="Customer Name" class="u-flex-2">
-              <input type="text" id="customerContactInput" placeholder="Contact (Phone/Email)" class="u-flex-2">
+              <input type="text" id="customerContactInput" placeholder="Phone" class="u-flex-2">
             </div>
-            <div class="input-row"><input type="text" id="customerWhatsAppInput" placeholder="WhatsApp Number" class="u-flex-2"></div>
+            <div class="input-row">
+              <input type="email" id="customerEmailInput" placeholder="Email" class="u-flex-2">
+              <input type="text" id="customerWhatsAppInput" placeholder="WhatsApp Number" class="u-flex-2">
+            </div>
             <div class="input-row"><input type="text" id="customerAddressInput" placeholder="Address"></div>
             <div class="input-row" style="justify-content: flex-end;">
               <button class="btn" id="saveCustomerBtn" onclick="addCustomer()">Save Customer</button>
@@ -736,6 +739,7 @@
                 <th>#</th>
                 <th>Name</th>
                 <th>WhatsApp</th>
+                <th>Email</th>
                 <th>Address</th>
                 <th>Outstanding</th>
                 <th style="text-align: right;">Actions</th>
