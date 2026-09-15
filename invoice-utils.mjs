@@ -394,36 +394,61 @@ export function calculateDashboardRevenueMetrics({ transactions = [], menu = [] 
   };
 }
 
-export function calculateDashboardPaymentMethodTotals({ transactions = [] } = {}) {
+export function calculateDashboardPaymentMethodTotals({ transactions = [], adjustments = [] } = {}) {
   const transactionList = Array.isArray(transactions) ? transactions : [];
+  const adjustmentList = Array.isArray(adjustments) ? adjustments : [];
 
-  return transactionList.reduce((totals, transaction) => {
-    if (!transaction || typeof transaction !== 'object') return totals;
-
-    const paymentMethod = typeof transaction.paymentMethod === 'string'
-      ? transaction.paymentMethod.trim().toLowerCase()
+  const getPaymentBucket = paymentMethod => {
+    const normalizedMethod = typeof paymentMethod === 'string'
+      ? paymentMethod.trim().toLowerCase()
       : '';
 
-    const isCash = paymentMethod === 'cash';
-    const isDigital = paymentMethod.includes('card')
-      || paymentMethod.includes('mobile')
-      || paymentMethod.includes('momo')
-      || paymentMethod.includes('wallet');
+    if (normalizedMethod === 'cash') return 'cash';
+    if (normalizedMethod.includes('card')
+      || normalizedMethod.includes('debit')
+      || normalizedMethod.includes('credit')
+      || normalizedMethod.includes('mobile')
+      || normalizedMethod.includes('momo')
+      || normalizedMethod.includes('wallet')) return 'digital';
+    return null;
+  };
 
-    if (!isCash && !isDigital) return totals;
+  const addPayment = (totals, paymentMethod, amount) => {
+    const bucket = getPaymentBucket(paymentMethod);
+    const paidAmount = Math.max(0, Number(amount) || 0);
+    if (bucket) totals[bucket] += paidAmount;
+  };
+
+  const seenAdjustmentIds = new Set();
+  const addAdjustment = (totals, adjustment) => {
+    if (!adjustment || typeof adjustment !== 'object') return;
+    const adjustmentId = adjustment.id || adjustment.recordId;
+    if (adjustmentId) {
+      if (seenAdjustmentIds.has(String(adjustmentId))) return;
+      seenAdjustmentIds.add(String(adjustmentId));
+    }
+    addPayment(totals, adjustment.method, adjustment.amount);
+  };
+
+  const totals = transactionList.reduce((totals, transaction) => {
+    if (!transaction || typeof transaction !== 'object') return totals;
 
     const total = Number(transaction.total || 0);
     const paymentSummary = calculateInvoicePaymentSummary(transaction, total);
-    const paidAmount = Math.max(0, Number(paymentSummary.amountPaid || 0));
+    const transactionAdjustments = Array.isArray(transaction.adjustments) && transaction.adjustments.length > 0
+      ? transaction.adjustments.filter(Boolean)
+      : (transaction.lastAdjustment ? [transaction.lastAdjustment] : []);
+    const adjustmentTotal = transactionAdjustments.reduce((sum, adjustment) => sum + (Number(adjustment?.amount) || 0), 0);
+    const basePaidAmount = Math.max(0, paymentSummary.amountPaid - adjustmentTotal);
 
-    if (isCash) {
-      totals.cash += paidAmount;
-    } else {
-      totals.digital += paidAmount;
-    }
+    addPayment(totals, transaction.paymentMethod, basePaidAmount);
+    transactionAdjustments.forEach(adjustment => addAdjustment(totals, adjustment));
 
     return totals;
   }, { cash: 0, digital: 0 });
+
+  adjustmentList.forEach(adjustment => addAdjustment(totals, adjustment));
+  return totals;
 }
 
 export function summarizeDebtInvoices({ customers = [], transactions = [] } = {}) {

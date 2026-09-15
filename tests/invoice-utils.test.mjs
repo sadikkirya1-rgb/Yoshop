@@ -339,6 +339,52 @@ test('calculateDashboardPaymentMethodTotals separates cash and digital collectio
   assert.equal(summary.digital, 195);
 });
 
+test('calculateDashboardPaymentMethodTotals assigns transaction adjustments to their own payment method', () => {
+  const summary = calculateDashboardPaymentMethodTotals({
+    transactions: [{
+      total: 200,
+      amountPaid: 75,
+      paymentMethod: 'On Account',
+      adjustments: [{ id: 'mobile-adjustment', amount: 125, method: 'Mobile Money' }]
+    }]
+  });
+
+  assert.equal(summary.cash, 0);
+  assert.equal(summary.digital, 125);
+});
+
+test('calculateDashboardPaymentMethodTotals counts debit and credit card adjustments as digital payments', () => {
+  const summary = calculateDashboardPaymentMethodTotals({
+    adjustments: [
+      { id: 'debit-adjustment', amount: 80, method: 'Debit Card' },
+      { id: 'credit-adjustment', amount: 120, method: 'Credit Card' }
+    ]
+  });
+
+  assert.equal(summary.cash, 0);
+  assert.equal(summary.digital, 200);
+});
+
+test('calculateDashboardPaymentMethodTotals includes filtered customer adjustments without double-counting transaction adjustments', () => {
+  const transactionAdjustment = { id: 'cash-adjustment', amount: 40, method: 'Cash' };
+  const summary = calculateDashboardPaymentMethodTotals({
+    transactions: [{
+      total: 100,
+      amountPaid: 100,
+      paymentMethod: 'On Account',
+      adjustmentsAppliedToAmountPaid: true,
+      adjustments: [transactionAdjustment]
+    }],
+    adjustments: [
+      transactionAdjustment,
+      { id: 'filtered-customer-adjustment', amount: 60, method: 'Cash' }
+    ]
+  });
+
+  assert.equal(summary.cash, 100);
+  assert.equal(summary.digital, 0);
+});
+
 test('summarizePurchaseImpact separates purchase totals, internal deductions, stock value impact, and service expense', () => {
   const purchases = [
     { amount: 1000, purchaseType: 'stock', purchaseSource: 'internal' },

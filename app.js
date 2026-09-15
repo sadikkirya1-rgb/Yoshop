@@ -9726,9 +9726,14 @@ function getFilteredDashboardTransactions() {
     const filteredAdjustments = adjustments.filter(adjustment => isDateInRange(adjustment.date));
 
     if (!transactionDateInRange && filteredAdjustments.length === 0) return [];
+    const allAdjustmentTotal = adjustments.reduce((sum, adjustment) => sum + (Number(adjustment?.amount) || 0), 0);
+    const baseAmountPaid = tx.adjustmentsAppliedToAmountPaid === true
+      ? Math.max(0, (Number(tx.amountPaid) || 0) - allAdjustmentTotal)
+      : Number(tx.amountPaid) || 0;
     return [{
       ...tx,
-      amountPaid: transactionDateInRange ? tx.amountPaid : 0,
+      amountPaid: transactionDateInRange ? baseAmountPaid : 0,
+      adjustmentsAppliedToAmountPaid: false,
       adjustments: filteredAdjustments,
       lastAdjustment: filteredAdjustments[filteredAdjustments.length - 1] || null,
       date: transactionDateInRange ? tx.date : filteredAdjustments[0].date
@@ -9940,7 +9945,8 @@ function updateDashboard() {
     menu
   });
   const dashboardPaymentMethodTotals = calculateDashboardPaymentMethodTotals({
-    transactions: filteredTransactions
+    transactions: filteredTransactions,
+    adjustments: getFilteredDashboardAdjustments()
   });
 
   const totalRevenue = dashboardRevenueMetrics.totalRevenue;
