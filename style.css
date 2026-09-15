@@ -448,7 +448,7 @@ section>h3 {
 
 .dashboard-card {
   background: linear-gradient(145deg, #ffffff, #f0f2f5);
-  padding: 20px;
+  padding: 14px;
   border-radius: 16px;
   text-align: center;
   border: 1px solid rgba(255, 255, 255, 0.6);
@@ -460,16 +460,25 @@ section>h3 {
   overflow: hidden;
 }
 
+.dashboard-card-icon {
+  display: block;
+  margin: 0 auto 4px;
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
 .dashboard-card:hover {
   transform: translateY(-5px);
   box-shadow: 0 15px 30px rgba(0, 0, 0, 0.1), 0 10px 10px rgba(0, 0, 0, 0.05);
 }
 
 .dashboard-card h4 {
-  margin: 0 0 5px 0;
+  display: block;
+  max-width: 100%;
+  margin: 0 0 4px 0;
   color: var(--text);
   opacity: 0.8;
-  font-size: 0.8em;
+  font-size: 0.72em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -477,7 +486,7 @@ section>h3 {
 
 .dashboard-card p {
   margin: 0;
-  font-size: 0.8em;
+  font-size: 0.72em;
   /* Make value same size as title */
   color: var(--primary);
 }
