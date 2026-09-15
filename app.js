@@ -9952,14 +9952,14 @@ function updateDashboard() {
   const totalRevenue = dashboardRevenueMetrics.totalRevenue;
   const totalCost = dashboardRevenueMetrics.totalCost;
 
-  const totalExpenses = calculateTotalExpenses(filteredExpenses);
+  const operatingExpenses = calculateTotalExpenses(filteredExpenses);
   // Use date-filtered purchase list for purchaseSummary so service expense
   // and internalRevenueDeduction are scoped to the selected date range
   const purchaseSummary = summarizePurchaseImpact(getFilteredPurchaseHistory());
   const effectiveRevenue = totalRevenue - purchaseSummary.internalRevenueDeduction;
-  const netProfit = effectiveRevenue - totalCost - totalExpenses;
-  const expensesCardAmount = effectiveRevenue - netProfit;
-  const profitMargin = effectiveRevenue > 0 ? ((effectiveRevenue - totalCost - totalExpenses) / effectiveRevenue) * 100 : 0;
+  const netProfit = effectiveRevenue - totalCost - operatingExpenses;
+  const totalExpenseCardAmount = purchaseSummary.totalPurchases + operatingExpenses;
+  const profitMargin = effectiveRevenue > 0 ? ((effectiveRevenue - totalCost - operatingExpenses) / effectiveRevenue) * 100 : 0;
   const totalBills = filteredTransactions.length;
   const debtSummary = summarizeDebtInvoices({
     customers: Array.isArray(customers) ? customers : [],
@@ -9999,7 +9999,9 @@ function updateDashboard() {
   document.getElementById('amountPaidCash').textContent = formatCurrency(dashboardPaymentMethodTotals.cash);
   document.getElementById('totalBills').textContent = totalBills;
   document.getElementById('totalPurchases').textContent = formatCurrency(filteredPurchasesTotal);
-  document.getElementById('totalExpenses').textContent = formatCurrency(expensesCardAmount);
+  document.getElementById('totalExpenses').textContent = formatCurrency(totalExpenseCardAmount);
+  const totalCostEl = document.getElementById('totalCost');
+  if (totalCostEl) totalCostEl.textContent = formatCurrency(totalCost);
   document.getElementById('totalServiceExpense').textContent = formatCurrency(totalServiceExpense);
   document.getElementById('totalWastageLoss').textContent = formatCurrency(totalWastageLoss);
   document.getElementById('outstandingDebt').textContent = formatCurrency(outstandingDebt);
