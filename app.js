@@ -2587,8 +2587,8 @@ function initAppAdminDashboardLayout() {
               <button class="btn btn-purple u-m-0" onclick="runBulkSubscriptionAction('notice')">Send Notice</button>
             </div>
           </div>
-          <div class="u-overflow-x-auto">
-            <table class="u-w-full table-excel">
+          <div class="u-overflow-x-auto admin-subscriptions-scroll">
+            <table class="u-w-full table-excel admin-subscriptions-table">
               <thead>
                 <tr>
                   <th class="u-text-center">#</th>
@@ -3201,7 +3201,7 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
         <td class="u-text-center"><img src="${row.logoUrl}" style="width:32px; height:32px; object-fit:contain; border-radius:4px; border:1px solid var(--border-color); background:transparent;" onerror="clearBrokenTenantLogo('${row.uid}', this);"></td>
         <td class="u-bold">${row.shopName}</td>
         <td class="u-fs-08"><strong>${businessId}</strong></td>
-        <td class="u-fs-08"><code style="font-size:0.75em; white-space:normal; word-break:break-all;">${row.uid}</code></td>
+        <td class="u-fs-08"><code style="font-size:0.75em; white-space:nowrap;">${row.uid}</code></td>
         <td class="u-fs-08">${row.ownerEmail}</td>
         <td class="u-fs-08">${row.whatsapp}</td>
         <td class="u-fs-08"><span class="shop-card-status ${row.className}">${row.label}</span></td>
@@ -3212,7 +3212,7 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
         <td class="u-fs-08">${expiryText}</td>
         <td class="u-fs-08">${row.lastSync}</td>
         <td class="u-text-right">
-          <div style="display:flex; gap:4px; justify-content:flex-end; flex-wrap:wrap;">
+          <div class="admin-subscription-actions" style="display:flex; gap:4px; justify-content:flex-end; flex-wrap:nowrap; white-space:nowrap;">
             <button class="btn btn-info u-fs-08" style="padding:4px 8px; margin:0;" onclick="monitorShop('${row.uid}', '${shopNameSafe}')">Monitor</button>
             ${row.userStatus === 'pending' ? `<button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetUserStatus('${row.uid}', 'active'); refreshAppAdminSubscriptions();">Approve</button>` : ''}
             <button class="btn btn-danger u-fs-08" style="padding:4px 8px; margin:0;" onclick="deleteShop('${row.uid}', '${shopNameSafe}')">Delete</button>

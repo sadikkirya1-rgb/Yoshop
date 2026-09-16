@@ -1030,6 +1030,40 @@ table {
   background: rgba(255, 107, 53, 0.1);
 }
 
+.admin-subscriptions-table {
+  width: max-content;
+  min-width: 1400px;
+  white-space: nowrap;
+}
+
+.admin-subscriptions-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: auto;
+  scrollbar-color: var(--primary) rgba(15, 23, 42, 0.12);
+  padding-bottom: 4px;
+}
+
+.admin-subscriptions-scroll::-webkit-scrollbar {
+  height: 14px;
+}
+
+.admin-subscriptions-scroll::-webkit-scrollbar-track {
+  background: rgba(15, 23, 42, 0.12);
+  border-radius: 7px;
+}
+
+.admin-subscriptions-scroll::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border: 3px solid rgba(15, 23, 42, 0.12);
+  border-radius: 7px;
+}
+
+.admin-subscriptions-table .admin-subscription-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
 table th {
   background: transparent;
   color: var(--text);
