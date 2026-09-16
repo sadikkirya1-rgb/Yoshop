@@ -36,6 +36,8 @@ const firebaseConfig = {
 
 // REPLACEMENT: Put your actual Firebase UID here (find it in Firebase Console > Auth)
 const MASTER_APP_ADMIN_UID = "Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2"; // Also detects sadikkirya@gmail.com automatically
+const APP_ADMIN_CONTACT_EMAIL = 'sadikkirya@gmail.com';
+const APP_ADMIN_CONTACT_WHATSAPP = '+971562889428';
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
@@ -2876,6 +2878,9 @@ async function deleteShop(shopUid, shopName) {
   );
   if (!confirmation) return;
 
+  const whatsappDraft = await prepareAdminWhatsAppMessage(shopUid, shopName, 'deleted');
+  if (whatsappDraft === null && await hasTargetWhatsAppNumber(shopUid)) return;
+
   try {
     // If the admin is deleting their OWN account's shop data, 
     // we must clear local state first to prevent auto-resync from recreating it.
@@ -2906,10 +2911,66 @@ async function deleteShop(shopUid, shopName) {
     lastShopsTableRefreshId += 1;
 
     await Promise.all([refreshAppAdminShops(), refreshAppAdminShopsTable(), refreshAppAdminSubscriptions()]);
+    if (whatsappDraft) openAdminWhatsApp(whatsappDraft);
     alert(`Success: "${shopName}" and its Firebase Auth, Firestore, and Storage data have been deleted.`);
   } catch (error) {
     handleFirebaseError(error, "Delete Shop", `users/${shopUid}`);
   }
+}
+
+async function hasTargetWhatsAppNumber(uid) {
+  try {
+    const userSnap = await getDoc(doc(dbFirestore, 'users', uid));
+    return Boolean(userSnap.exists() && String(userSnap.data()?.whatsapp || '').replace(/\D/g, ''));
+  } catch (error) {
+    return false;
+  }
+}
+
+async function prepareAdminWhatsAppMessage(uid, shopName, eventLabel) {
+  let whatsappNumber = '';
+  try {
+    const userSnap = await getDoc(doc(dbFirestore, 'users', uid));
+    whatsappNumber = String(userSnap.exists() ? userSnap.data()?.whatsapp || '' : '').replace(/\D/g, '');
+  } catch (error) {
+    console.warn('Could not load target WhatsApp number:', error);
+  }
+
+  if (!whatsappNumber) {
+    if (typeof showAppAlert === 'function') await showAppAlert(`No WhatsApp number is saved for ${shopName || 'this user'}.`, 'Missing WhatsApp');
+    return false;
+  }
+
+  const message = await showAppPrompt(
+    `Enter the custom WhatsApp message to send to ${shopName || 'this user'} after the account is ${eventLabel}:`,
+    'Custom WhatsApp Message',
+    'Type your own message or choose a preset',
+    '',
+    [
+      { label: 'Approved', text: 'Hello, your YoShop account has been approved. You can now sign in and start using your shop.' },
+      { label: 'Suspended', text: 'Hello, your YoShop account has been suspended. Please contact the app admin for assistance.' },
+      { label: 'Activated', text: 'Hello, your YoShop account has been activated again. You can now access your shop.' },
+      { label: 'Deleted', text: 'Hello, your YoShop account has been deleted as requested. Please contact the app admin if you need assistance.' },
+      { label: 'General Contact', text: 'Hello, this is the YoShop app admin. Please contact us if you need any assistance with your account.' }
+    ]
+  );
+  if (!message || !String(message).trim()) {
+    if (typeof showAppAlert === 'function') await showAppAlert('A custom message is required before WhatsApp can open.', 'Message Required');
+    return null;
+  }
+
+  return { whatsappNumber, message: String(message).trim() };
+}
+
+function openAdminWhatsApp(draft) {
+  if (!draft) return;
+  const url = `https://wa.me/${draft.whatsappNumber}?text=${encodeURIComponent(draft.message)}`;
+  window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+async function sendAdminWhatsApp(uid, shopName) {
+  const draft = await prepareAdminWhatsAppMessage(uid, shopName, 'contacted');
+  if (draft) openAdminWhatsApp(draft);
 }
 
 function removeDeletedShopFromAdminTables(uid) {
@@ -3155,7 +3216,7 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
             <button class="btn btn-info u-fs-08" style="padding:4px 8px; margin:0;" onclick="monitorShop('${row.uid}', '${shopNameSafe}')">Monitor</button>
             ${row.userStatus === 'pending' ? `<button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetUserStatus('${row.uid}', 'active'); refreshAppAdminSubscriptions();">Approve</button>` : ''}
             <button class="btn btn-danger u-fs-08" style="padding:4px 8px; margin:0;" onclick="deleteShop('${row.uid}', '${shopNameSafe}')">Delete</button>
-            <button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="window.open('https://wa.me/${row.whatsapp}', '_blank')" ${row.whatsapp === 'N/A' ? 'disabled' : ''}>WhatsApp</button>
+            <button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="sendAdminWhatsApp('${row.uid}', '${shopNameSafe}')" ${row.whatsapp === 'N/A' ? 'disabled' : ''}>WhatsApp</button>
             <button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'activate')">Activate</button>
             <button class="btn btn-warning u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'suspend')">Suspend</button>
             <button class="btn btn-danger u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetShopSubscriptionState('${row.uid}', 'deactivate')">Deactivate</button>
@@ -3253,6 +3314,11 @@ async function updateTargetShopSubscriptionState(uid, action, message = '', refr
     ]);
 
     if (typeof showAppAlert === 'function') showAppAlert(`Shop status updated to ${nextStatus}.`);
+    if (action === 'activate' || action === 'suspend') {
+      const shopName = subscriptionsAdminState.rows.find(row => row.uid === uid)?.shopName || 'this shop';
+      const whatsappDraft = await prepareAdminWhatsAppMessage(uid, shopName, action === 'activate' ? 'activated' : 'suspended');
+      if (whatsappDraft) openAdminWhatsApp(whatsappDraft);
+    }
     if (refresh) {
       refreshAppAdminSubscriptions();
       refreshAppAdminShops();
@@ -3372,6 +3438,9 @@ async function refreshAppAdminShops() {
         subStatusHtml = `<p class="u-fs-08" style="color: #28a745"><strong>Plan:</strong> PROMO PLAN</p>`;
       }
 
+      const adminContactHtml = (userStatus === 'pending' || shopStatus === 'suspended') ? `
+        <p class="u-fs-08" style="padding:6px; background:rgba(37, 211, 102, 0.12); border-radius:4px;"><strong>App Admin:</strong> ${APP_ADMIN_CONTACT_EMAIL}<br><strong>WhatsApp:</strong> ${APP_ADMIN_CONTACT_WHATSAPP}</p>` : '';
+
       const card = document.createElement('div');
       card.className = 'shop-card';
       card.onclick = (e) => { if (!e.target.closest('button')) monitorShop(uid, shopSettings.name || 'Unnamed Shop'); };
@@ -3388,6 +3457,7 @@ async function refreshAppAdminShops() {
             <p class="u-fs-08"><strong>Business ID:</strong> ${businessId}</p>
             <p class="u-fs-08"><strong>Contact:</strong> ${contactInfo}</p>
             <p class="u-fs-08"><strong>WhatsApp:</strong> ${whatsappNum}</p>
+            ${adminContactHtml}
             <p class="u-fs-08"><strong>Last Active:</strong> ${lastActive}</p>
             <p class="u-fs-08"><strong>Last Sync:</strong> ${shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never'}</p>
             ${subStatusHtml}
@@ -3396,7 +3466,7 @@ async function refreshAppAdminShops() {
             <button class="btn btn-info u-flex-1" onclick="monitorShop('${uid}', '${(shopSettings.name || 'Unnamed Shop').replace(/'/g, "\\'")}')" style="margin:0;">Monitor</button>
             ${userStatus === 'pending' ? `<button class="btn btn-success u-flex-1" onclick="updateTargetUserStatus('${uid}', 'active')" style="margin:0;">Approve</button>` : ''}
             <button class="btn btn-danger" onclick="deleteShop('${uid}', '${(shopSettings.name || 'Unnamed').replace(/'/g, "\\'")}')" style="margin:0; flex: 0.5;">Delete</button>
-            <button class="btn btn-success" onclick="window.open('https://wa.me/${whatsappNum}', '_blank')" style="margin:0; flex: 0.5;" ${whatsappNum === 'N/A' ? 'disabled' : ''}>WhatsApp</button>
+            <button class="btn btn-success" onclick="sendAdminWhatsApp('${uid}', '${(shopSettings.name || 'Unnamed Shop').replace(/'/g, "\\'")}')" style="margin:0; flex: 0.5;" ${whatsappNum === 'N/A' ? 'disabled' : ''}>WhatsApp</button>
           </div>
           <div style="display:flex; gap:5px; margin-top:5px; align-items:center;">
             <input type="date" id="sub-date-${uid}" class="u-fs-08" style="flex:2; padding:3px; border-radius:4px; border:1px solid #ccc; background: white; color: black;">
@@ -3545,7 +3615,7 @@ async function refreshAppAdminShopsTable() {
               <button class="btn btn-info u-fs-08" style="padding:4px 8px; margin:0;" onclick="monitorShop('${uid}', '${(shopSettings.name || 'Unnamed Shop').replace(/'/g, "\\'")}')">Monitor</button>
               ${userStatus === 'pending' ? `<button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="updateTargetUserStatus('${uid}', 'active'); refreshAppAdminShopsTable();">Approve</button>` : ''}
               <button class="btn btn-danger u-fs-08" style="padding:4px 8px; margin:0;" onclick="deleteShop('${uid}', '${(shopSettings.name || 'Unnamed').replace(/'/g, "\\'")}')">Delete</button>
-              <button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="window.open('https://wa.me/${whatsappNum}', '_blank')" ${whatsappNum === 'N/A' ? 'disabled' : ''}>WhatsApp</button>
+              <button class="btn btn-success u-fs-08" style="padding:4px 8px; margin:0;" onclick="sendAdminWhatsApp('${uid}', '${(shopSettings.name || 'Unnamed Shop').replace(/'/g, "\\'")}')" ${whatsappNum === 'N/A' ? 'disabled' : ''}>WhatsApp</button>
             </div>
           </td>
         `;
@@ -3653,6 +3723,7 @@ async function updateTargetShopStatus(uid, status) {
   }
 
   try {
+    const shopName = subscriptionsAdminState.rows.find(row => row.uid === uid)?.shopName || 'this shop';
     // Update the shop_profile configuration for the target user
     const shopRef = doc(dbFirestore, "users", uid, "data", "shop_profile");
     await setDoc(shopRef, {
@@ -3660,6 +3731,10 @@ async function updateTargetShopStatus(uid, status) {
     }, { merge: true });
 
     refreshAppAdminShops(); // Refresh UI to show updated badge
+    if (status === 'active' || status === 'suspended') {
+      const whatsappDraft = await prepareAdminWhatsAppMessage(uid, shopName, status === 'active' ? 'activated' : 'suspended');
+      if (whatsappDraft) openAdminWhatsApp(whatsappDraft);
+    }
   } catch (error) {
     handleFirebaseError(error, "Update Shop Status", `users/${uid}/data/shop_profile`);
   }
@@ -3709,9 +3784,14 @@ async function updateTargetSubscriptionDate(uid) {
  */
 async function updateTargetUserStatus(uid, status) {
   try {
+    const shopName = subscriptionsAdminState.rows.find(row => row.uid === uid)?.shopName || 'this shop';
     await setDoc(doc(dbFirestore, "users", uid), { status }, { merge: true });
     alert(`User status updated to ${status}.`);
     refreshAppAdminShops();
+    if (status === 'active') {
+      const whatsappDraft = await prepareAdminWhatsAppMessage(uid, shopName, 'approved');
+      if (whatsappDraft) openAdminWhatsApp(whatsappDraft);
+    }
   } catch (error) {
     handleFirebaseError(error, "Update User Status", `users/${uid}`);
   }
@@ -4825,18 +4905,36 @@ async function registerWithEmail() {
   const whatsapp = whatsappInput?.value?.trim();
   const confirmPassword = confirmInput?.value?.trim();
 
-  if (!email || !password) return alert("Please enter email and password.");
-  if (nameInput && !name) return alert("Please enter your name.");
-  if (whatsappInput && !whatsapp) return alert("Please enter your WhatsApp number starting with a country code.");
-  if (whatsapp && !whatsapp.startsWith('+')) return alert("WhatsApp number must start with a country code (e.g., +256)."); //
+  const showRegistrationMessage = (message) => {
+    const messageEl = document.getElementById('auth-login-error');
+    if (!messageEl) return;
+    messageEl.textContent = message;
+    messageEl.style.display = 'block';
+    messageEl.style.color = '#ffd7d7';
+  };
+
+  const clearRegistrationMessage = () => {
+    const messageEl = document.getElementById('auth-login-error');
+    if (!messageEl) return;
+    messageEl.textContent = '';
+    messageEl.style.display = 'none';
+  };
+
+  if (!email || !password) return showRegistrationMessage('Please enter your email address and password.');
+  if (nameInput && !name) return showRegistrationMessage('Please enter your name.');
+  if (whatsappInput && !whatsapp) return showRegistrationMessage('Please enter your WhatsApp number starting with a country code.');
+  if (whatsapp && !/^\+\d{7,15}$/.test(whatsapp)) return showRegistrationMessage('WhatsApp number must start with + and contain 7 to 15 digits after the country code.');
   const phoneNumber = whatsapp.substring(1); // Remove the '+'
-  if (phoneNumber.length < 7 || phoneNumber.length > 15) return alert("WhatsApp number (excluding country code) must be between 7 and 15 digits long.");
-  if (confirmInput && password !== confirmPassword) return alert("Passwords do not match.");
+  if (phoneNumber.length < 7 || phoneNumber.length > 15) return showRegistrationMessage('WhatsApp number must contain between 7 and 15 digits after the country code.');
+  if (confirmInput && !confirmPassword) return showRegistrationMessage('Please confirm your password.');
+  if (confirmInput && password !== confirmPassword) return showRegistrationMessage('Passwords do not match.');
 
   const passwordRegex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
   if (!passwordRegex.test(password)) {
-    return alert("Password must be at least 8 characters long, and include at least one uppercase letter, one lowercase letter, one number, and one special character.");
+    return showRegistrationMessage('Password must be at least 8 characters and include uppercase, lowercase, a number, and a special character.');
   }
+
+  clearRegistrationMessage();
 
   try {
     if (isAppAdminRestrictedIdentity({
@@ -4898,9 +4996,9 @@ async function registerWithEmail() {
   } catch (error) {
     pendingApprovalNotice = false;
     if (error.code === 'auth/email-already-in-use') {
-      alert("This email is already registered. If you previously used Google, try logging in with Google first, then add a password.");
+      showRegistrationMessage('This email is already registered. If you previously used Google, log in with Google first, then add a password.');
     } else {
-      alert("Registration failed: " + error.message);
+      showRegistrationMessage("Registration failed: " + error.message);
     }
   } finally {
     registrationInProgress = false;
@@ -5006,13 +5104,16 @@ function closeAppPopup(result = { confirmed: false, value: null }) {
   }
 }
 
-function showAppPopup({ title = 'Confirm', message = '', confirmText = 'Confirm', cancelText = 'Cancel', showCancel = true, input = null, allowOutsideClose = true, icon = null, danger = false }) {
+function showAppPopup({ title = 'Confirm', message = '', confirmText = 'Confirm', cancelText = 'Cancel', showCancel = true, input = null, allowOutsideClose = true, icon = null, danger = false, quickMessages = [] }) {
   const modal = document.getElementById('appPopupModal');
   const card = modal.querySelector('.app-popup-card');
   const titleEl = document.getElementById('appPopupTitle');
   const messageEl = document.getElementById('appPopupMessage');
   const inputWrapper = document.getElementById('appPopupInputWrapper');
   const inputEl = document.getElementById('appPopupInput');
+  const quickMessagesWrap = document.getElementById('appPopupQuickMessages');
+  const quickMessageSelect = document.getElementById('appPopupQuickMessageSelect');
+  const quickMessageButtons = document.getElementById('appPopupQuickMessageButtons');
   const confirmBtn = document.getElementById('appPopupConfirm');
   const cancelBtn = document.getElementById('appPopupCancel');
   const iconWrap = document.getElementById('appPopupIconWrap');
@@ -5056,6 +5157,42 @@ function showAppPopup({ title = 'Confirm', message = '', confirmText = 'Confirm'
     inputEl.value = '';
   }
 
+  if (quickMessagesWrap && quickMessageSelect && quickMessageButtons) {
+    quickMessageSelect.innerHTML = '';
+    quickMessageButtons.innerHTML = '';
+    if (quickMessages.length) {
+      quickMessagesWrap.style.display = 'block';
+      const chooseOption = document.createElement('option');
+      chooseOption.value = '';
+      chooseOption.textContent = 'Choose a preset message';
+      quickMessageSelect.appendChild(chooseOption);
+      quickMessages.forEach((quickMessage, index) => {
+        const option = document.createElement('option');
+        option.value = quickMessage.text;
+        option.textContent = quickMessage.label;
+        quickMessageSelect.appendChild(option);
+
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn btn-secondary u-fs-08';
+        button.style.cssText = 'margin:0; padding:4px 8px;';
+        button.textContent = quickMessage.label;
+        button.onclick = () => {
+          quickMessageSelect.selectedIndex = index + 1;
+          inputEl.value = quickMessage.text;
+          inputEl.focus();
+        };
+        quickMessageButtons.appendChild(button);
+      });
+      quickMessageSelect.onchange = () => {
+        if (quickMessageSelect.value) inputEl.value = quickMessageSelect.value;
+      };
+    } else {
+      quickMessagesWrap.style.display = 'none';
+      quickMessageSelect.onchange = null;
+    }
+  }
+
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 
@@ -5091,14 +5228,15 @@ function showAppConfirm(message, title = 'Confirm', confirmText = 'Yes', cancelT
   return showAppPopup({ title, message, confirmText, cancelText, showCancel: true, input: null });
 }
 
-function showAppPrompt(message, title = 'Enter value', placeholder = '', defaultValue = '') {
+function showAppPrompt(message, title = 'Enter value', placeholder = '', defaultValue = '', quickMessages = []) {
   return showAppPopup({
     title,
     message,
     confirmText: 'Submit',
     cancelText: 'Cancel',
     showCancel: true,
-    input: { enabled: true, placeholder, value: defaultValue, type: 'text', maxlength: 1024 }
+    input: { enabled: true, placeholder, value: defaultValue, type: 'text', maxlength: 1024 },
+    quickMessages
   }).then(result => result.confirmed ? result.value : null);
 }
 
@@ -15310,9 +15448,9 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
               <input type="password" id="authPassword" placeholder="Password" style="flex: 1; padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;">
               <button type="button" onclick="togglePINVisibility('authPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 1em;" title="Show/Hide Password">👁️</button>
             </div>
-            ${!isRegister ? `<div id="auth-login-error" style="display: none; color: #ffd7d7; font-size: 0.75em; margin-top: -2px; text-align: left; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 8px; width: 100%; box-sizing: border-box;">Invalid email or password</div>` : ''}
+            <div id="auth-login-error" style="display: none; color: #ffd7d7; font-size: 0.75em; margin-top: -2px; text-align: left; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; padding: 6px 8px; width: 100%; box-sizing: border-box;"></div>
             ${isRegister ? `<div style="display: flex; gap: 8px; align-items: center;"><input type="password" id="authConfirmPassword" placeholder="Confirm Password" style="flex: 1; padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;"><button type="button" onclick="togglePINVisibility('authPassword')" class="btn" style="padding: 12px; margin: 0; background: transparent; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; font-size: 1em;" title="Show/Hide Password">👁️</button></div>` : ''}
-            <button id="email-login-submit-btn" onclick="${submitFn}" class="btn" style="background: #28a745; color: white; margin: 0; font-weight: bold; padding: 12px; border-radius: 8px; border: none; width: 100%;">${submitText}</button>
+            <button type="button" id="email-login-submit-btn" onclick="${submitFn}" class="btn" style="background: #28a745; color: white; margin: 0; font-weight: bold; padding: 12px; border-radius: 8px; border: none; width: 100%;">${submitText}</button>
             
             <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 5px;">
               <a href="#" onclick="showLoginOverlay('${toggleMode}')" style="color: white; font-size: 0.8em; text-decoration: underline; opacity: 0.8;">${toggleText}</a>
@@ -15353,6 +15491,14 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
     if (prevPassword) {
       const passwordField = document.getElementById('authPassword');
       if (passwordField) passwordField.value = prevPassword;
+    }
+
+    const submitButton = document.getElementById('email-login-submit-btn');
+    if (submitButton && isRegister) {
+      submitButton.onclick = (event) => {
+        event.preventDefault();
+        registerWithEmail();
+      };
     }
   } else {
     if (window._marketingInterval) clearInterval(window._marketingInterval);
@@ -17412,7 +17558,7 @@ Object.assign(window, {
   renderShopNoticesInSettings, showNoticesPage, closeNoticesPage, addOrUpdateAdminNoticeNotification, removeAdminNoticeNotification, openAdminNoticeFromNotification, checkForAdminNoticeForCurrentShop,
   clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage,
   toggleAdminAccessForm, saveAdminAccessEntry, editAdminAccessEntry, deleteAdminAccessEntry, toggleAdminAccessStatus, clearYoShopLocalData, resetLocalDatabase,
-  refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, clearBrokenTenantLogo, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus,
+  refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, clearBrokenTenantLogo, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus, sendAdminWhatsApp,
   switchAppAdminView, updateTargetUserStatus, updateTargetSubscription, updateTargetSubscriptionDate, setFreePlan, updateTargetShopSubscriptionState, generateAutoBarcode, toggleReportCategoryDropdown
   , toggleReportOptionsDropdown, changeReportZoom,
 
