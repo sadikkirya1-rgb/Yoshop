@@ -6802,20 +6802,20 @@ function renderPaymentItemEditor() {
     const canIncrease = stockInfo.maxAllowedQty === null || stockInfo.availableStock === null || stockInfo.availableStock > 0;
     const maxAttr = Number.isFinite(stockInfo.maxAllowedQty) ? `max="${stockInfo.maxAllowedQty}"` : '';
 
-    const truncatedName = item.name && item.name.length > 6 ? `${item.name.slice(0, 6)}…` : item.name;
-    return `<div class="payment-item-row" data-item-id="${item.id}" style="display:grid; grid-template-columns: minmax(50px, 1fr) 30px 48px 65px 48px 1fr 24px; gap:6px; align-items:center; padding:6px 0; border-bottom:1px solid rgba(0,0,0,0.08); font-size:0.84rem;">
-      <div style="min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;" title="${item.name}">${truncatedName}</div>
+    const productName = item.name || '';
+    return `<div class="payment-item-row" data-item-id="${item.id}">
+      <div class="payment-item-name" title="${productName}">${productName}</div>
       <div style="text-align:center; color:#475569; font-size:0.78rem;">${stockLabel}</div>
       <input type="number" min="0" step="1" ${maxAttr} value="${normalizedQty}" oninput="updatePaymentItemQuantity('${item.id}', this.value)" onchange="updatePaymentItemQuantity('${item.id}', this.value)" style="padding:4px 2px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:center;" />
-      <div style="text-align:right; font-weight:600; white-space:nowrap;">${getCurrencySymbol()}${formatCurrency(unitPrice)}</div>
+      <input type="number" min="0" step="0.01" value="${unitPrice.toFixed(2)}" oninput="updatePaymentItemPrice('${item.id}', this.value)" onchange="updatePaymentItemPrice('${item.id}', this.value)" style="padding:4px 2px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:right;" />
       <input type="number" min="0" step="1" value="${Math.round(discountAmount)}" oninput="updatePaymentItemDiscount('${item.id}', this.value)" onchange="updatePaymentItemDiscount('${item.id}', this.value)" style="padding:4px 2px; border:1px solid #cbd5e1; border-radius:4px; width:100%; text-align:center;" />
       <div class="payment-item-total" style="text-align:right; font-weight:700; white-space:nowrap;">${getCurrencySymbol()}${formatCurrency(lineTotal)}</div>
       <button type="button" onclick="removePaymentItem('${item.id}')" style="border:none; background:#ef4444; color:white; border-radius:50%; width:24px; height:24px; cursor:pointer; flex-shrink:0; display:inline-flex; align-items:center; justify-content:center; font-size:14px; line-height:1;">−</button>
     </div>`;
   }).join('');
 
-  container.innerHTML = `<div style="border:1px solid rgba(0,0,0,0.08); border-radius:8px; padding:6px 8px; background:#f8fafc; min-width:340px;">
-    <div class="payment-item-header-row" style="display:grid; grid-template-columns: minmax(50px, 1fr) 30px 48px 65px 48px 1fr 24px; gap:6px; font-size:0.70rem; font-weight:700; color:#475569; text-transform:uppercase; letter-spacing:0; margin-bottom:4px;">
+  container.innerHTML = `<div class="payment-items-card">
+    <div class="payment-item-header-row">
       <div>Item</div>
       <div style="text-align:center;">Stock</div>
       <div style="text-align:center;">Qty</div>
@@ -6882,6 +6882,19 @@ function updatePaymentItemQuantity(itemId, value) {
   updateLineTotalInDOM(itemId, item);
 }
 
+function updatePaymentItemPrice(itemId, value) {
+  const currentOrder = activeOrders[CART_ID];
+  if (!currentOrder || !Array.isArray(currentOrder.items)) return;
+
+  const item = currentOrder.items.find(entry => String(entry.id) === String(itemId));
+  if (!item) return;
+
+  const parsedPrice = parseFloat(value);
+  item.price = Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0;
+  updatePaymentTotals();
+  updateLineTotalInDOM(itemId, item);
+}
+
 function adjustPaymentItemQuantity(itemId, delta = 1) {
   const currentOrder = activeOrders[CART_ID];
   if (!currentOrder || !Array.isArray(currentOrder.items)) return;
@@ -6944,6 +6957,7 @@ function removePaymentItem(itemId) {
 
 window.renderPaymentItemEditor = renderPaymentItemEditor;
 window.updatePaymentItemQuantity = updatePaymentItemQuantity;
+window.updatePaymentItemPrice = updatePaymentItemPrice;
 window.adjustPaymentItemQuantity = adjustPaymentItemQuantity;
 window.updatePaymentItemDiscount = updatePaymentItemDiscount;
 window.removePaymentItem = removePaymentItem;
@@ -7378,6 +7392,59 @@ function deductStock(itemName, quantity, visited = new Set()) {
   } else {
     dish.recipe.forEach(component => deductStock(component.itemName, component.quantity * quantity, new Set(visited)));
   }
+}
+
+async function restoreStock(itemName, quantity, visited = new Set(), productId = '') {
+  if (!itemName || quantity <= 0) return;
+
+  if (visited.has(itemName)) return;
+  visited.add(itemName);
+
+  const normalizedProductId = String(productId || '').trim();
+  const dish = menu.find(d => (
+    normalizedProductId && String(d.recordId || d.id || '').trim() === normalizedProductId
+  ) || d.name === itemName);
+  if (!dish) return;
+
+  if (!dish.recipe || dish.recipe.length === 0) {
+    if (dish.stock !== undefined) {
+      dish.stock = (parseFloat(dish.stock) || 0) + quantity;
+      const index = menu.indexOf(dish);
+      if (index >= 0) {
+        menu[index] = enrichEnterpriseRecord('products', dish, dish);
+        await enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(error => {
+          console.warn('[STOCK] Failed to queue restored stock:', error);
+        });
+      }
+    }
+    return;
+  }
+
+  await Promise.all(dish.recipe.map(component => (
+    restoreStock(component.itemName, component.quantity * quantity, new Set(visited))
+  )));
+}
+
+async function restoreTransactionStock(transaction) {
+  if (!transaction || !Array.isArray(transaction.items)) return;
+  if (String(transaction.orderType || '').toLowerCase() === 'service') return;
+
+  const restoredItems = transaction.items.map(item => {
+    const quantity = parseInt(item?.qty ?? item?.quantity, 10) || 0;
+    return quantity > 0
+      ? restoreStock(item.name, quantity, new Set(), item.recordId || item.productId || item.id)
+      : Promise.resolve(false);
+  });
+  await Promise.all(restoredItems);
+}
+
+function deductTransactionStock(transaction) {
+  if (!isStockTrackingEnabled() || !transaction || !Array.isArray(transaction.items)) return;
+
+  transaction.items.forEach(item => {
+    const quantity = parseInt(item?.qty ?? item?.quantity, 10) || 0;
+    if (quantity > 0) deductStock(item.name, quantity);
+  });
 }
 // ===== Dishes Table =====
 function renderDishesTable() {
@@ -8934,9 +9001,22 @@ async function deleteTransaction(index) {
   if (!confirmed) return;
 
   const txToDelete = transactions[index];
+  if (txToDelete && !txToDelete.inventoryRestored) {
+    await restoreTransactionStock(txToDelete);
+  }
   transactions.splice(index, 1);
+  await saveData(false);
   renderTransactions();
+  renderMenu();
+  renderInventoryReport();
+  renderStockListTable();
   updateDashboard();
+
+  if (navigator.onLine && currentUser && dbFirestore) {
+    await flushLocalSyncQueue({ force: true, skipStatusUpdate: true }).catch(error => {
+      console.warn('[STOCK] Failed to sync restored stock before sale deletion:', error);
+    });
+  }
 
   const effectiveUid = getEffectiveUid();
   const transactionId = txToDelete.id || txToDelete.recordId || txToDelete.date;
@@ -8958,7 +9038,6 @@ async function deleteTransaction(index) {
     : Promise.resolve(null);
 
   void Promise.all([
-    saveData(false),
     deleteAction,
     (async () => {
       if (!effectiveUid || !dbFirestore) return;
@@ -8987,6 +9066,10 @@ async function reopenTransaction(index) {
 
   const confirmed = await showAppConfirm(`This will move the transaction back to the active cart and delete the original bill record. Do you want to continue?`, "Reopen Transaction", "Continue", "Cancel");
   if (!confirmed) return;
+
+  if (transactionToEdit && !transactionToEdit.inventoryRestored) {
+    await restoreTransactionStock(transactionToEdit);
+  }
 
   // Restore the order
   activeOrders[CART_ID] = {
@@ -11929,7 +12012,7 @@ function getTransactionWhatsAppNumber(transaction) {
   return String(phone).replace(/\D/g, '');
 }
 
-function updateTransactionStatusByIndex(transactionIndex, status) {
+async function updateTransactionStatusByIndex(transactionIndex, status) {
   if (!Array.isArray(transactions) || typeof transactionIndex !== 'number' || transactionIndex < 0 || transactionIndex >= transactions.length) {
     return null;
   }
@@ -11937,10 +12020,24 @@ function updateTransactionStatusByIndex(transactionIndex, status) {
   if (!transaction || typeof status !== 'string') return null;
   const previousStatus = String(transaction.orderStatus || transaction.status || '').trim().toLowerCase();
   const normalizedStatus = String(status || '').trim().toLowerCase();
+  const isBeingCanceled = previousStatus !== 'canceled' && normalizedStatus === 'canceled';
+  const isBeingReopened = previousStatus === 'canceled' && normalizedStatus !== 'canceled';
+  const hasRestoredStock = transaction.inventoryRestored === true || Boolean(transaction.inventoryRestoredAt);
+
+  if (isBeingCanceled && !hasRestoredStock) {
+    await restoreTransactionStock(transaction);
+  } else if (isBeingReopened && hasRestoredStock) {
+    deductTransactionStock(transaction);
+  }
+
   const updatedTransaction = buildTransactionSyncPayload({
     ...transaction,
     orderStatus: normalizedStatus,
     status: normalizedStatus,
+    inventoryRestored: normalizedStatus === 'canceled' ? true : false,
+    inventoryRestoredAt: normalizedStatus === 'canceled'
+      ? (transaction.inventoryRestoredAt || new Date().toISOString())
+      : null,
     lastUpdated: new Date().toISOString(),
     synced: false,
     syncStatus: 'pending'
@@ -11965,7 +12062,7 @@ function updateTransactionStatusByIndex(transactionIndex, status) {
   return transactions[transactionIndex];
 }
 
-function promptAndUpdateOrderStatus(transactionIndex) {
+async function promptAndUpdateOrderStatus(transactionIndex) {
   const transaction = Array.isArray(transactions) ? transactions[transactionIndex] : null;
   if (!transaction) {
     return showAppAlert('Could not find the transaction to update.', 'Update Status');
@@ -11981,7 +12078,7 @@ function promptAndUpdateOrderStatus(transactionIndex) {
     return showAppAlert('Invalid order status. Use pending, in_progress, ready, completed, or canceled.', 'Invalid Status');
   }
 
-  const updatedTransaction = updateTransactionStatusByIndex(transactionIndex, normalized);
+  const updatedTransaction = await updateTransactionStatusByIndex(transactionIndex, normalized);
   if (updatedTransaction) {
     const receiptModal = document.getElementById('receiptModal');
     if (receiptModal && receiptModal._transactionData && receiptModal._transactionData.invoiceNumber === updatedTransaction.invoiceNumber) {
@@ -11994,7 +12091,7 @@ function promptAndUpdateOrderStatus(transactionIndex) {
   }
 }
 
-function updateReceiptOrderStatus() {
+async function updateReceiptOrderStatus() {
   const receiptModal = document.getElementById('receiptModal');
   const statusSelect = document.getElementById('receiptStatusSelect');
   if (!receiptModal || !statusSelect) return;
@@ -12010,7 +12107,7 @@ function updateReceiptOrderStatus() {
       ? transactions.findIndex(tx => tx && normalizeInvoiceNumber(tx.invoiceNumber) === normalizeInvoiceNumber(receiptData.invoiceNumber))
       : -1;
     if (transactionIndex >= 0) {
-      updateTransactionStatusByIndex(transactionIndex, newStatus);
+      await updateTransactionStatusByIndex(transactionIndex, newStatus);
       receiptModal._transactionData.orderStatus = newStatus;
       populateReceiptContent(receiptModal._transactionData);
       return showAppAlert(`Order status updated to ${getOrderStatusLabel(newStatus)}.`, 'Status Updated');
@@ -12226,7 +12323,7 @@ function findTransactionIndexByInvoiceNumber(invoiceNumber) {
   });
 }
 
-function handleInvoiceStatusButtonClick(status) {
+async function handleInvoiceStatusButtonClick(status) {
   if (!settings.serviceMode) {
     return showAppAlert('Service Mode must be enabled to update invoice status.', 'Service Mode Required');
   }
@@ -12240,7 +12337,7 @@ function handleInvoiceStatusButtonClick(status) {
   if (txIndex < 0) {
     return showAppAlert('Service invoice not found. Check the invoice selection and try again.', 'Invoice Not Found');
   }
-  const updatedTransaction = updateTransactionStatusByIndex(txIndex, status);
+  const updatedTransaction = await updateTransactionStatusByIndex(txIndex, status);
   if (updatedTransaction) {
     closeInvoiceStatusModal();
     showAppAlert(`Service invoice status updated to ${getOrderStatusLabel(status)}.`, 'Status Updated');

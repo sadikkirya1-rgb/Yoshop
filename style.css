@@ -2427,6 +2427,13 @@ section#menuTab.active {
   border: 1px solid var(--border-color);
 }
 
+@media (min-width: 992px) {
+  .payment-modal-content {
+    width: min(90vw, 900px);
+    max-width: min(90vw, 900px);
+  }
+}
+
 .payment-details-wrapper {
   margin-bottom: 10px;
   font-size: 0.9em;
@@ -2440,12 +2447,54 @@ section#menuTab.active {
 }
 
 #paymentItemsEditor>div {
-  min-width: 340px;
+  min-width: 0;
+}
+
+.payment-items-card {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 8px;
+  padding: 6px 8px;
+  background: #f8fafc;
+}
+
+.payment-item-header-row,
+.payment-item-row {
+  display: grid;
+  grid-template-columns: minmax(0, 2.2fr) repeat(4, minmax(0, 1fr)) minmax(0, 1.4fr) 28px;
+  gap: 8px;
+  width: 100%;
+  align-items: center;
+}
+
+.payment-item-header-row {
+  margin-bottom: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.15;
+}
+
+.payment-item-row {
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  font-size: 0.84rem;
 }
 
 .payment-item-row {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.payment-item-name {
+  min-width: 0;
+  font-weight: 600;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.2;
 }
 
 .payment-item-row input {
@@ -2460,7 +2509,7 @@ section#menuTab.active {
 
 .payment-item-header-row,
 .payment-item-row {
-  gap: 0 !important;
+  gap: 8px !important;
 }
 
 .payment-item-header-row>*,
@@ -2470,38 +2519,8 @@ section#menuTab.active {
 
 .payment-item-header-row>*:nth-child(2),
 .payment-item-row>*:nth-child(2) {
-  margin-left: 3px !important;
-  /* Small gap between Item and Stock */
-  padding-right: 8px !important;
-  /* Creates visual gap between Stock content and Qty column */
-}
-
-.payment-item-header-row>*:nth-child(3),
-.payment-item-row>*:nth-child(3) {
-  margin-left: 0px !important;
-  /* Gap comes from Stock's padding-right */
-}
-
-.payment-item-header-row>*:nth-child(4),
-.payment-item-row>*:nth-child(4) {
-  margin-left: 3px !important;
-}
-
-.payment-item-header-row>*:nth-child(5),
-.payment-item-row>*:nth-child(5) {
-  margin-left: 6px !important;
-  /* Gap between Unit and Disc */
-}
-
-.payment-item-header-row>*:nth-child(6),
-.payment-item-row>*:nth-child(6) {
-  margin-left: 6px !important;
-  /* Gap between Disc and Total */
-}
-
-.payment-item-header-row>*:nth-child(7),
-.payment-item-row>*:nth-child(7) {
-  margin-left: 4px !important;
+  margin-left: 0 !important;
+  padding-right: 0 !important;
 }
 
 .payment-row {
@@ -3633,13 +3652,13 @@ body.dark-mode #reportOutput table tfoot tr {
 
   /* Reduce font sizes and spacings inside paymentItemsEditor on small screens */
   #paymentItemsEditor>div {
-    min-width: 270px !important;
+    min-width: 0 !important;
     padding: 4px 4px !important;
   }
 
   .payment-item-header-row,
   .payment-item-row {
-    grid-template-columns: 1fr 22px 34px 52px 34px 1fr 18px !important;
+    grid-template-columns: minmax(0, 2fr) repeat(4, minmax(0, 1fr)) minmax(0, 1.4fr) 22px !important;
     gap: 4px !important;
     width: 100% !important;
   }
@@ -3653,6 +3672,8 @@ body.dark-mode #reportOutput table tfoot tr {
 
   .payment-item-header-row {
     font-size: 0.58rem !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere;
   }
 
   .payment-item-row {
