@@ -13074,7 +13074,7 @@ function renderStockListTable() {
     if (isAddedToShop) {
       const shopButton = tr.querySelector('.table-actions-cell button');
       if (shopButton) {
-        shopButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM7.5 11.5 4 8l1-1 2.5 2.5L11 6l1 1-4.5 4.5z"/></svg><span>Added to Shop</span>';
+        shopButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM7.5 11.5 4 8l1-1 2.5 2.5L11 6l1 1-4.5 4.5z"/></svg><span>🛒 Added to Shop</span>';
       }
     }
     tbody.appendChild(tr);
