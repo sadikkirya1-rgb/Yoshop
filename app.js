@@ -2448,8 +2448,9 @@ function normalizeInvoicePrintData(source = {}) {
   const subtotal = Number(source.subtotal ?? source.subTotal ?? 0);
   const tax = Number(source.taxAmount ?? source.tax ?? source.vatAmount ?? source.vat ?? 0);
   const deliveryFee = Math.max(0, Number(source.deliveryFee ?? source.delivery_fee ?? 0) || 0);
-  const discount = source.discount || { amount: Number(source.discount?.amount ?? source.discountAmount ?? 0) };
-  const total = Number(source.total ?? source.grandTotal ?? source.amount ?? subtotal + tax + deliveryFee - discount.amount);
+  const discountAmount = Math.max(0, Number(source.discount?.amount ?? source.discountAmount ?? source.discount?.value ?? 0) || 0);
+  const discount = { ...(source.discount || {}), amount: discountAmount };
+  const total = Number(source.total ?? source.grandTotal ?? source.amount ?? subtotal + tax + deliveryFee - discountAmount);
   const paymentSummary = calculateInvoicePaymentSummary(source, total);
   const amountPaid = paymentSummary.amountPaid;
   const balance = paymentSummary.balance;
@@ -6523,9 +6524,9 @@ async function processSplitPayments() {
         tableNo: 'Shop',
         items: bill.items,
         total: billTotal + deliveryFee,
-        subtotal: billTotals.subtotal,
-        tax: billTotals.tax,
-        deliveryFee,
+        subtotal: Number(billTotals.subtotal || 0),
+        tax: Number(billTotals.tax || 0),
+        deliveryFee: deliveryFee,
         paymentMethod: paymentMethod
       };
       totalProcessed += transaction.total;
@@ -7832,8 +7833,8 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
           <div class="summary">
             <table>
               <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
-              <tr><td>Delivery Fee</td><td align="right">${deliveryFeeText}</td></tr>
               <tr><td>Discount</td><td align="right">${discountText}</td></tr>
+              <tr><td>Delivery Fee</td><td align="right">${deliveryFeeText}</td></tr>
               <tr><td>VAT</td><td align="right">${taxText}</td></tr>
               ${adjustmentRowsHtml}
               <tr><td>Amount Paid</td><td align="right">${paidText}</td></tr>
@@ -8820,18 +8821,10 @@ function populateReceiptContent(transaction) {
           </div>`;
   }).join('');
 
-  let discountHtml = '';
-  if (discount && discount.amount > 0) {
-    const label = 'Discount';
-    discountHtml = `<div class="summary-line"><span>${label}</span> <span>-<span class="currency-symbol">${currencySymbol}</span>${formatCurrency(discount.amount)}</span></div>`;
-  }
+  const discountHtml = `<div class="summary-line"><span>Discount</span> <span>-<span class="currency-symbol">${currencySymbol}</span>${formatCurrency(discount?.amount || 0)}</span></div>`;
 
-  const taxHtml = (displayTax > 0)
-    ? `<div class="summary-line"><span>Tax (${settings.taxRate}%)</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(displayTax)}</span></div>`
-    : '';
-  const deliveryFeeHtml = Number(deliveryFee) > 0
-    ? `<div class="summary-line"><span>Delivery Fee</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(deliveryFee)}</span></div>`
-    : '';
+  const taxHtml = `<div class="summary-line"><span>VAT (${settings.taxRate}%)</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(displayTax)}</span></div>`;
+  const deliveryFeeHtml = `<div class="summary-line"><span>Delivery Fee</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(deliveryFee)}</span></div>`;
 
   // Add cache-buster for robust CORS handling in receipts
   let finalLogoUrl = logoUrl;
@@ -8906,9 +8899,9 @@ function populateReceiptContent(transaction) {
           ${paidLine}
           ${adjustedLines}
           ${balanceLine}
-          ${taxHtml}
           ${deliveryFeeHtml}
           ${discountHtml}
+          ${taxHtml}
           <div class="summary-line total" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:nowrap;">
             <span>TOTAL</span>
             <span style="display:flex; align-items:center; gap:10px; justify-content:flex-end; flex-wrap:nowrap; white-space:nowrap;">
@@ -13078,6 +13071,12 @@ function renderStockListTable() {
           <button class="icon-btn" title="Delete Item" aria-label="Delete Item" onclick="deleteItem(${index})" style="display:inline-flex; align-items:center; justify-content:center; gap:6px; width:86px; height:auto; padding:6px 12px; border:1px solid #fca5a5; background:linear-gradient(180deg, #fee2e2 0%, #fecaca 100%); color:#b91c1c; font-weight:700; font-size:0.75rem; border-radius:6px; box-shadow:0 2px 4px rgba(239,68,68,0.2);"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="#dc3545" viewBox="0 0 16 16"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg><span>Delete</span></button>
         </td>
       `;
+    if (isAddedToShop) {
+      const shopButton = tr.querySelector('.table-actions-cell button');
+      if (shopButton) {
+        shopButton.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16" aria-hidden="true"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM7.5 11.5 4 8l1-1 2.5 2.5L11 6l1 1-4.5 4.5z"/></svg><span>Added to Shop</span>';
+      }
+    }
     tbody.appendChild(tr);
   });
 }
@@ -13147,14 +13146,19 @@ async function convertToProduct(index) {
     item.barcode = `${(defaultCat || 'SP').substring(0, 2).toUpperCase()}-${Date.now().toString().slice(-6)}`;
   }
 
+  const stockValue = item.stock;
   menu[index] = enrichEnterpriseRecord('products', item, item);
-  enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
-  saveData();
+  if (stockValue !== undefined && menu[index].stock === undefined) {
+    menu[index].stock = stockValue;
+  }
 
   renderStockListTable();
   renderMenu();
   renderDishesTable();
   updateDashboard();
+
+  enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
+  void saveData(false).catch(console.warn);
 
   showAppAlert(`"${item.name}" has been added to the shop immediately.`, 'Added to Shop');
 }
