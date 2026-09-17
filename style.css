@@ -771,17 +771,35 @@ section>h3 {
 
 .menu-item-header {
   display: flex;
-  justify-content: space-between;
+  flex-direction: row;
   align-items: center;
+  justify-content: space-between;
   width: 100%;
+  gap: 6px;
+  text-align: left;
+}
+
+.menu-item-header-stacked {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
 }
 
 .menu-item h4 {
-  margin: 5px 0;
-  font-size: 0.8em;
-  /* Further reduced font size */
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.64em;
+  line-height: 1.3;
   font-weight: 500;
-  /* Remove bold styling */
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.menu-item-header-stacked h4 {
+  width: 100%;
+  flex: none;
 }
 
 .menu-item button {
@@ -799,9 +817,19 @@ section>h3 {
 }
 
 .menu-item p {
-  margin: 5px 0;
+  margin: 0;
   font-size: 0.8em;
-  /* Reduced font size */
+  line-height: 1.3;
+  text-align: left;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.menu-item-header-stacked p {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  white-space: normal;
 }
 
 .menu-item img {
@@ -816,7 +844,7 @@ section>h3 {
 /* Responsive adjustments for larger screens */
 @media (min-width: 992px) {
   .menu-item h4 {
-    font-size: 1em;
+    font-size: 0.74em;
   }
 }
 
@@ -868,19 +896,44 @@ section>h3 {
 }
 
 .menu-grid.list-view .menu-item-header {
-  flex-direction: column !important;
-  align-items: flex-start !important;
   flex: 1 !important;
   min-width: 120px !important;
+  gap: 2px !important;
+}
+
+.menu-grid.list-view .menu-item-header-inline {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.menu-grid.list-view .menu-item-header-stacked {
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: flex-start !important;
 }
 
 .menu-grid.list-view .menu-item h4 {
   margin: 0 !important;
-  font-size: 0.95em !important;
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  font-size: 0.7em !important;
+}
+
+.menu-grid.list-view .menu-item-header-stacked h4 {
+  width: 100% !important;
+  flex: none !important;
 }
 
 .menu-grid.list-view .menu-item p {
-  margin: 2px 0 0 0 !important;
+  margin: 0 !important;
+  width: auto !important;
+  white-space: nowrap !important;
+}
+
+.menu-grid.list-view .menu-item-header-stacked p {
+  width: 100% !important;
+  white-space: normal !important;
 }
 
 .menu-grid.list-view .stock-status {

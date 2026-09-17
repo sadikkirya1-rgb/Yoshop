@@ -5667,10 +5667,12 @@ function renderMenu() {
         const stockStatusHtml = isStockTrackingEnabled() && dish.type !== 'service'
           ? `<p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">${stockLabel}</p>`
           : '';
+        const isLongProductName = (dish.name || '').trim().length >= 18;
+        const headerClass = isLongProductName ? 'menu-item-header menu-item-header-stacked' : 'menu-item-header menu-item-header-inline';
         item.innerHTML = `
               <img src="${displayImage}" alt="">
               <div class="menu-item-body">
-                <div class="menu-item-header">
+                <div class="${headerClass}">
                   <h4>${dish.name}</h4>
                   <p><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(dish.price)}</p>
                 </div>
