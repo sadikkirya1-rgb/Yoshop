@@ -7223,6 +7223,9 @@ async function finalizePayment(isSplit = false) {
         .filter(item => (parseInt(item?.qty, 10) || 0) > 0)
         .map(item => ({
           ...item,
+          stockBeforeSale: Number.isFinite(Number(item?.stock))
+            ? Number(item.stock)
+            : (Number.isFinite(Number(item?.stockBeforeSale)) ? Number(item.stockBeforeSale) : null),
           discountAmount: Number(item?.discountAmount || 0)
         })),
       total: finalTotal,
@@ -7394,48 +7397,148 @@ function deductStock(itemName, quantity, visited = new Set()) {
   }
 }
 
-async function restoreStock(itemName, quantity, visited = new Set(), productId = '') {
-  if (!itemName || quantity <= 0) return;
+async function restoreStock(itemName, quantity, visited = new Set(), productId = '', stockBeforeSale = null) {
+  if ((!itemName && !productId) || quantity <= 0) return 0;
 
-  if (visited.has(itemName)) return;
-  visited.add(itemName);
-
+  const normalizedItemName = String(itemName).trim().toLowerCase();
   const normalizedProductId = String(productId || '').trim();
-  const dish = menu.find(d => (
-    normalizedProductId && String(d.recordId || d.id || '').trim() === normalizedProductId
-  ) || d.name === itemName);
-  if (!dish) return;
+  const visitKey = normalizedProductId || normalizedItemName;
+  if (visited.has(visitKey)) return 0;
+  visited.add(visitKey);
 
-  if (!dish.recipe || dish.recipe.length === 0) {
-    if (dish.stock !== undefined) {
-      dish.stock = (parseFloat(dish.stock) || 0) + quantity;
-      const index = menu.indexOf(dish);
+  const productById = menu.find(d => (
+    normalizedProductId && String(d.recordId || d.id || '').trim() === normalizedProductId
+  ));
+  const stockByName = menu.find(d => (
+    String(d.name || '').trim().toLowerCase() === normalizedItemName && d.stock !== undefined
+  ));
+  const dish = productById || stockByName || menu.find(d => (
+    String(d.name || '').trim().toLowerCase() === normalizedItemName
+  ));
+  if (!dish) {
+    const stockItem = menu.find(d => (
+      String(d.name || '').trim().toLowerCase() === normalizedItemName && d.stock !== undefined
+    ));
+    if (stockItem) {
+      const previousStock = parseFloat(stockItem.stock) || 0;
+      stockItem.stock = previousStock + quantity;
+      const index = menu.indexOf(stockItem);
       if (index >= 0) {
-        menu[index] = enrichEnterpriseRecord('products', dish, dish);
+        menu[index] = enrichEnterpriseRecord('products', stockItem, stockItem);
         await enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(error => {
-          console.warn('[STOCK] Failed to queue restored stock:', error);
+          console.warn('[STOCK] Failed to queue restored stock item:', error);
         });
       }
+      console.info('[STOCK_RESTORE] Restored stock-section item', {
+        product: stockItem.name,
+        quantity,
+        previousStock,
+        restoredStock: stockItem.stock
+      });
+      return quantity;
     }
-    return;
+    console.error('[STOCK_RESTORE] Product not found', { itemName, productId, quantity });
+    return 0;
   }
 
-  await Promise.all(dish.recipe.map(component => (
+  if (!dish.recipe || dish.recipe.length === 0) {
+    const previousStock = Number.isFinite(Number(dish.stock)) ? Number(dish.stock) : 0;
+    dish.stock = Number.isFinite(Number(stockBeforeSale))
+      ? Math.max(previousStock + quantity, Number(stockBeforeSale))
+      : previousStock + quantity;
+    const index = menu.indexOf(dish);
+    if (index >= 0) {
+      menu[index] = enrichEnterpriseRecord('products', dish, dish);
+      await enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(error => {
+        console.warn('[STOCK] Failed to queue restored stock:', error);
+      });
+    }
+    console.info('[STOCK_RESTORE] Restored stock', {
+      product: dish.name,
+      productId: dish.recordId || dish.id || null,
+      quantity,
+      previousStock,
+      restoredStock: dish.stock
+    });
+    return quantity;
+  }
+
+  const restoredQuantities = await Promise.all(dish.recipe.map(component => (
     restoreStock(component.itemName, component.quantity * quantity, new Set(visited))
   )));
+  if (restoredQuantities.every(restoredQuantity => restoredQuantity > 0)) return quantity;
+
+  if (dish.stock !== undefined || Number.isFinite(Number(stockBeforeSale))) {
+    const previousStock = Number.isFinite(Number(dish.stock)) ? Number(dish.stock) : 0;
+    dish.stock = Number.isFinite(Number(stockBeforeSale))
+      ? Math.max(previousStock + quantity, Number(stockBeforeSale))
+      : previousStock + quantity;
+    const index = menu.indexOf(dish);
+    if (index >= 0) {
+      menu[index] = enrichEnterpriseRecord('products', dish, dish);
+      await enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(error => {
+        console.warn('[STOCK] Failed to queue fallback restored stock:', error);
+      });
+    }
+    console.warn('[STOCK_RESTORE] Restored product from pre-sale snapshot after recipe mismatch', {
+      product: dish.name,
+      productId: dish.recordId || dish.id || null,
+      quantity,
+      previousStock,
+      restoredStock: dish.stock
+    });
+    return quantity;
+  }
+
+  return 0;
 }
 
 async function restoreTransactionStock(transaction) {
-  if (!transaction || !Array.isArray(transaction.items)) return;
-  if (String(transaction.orderType || '').toLowerCase() === 'service') return;
+  if (!transaction || !Array.isArray(transaction.items)) return 0;
+  if (!isStockTrackingEnabled() || String(transaction.orderType || '').toLowerCase() === 'service') return 0;
+  if (String(transaction.orderStatus || transaction.status || '').toLowerCase() === 'canceled' && transaction.inventoryRestored === true) {
+    console.info('[STOCK_RESTORE] Transaction already restored', {
+      transactionId: transaction.id || transaction.recordId || transaction.date
+    });
+    return transaction.items.reduce((total, item) => total + Math.max(0, parseInt(item?.qty ?? item?.quantity, 10) || 0), 0);
+  }
 
-  const restoredItems = transaction.items.map(item => {
+  const restoredItems = transaction.items.map(async item => {
     const quantity = parseInt(item?.qty ?? item?.quantity, 10) || 0;
-    return quantity > 0
-      ? restoreStock(item.name, quantity, new Set(), item.recordId || item.productId || item.id)
-      : Promise.resolve(false);
+    const itemName = item?.name || item?.productName || item?.itemName || '';
+    const productId = item?.productId || item?.productRecordId || item?.product?.recordId || item?.product?.id || '';
+    const stockBeforeSale = Number.isFinite(Number(item?.stockBeforeSale))
+      ? Number(item.stockBeforeSale)
+      : (Number.isFinite(Number(item?.stock)) ? Number(item.stock) : null);
+    if (quantity > 0 && !itemName && !productId) {
+      console.error('[STOCK_RESTORE] Sale item has no product identity', { item, transaction });
+    }
+    if (quantity <= 0) return 0;
+
+    const recipe = Array.isArray(item?.recipe) ? item.recipe : [];
+    if (recipe.length > 0) {
+      const recipeResults = await Promise.all(recipe.map(component => {
+        const componentName = component?.itemName || component?.name || component?.productName || '';
+        const componentId = component?.productId || component?.recordId || component?.id || '';
+        const componentQuantity = Number(component?.quantity ?? component?.qty) || 0;
+        return restoreStock(componentName, componentQuantity * quantity, new Set(), componentId);
+      }));
+      if (recipeResults.every(result => result > 0)) return quantity;
+
+      const directRestoredQuantity = await restoreStock(itemName, quantity, new Set(), productId, stockBeforeSale);
+      return directRestoredQuantity > 0 ? quantity : 0;
+    }
+
+    return restoreStock(itemName, quantity, new Set(), productId, stockBeforeSale);
   });
-  await Promise.all(restoredItems);
+  const restoredQuantities = await Promise.all(restoredItems);
+  const restoredTotal = restoredQuantities.reduce((total, restoredQuantity) => total + restoredQuantity, 0);
+  console.info('[STOCK_RESTORE] Transaction restoration complete', {
+    transactionId: transaction.id || transaction.recordId || transaction.date,
+    requestedItems: transaction.items.length,
+    restoredQuantity: restoredTotal
+  });
+  return restoredTotal;
 }
 
 function deductTransactionStock(transaction) {
@@ -9000,12 +9103,38 @@ async function deleteTransaction(index) {
   const confirmed = await showAppConfirm(`Are you sure you want to permanently delete this transaction? This action cannot be undone.`, "Delete Transaction", "Delete", "Cancel");
   if (!confirmed) return;
 
+  if (navigator.onLine && currentUser && dbFirestore) {
+    renderSyncStatus({
+      state: 'syncing',
+      label: '',
+      title: 'Online • deleting sale and restoring inventory...',
+      background: '#f59e0b',
+      showBadge: false
+    });
+  }
+
   const txToDelete = transactions[index];
-  if (txToDelete && !txToDelete.inventoryRestored) {
-    await restoreTransactionStock(txToDelete);
+  const transactionItems = Array.isArray(txToDelete?.items) ? txToDelete.items : [];
+  const tracksInventory = isStockTrackingEnabled() && String(txToDelete?.orderType || '').toLowerCase() !== 'service';
+  const requestedStockQuantity = tracksInventory ? transactionItems.reduce((total, item) => (
+    total + Math.max(0, parseInt(item?.qty ?? item?.quantity, 10) || 0)
+  ), 0) : 0;
+  const isCanceledTransaction = String(txToDelete?.orderStatus || txToDelete?.status || '').toLowerCase() === 'canceled';
+  const canSkipRestoration = isCanceledTransaction && txToDelete?.inventoryRestored === true;
+  const restoredQuantity = !tracksInventory || canSkipRestoration
+    ? requestedStockQuantity
+    : await restoreTransactionStock(txToDelete);
+
+  if (requestedStockQuantity > 0 && !canSkipRestoration && restoredQuantity < requestedStockQuantity) {
+    console.warn('[STOCK_RESTORE] Sale deletion continuing after incomplete inventory restoration', {
+      transactionId: txToDelete?.id || txToDelete?.recordId || txToDelete?.date,
+      requestedStockQuantity,
+      restoredQuantity,
+      items: transactionItems
+    });
   }
   transactions.splice(index, 1);
-  await saveData(false);
+  await saveData(true);
   renderTransactions();
   renderMenu();
   renderInventoryReport();
@@ -9016,10 +9145,11 @@ async function deleteTransaction(index) {
     await flushLocalSyncQueue({ force: true, skipStatusUpdate: true }).catch(error => {
       console.warn('[STOCK] Failed to sync restored stock before sale deletion:', error);
     });
+    renderMenu();
   }
 
   const effectiveUid = getEffectiveUid();
-  const transactionId = txToDelete.id || txToDelete.recordId || txToDelete.date;
+  const transactionId = txToDelete?.id || txToDelete?.recordId || txToDelete?.date;
   const deleteAction = effectiveUid && dbFirestore
     ? enqueueLocalSyncAction({
       entityType: 'sales',
@@ -9037,10 +9167,10 @@ async function deleteTransaction(index) {
     })
     : Promise.resolve(null);
 
-  void Promise.all([
+  await Promise.all([
     deleteAction,
     (async () => {
-      if (!effectiveUid || !dbFirestore) return;
+      if (!effectiveUid || !dbFirestore || !txToDelete) return;
       const txRef = collection(dbFirestore, "users", effectiveUid, "transactions");
       const references = [];
       if (transactionId) {
@@ -9051,10 +9181,23 @@ async function deleteTransaction(index) {
       references.push(...snap.docs.map(transactionDoc => deleteDoc(transactionDoc.ref)));
       await Promise.all(references);
     })()
-  ])
-    .then(() => flushLocalSyncQueue({ force: true }))
-    .catch(error => console.error("Cloud delete failed:", error));
-  await showAppAlert("Transaction deleted.", "Deleted");
+  ]).catch(error => {
+    console.error("Cloud delete failed:", error);
+    throw error;
+  });
+
+  if (navigator.onLine && currentUser && dbFirestore) {
+    await flushLocalSyncQueue({ force: true });
+  }
+  await updateOnlineStatus().catch(error => {
+    console.warn('[SYNC] Could not refresh status after deleting sale:', error);
+  });
+  await showAppAlert(
+    navigator.onLine && currentUser && dbFirestore
+      ? "Transaction deleted and inventory sync completed."
+      : "Transaction deleted locally. Inventory will sync when you reconnect.",
+    "Deleted"
+  );
 }
 async function reopenTransaction(index) {
   const transactionToEdit = transactions[index];
