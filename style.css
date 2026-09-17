@@ -1306,6 +1306,43 @@ textarea {
   border: 1px solid var(--border-color);
 }
 
+select {
+  transition: border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+select:hover,
+select:focus {
+  border-color: var(--primary);
+  background-color: color-mix(in srgb, var(--primary) 8%, var(--card));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 18%, transparent);
+  outline: none;
+}
+
+select option:hover,
+select option:checked {
+  background: var(--primary);
+  color: #fff;
+}
+
+#purchaseTab select:hover,
+#purchaseTab select:focus {
+  border-color: #2563eb;
+  background-color: #eff6ff;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
+}
+
+#purchaseTab select,
+#purchaseTab select option {
+  cursor: pointer;
+}
+
+#purchaseTab select option:hover,
+#purchaseTab select option:focus,
+#purchaseTab select option:checked {
+  background-color: #2563eb;
+  color: #fff;
+}
+
 .btn:active {
   transform: translateY(1px);
   /* "Pressed" effect */

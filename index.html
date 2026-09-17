@@ -1071,8 +1071,10 @@
           </div>
           <div class="input-row">
             <select id="purchaseType" class="u-flex-grow-1" onchange="togglePurchaseTypeFields()">
-              <option value="stock">Stock Item</option>
+              <option value="" selected>Select Service</option>
+              <option value="personal-exp">Personal Exp</option>
               <option value="service">Service / Expense</option>
+              <option value="stock">Stock Item</option>
               <option value="new-item">New Item</option>
             </select>
             <select id="purchaseSource" class="u-flex-grow-1">
@@ -1090,6 +1092,13 @@
           <div class="input-row" id="purchaseServiceFields" style="display:none;">
             <input type="text" id="purchaseServiceName" placeholder="Service / Expense name" class="u-flex-grow-1">
             <input type="number" id="purchaseServiceCost" placeholder="Service amount" min="0" step="0.01">
+          </div>
+          <div class="input-row" id="purchasePersonalExpFields" style="display:none; flex-wrap:wrap;">
+            <input type="text" id="purchasePersonalExpItem" placeholder="Item" class="u-flex-grow-1">
+            <input type="text" id="purchasePersonalExpDescription" placeholder="Description" class="u-flex-grow-1">
+            <input type="number" id="purchasePersonalExpQty" placeholder="Qty" min="0.01" step="0.01">
+            <input type="text" id="purchasePersonalExpUnit" placeholder="Unit">
+            <input type="number" id="purchasePersonalExpTotal" placeholder="Total Price" min="0" step="0.01">
           </div>
           <div class="input-row" id="purchaseNewItemFields" style="display:none;">
             <input type="text" id="purchaseNewItemName" placeholder="New item name" class="u-flex-grow-1">
