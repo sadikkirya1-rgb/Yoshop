@@ -267,6 +267,7 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
         total,
         subtotal: transaction.subtotal !== undefined ? Number(transaction.subtotal) : total,
         tax: transaction.tax !== undefined ? Number(transaction.tax) : 0,
+        deliveryFee: transaction.deliveryFee !== undefined ? Number(transaction.deliveryFee) : 0,
         discount: transaction.discount || { amount: 0 },
         receiptType: 'customerDebtInvoice',
         paymentMethod: transaction.paymentMethod || 'On Account',

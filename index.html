@@ -154,11 +154,19 @@
           <div id="paymentItemsEditor" style="margin:10px 0 12px; width:100%; max-width:100%; overflow-x:auto; -webkit-overflow-scrolling:touch;"></div>
           <div class="payment-row"><span>Tax:</span> <span><span class="currency-symbol">$</span><span
                 id="paymentTax">0.00</span></span></div>
+              <div class="payment-row"><span>Delivery Fee:</span> <span><span class="currency-symbol">$</span><span
+                id="paymentDeliveryFeeDisplay">0.00</span></span></div>
           <div class="payment-row payment-discount"><span>Discount:</span> <span>-<span
                 class="currency-symbol">$</span><span id="paymentDiscountDisplay">0.00</span></span></div>
         </div>
         <div class="total payment-total">
           Total Due: <span class="currency-symbol">$</span><span id="paymentTotalDue">0.00</span>
+        </div>
+        <div class="input-row">
+          <label for="deliveryFeeInput" class="discount-input-wrapper">Delivery Fee (<span
+              class="currency-symbol">$</span>):</label>
+          <input type="number" id="deliveryFeeInput" placeholder="0.00" min="0" step="0.01"
+            oninput="updatePaymentTotals()">
         </div>
         <div class="input-row">
           <label for="discountInput" class="discount-input-wrapper">Discount (<span

@@ -2447,8 +2447,9 @@ function normalizeInvoicePrintData(source = {}) {
   const serviceOrder = source.serviceOrder || {};
   const subtotal = Number(source.subtotal ?? source.subTotal ?? 0);
   const tax = Number(source.taxAmount ?? source.tax ?? source.vatAmount ?? source.vat ?? 0);
+  const deliveryFee = Math.max(0, Number(source.deliveryFee ?? source.delivery_fee ?? 0) || 0);
   const discount = source.discount || { amount: Number(source.discount?.amount ?? source.discountAmount ?? 0) };
-  const total = Number(source.total ?? source.grandTotal ?? source.amount ?? subtotal + tax - discount.amount);
+  const total = Number(source.total ?? source.grandTotal ?? source.amount ?? subtotal + tax + deliveryFee - discount.amount);
   const paymentSummary = calculateInvoicePaymentSummary(source, total);
   const amountPaid = paymentSummary.amountPaid;
   const balance = paymentSummary.balance;
@@ -2466,6 +2467,7 @@ function normalizeInvoicePrintData(source = {}) {
     serviceOrder,
     subtotal,
     tax,
+    deliveryFee,
     discount,
     amountPaid,
     total,
@@ -6488,11 +6490,17 @@ async function processSplitPayments() {
   }
 
   const serverName = getCurrentServerName();
+  let totalProcessed = 0;
   closeSplitBillModal();
 
   for (let i = 0; i < splitState.bills.length; i++) {
     const bill = splitState.bills[i];
-    const billTotal = calculateTransactionTotals(bill.items).total;
+    const billTotals = calculateTransactionTotals(bill.items);
+    const deliveryFeeInput = document.getElementById('deliveryFeeInput');
+    if (deliveryFeeInput) deliveryFeeInput.value = '';
+    const deliveryFeeDisplay = document.getElementById('paymentDeliveryFeeDisplay');
+    if (deliveryFeeDisplay) deliveryFeeDisplay.textContent = '0.00';
+    const billTotal = billTotals.total;
 
     // Use a promise to wait for each payment to be confirmed
     const paymentConfirmed = await new Promise(resolve => {
@@ -6508,7 +6516,19 @@ async function processSplitPayments() {
 
     if (paymentConfirmed) {
       const paymentMethod = document.getElementById('paymentMethod').value;
-      const transaction = { date: new Date().toISOString(), customerName: serverName, tableNo: 'Shop', items: bill.items, total: billTotal, paymentMethod: paymentMethod };
+      const deliveryFee = Math.max(0, parseFloat(deliveryFeeInput?.value) || 0);
+      const transaction = {
+        date: new Date().toISOString(),
+        customerName: serverName,
+        tableNo: 'Shop',
+        items: bill.items,
+        total: billTotal + deliveryFee,
+        subtotal: billTotals.subtotal,
+        tax: billTotals.tax,
+        deliveryFee,
+        paymentMethod: paymentMethod
+      };
+      totalProcessed += transaction.total;
       await recordTransaction(transaction); // Use individual record helper
       bill.items.forEach(item => deductStock(item.name, item.qty));
       document.getElementById('paymentModal').style.display = 'none';
@@ -6526,7 +6546,6 @@ async function processSplitPayments() {
   updateDashboard();
 
   // Calculate total of all split payments processed successfully
-  const totalProcessed = splitState.bills.reduce((sum, bill) => sum + calculateTransactionTotals(bill.items).total, 0);
   const summaryTransaction = {
     date: new Date().toISOString(),
     customerName: serverName,
@@ -6936,6 +6955,7 @@ function processBill() { // This now opens the payment modal
   renderPaymentItemEditor();
   document.getElementById('paymentSubtotal').textContent = formatCurrency(totals.subtotal);
   document.getElementById('paymentTax').textContent = formatCurrency(totals.tax);
+  document.getElementById('paymentDeliveryFeeDisplay').textContent = '0.00';
   document.getElementById('paymentDiscountDisplay').textContent = "0.00";
 
   const totalDueEl = document.getElementById('paymentTotalDue');
@@ -6944,6 +6964,7 @@ function processBill() { // This now opens the payment modal
   totalDueEl.dataset.currentTotal = totals.total;
 
   document.getElementById('discountInput').value = '';
+  document.getElementById('deliveryFeeInput').value = '';
   document.getElementById('amountTendered').value = '';
   document.getElementById('changeDue').textContent = '0.00';
 
@@ -6976,10 +6997,12 @@ async function handleConfirmPaymentClick() {
   const totals = currentOrder && Array.isArray(currentOrder.items) ? calculateTransactionTotals(currentOrder.items) : { total: 0 };
 
   const discountInput = parseFloat(document.getElementById('discountInput').value) || 0;
+  const deliveryFee = Math.max(0, parseFloat(document.getElementById('deliveryFeeInput').value) || 0);
   let discountAmount = discountInput;
-  if (discountAmount > totals.total) discountAmount = totals.total;
+  const totalBeforeDiscount = totals.total + deliveryFee;
+  if (discountAmount > totalBeforeDiscount) discountAmount = totalBeforeDiscount;
   if (discountAmount < 0) discountAmount = 0;
-  const finalTotal = totals.total - discountAmount;
+  const finalTotal = totalBeforeDiscount - discountAmount;
 
   const canConfirm = isCustomerSelected || (tenderedInput && tenderedInput.value !== '' && amountTendered >= finalTotal);
   if (!canConfirm) {
@@ -6999,9 +7022,10 @@ function updatePaymentTotals() {
     ? calculateTransactionTotals(currentOrder.items)
     : { subtotal: 0, tax: 0, total: 0 };
   const discountInput = parseFloat(document.getElementById('discountInput').value) || 0;
+  const deliveryFee = Math.max(0, parseFloat(document.getElementById('deliveryFeeInput').value) || 0);
 
   let discountAmount = discountInput;
-  const originalTotal = totals.total;
+  const originalTotal = totals.total + deliveryFee;
 
   if (discountAmount > originalTotal) discountAmount = originalTotal;
   if (discountAmount < 0) discountAmount = 0;
@@ -7011,6 +7035,8 @@ function updatePaymentTotals() {
   const newTotal = originalTotal - discountAmount;
   if (paymentSubtotalEl) paymentSubtotalEl.textContent = formatCurrency(totals.subtotal);
   if (paymentTaxEl) paymentTaxEl.textContent = formatCurrency(totals.tax);
+  const deliveryFeeEl = document.getElementById('paymentDeliveryFeeDisplay');
+  if (deliveryFeeEl) deliveryFeeEl.textContent = formatCurrency(deliveryFee);
   totalDueEl.textContent = formatCurrency(newTotal);
   totalDueEl.dataset.currentTotal = newTotal;
   totalDueEl.dataset.originalTotal = originalTotal;
@@ -7120,11 +7146,13 @@ async function finalizePayment(isSplit = false) {
   const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
 
   const discountInput = parseFloat(document.getElementById('discountInput').value) || 0;
+  const deliveryFee = Math.max(0, parseFloat(document.getElementById('deliveryFeeInput').value) || 0);
   let discountAmount = discountInput;
 
-  if (discountAmount > totals.total) discountAmount = totals.total;
+  const totalBeforeDiscount = totals.total + deliveryFee;
+  if (discountAmount > totalBeforeDiscount) discountAmount = totalBeforeDiscount;
   if (discountAmount < 0) discountAmount = 0;
-  const finalTotal = totals.total - discountAmount;
+  const finalTotal = totalBeforeDiscount - discountAmount;
 
   const customer = isCustomerSelected
     ? customers.find(entry => entry && String(entry.id) === String(paymentSelect.value))
@@ -7183,6 +7211,7 @@ async function finalizePayment(isSplit = false) {
       total: finalTotal,
       subtotal: totals.subtotal,
       tax: totals.tax,
+      deliveryFee,
       paymentMethod: paymentMethod,
       discount: { value: discountInput, type: 'fixed', amount: discountAmount },
       orderStatus: document.getElementById('orderStatusSelect')?.value || 'pending',
@@ -7519,6 +7548,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const receiptType = data.receiptType || data.type || 'transaction';
   const tableNo = data.tableNo || data.table || 'Shop';
   const amountPaid = data.amountPaid;
+  const deliveryFeeAmount = Number(data.deliveryFee || 0);
   const discountAmount = Number(data.discount?.amount ?? 0);
   const paymentStatus = data.paymentStatus || data.payment?.status || data.status || (Number.isFinite(Number(data.balance)) && Number(data.balance) !== 0 ? 'PENDING' : 'PAID');
   const orderStatus = data.orderStatus;
@@ -7579,7 +7609,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     subtotal = rawItems.reduce((sum, item) => sum + (Number(item?.price || item?.unitPrice || item?.cost || 0) * Number(item?.qty || item?.quantity || 1)), 0);
   }
   if (!grandTotal || grandTotal === 0) {
-    grandTotal = subtotal + taxAmount - discountAmount;
+    grandTotal = subtotal + taxAmount + deliveryFeeAmount - discountAmount;
   }
   if (!balance && amountPaid) {
     balance = amountPaid - grandTotal;
@@ -7596,6 +7626,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const subtotalText = `${currencySymbol}${formatCurrency(subtotal)}`;
   const discountText = `${currencySymbol}${formatCurrency(discountAmount)}`;
   const taxText = `${currencySymbol}${formatCurrency(taxAmount)}`;
+  const deliveryFeeText = `${currencySymbol}${formatCurrency(deliveryFeeAmount)}`;
   const paidText = `${currencySymbol}${formatCurrency(amountPaid)}`;
   const balanceText = `${currencySymbol}${formatCurrency(balance)}`;
   const grandText = `${currencySymbol}${formatCurrency(grandTotal)}`;
@@ -7801,6 +7832,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
           <div class="summary">
             <table>
               <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
+              <tr><td>Delivery Fee</td><td align="right">${deliveryFeeText}</td></tr>
               <tr><td>Discount</td><td align="right">${discountText}</td></tr>
               <tr><td>VAT</td><td align="right">${taxText}</td></tr>
               ${adjustmentRowsHtml}
@@ -7857,15 +7889,17 @@ function previewOrder(transactionData = null) {
       return (typeof showAppAlert === 'function') ? showAppAlert("No active order to preview.") : alert("No active order to preview.");
     } else {
       const totals = calculateTransactionTotals(currentOrder.items);
+      const deliveryFee = Math.max(0, parseFloat(document.getElementById('deliveryFeeInput')?.value) || 0);
       currentTransaction = {
         date: new Date().toISOString(),
         customerName: getCurrentServerName(),
         servedBy: getCurrentServerName(),
         tableNo: 'Shop',
         items: [...currentOrder.items],
-        total: totals.total,
+        total: totals.total + deliveryFee,
         subtotal: totals.subtotal,
         tax: totals.tax,
+        deliveryFee,
         orderStatus: document.getElementById('orderStatusSelect')?.value || 'pending',
         orderType: settings.serviceMode ? 'service' : 'product',
         serviceOrder: {
@@ -8225,14 +8259,16 @@ async function printReceipt() {
     const currentOrder = activeOrders[CART_ID];
     if (!currentOrder || currentOrder.items.length === 0) return alert("No active order to print.");
     const totals = calculateTransactionTotals(currentOrder.items);
+    const deliveryFee = Math.max(0, parseFloat(document.getElementById('deliveryFeeInput')?.value) || 0);
     printTransaction = {
       date: new Date().toLocaleString(),
       customerName: getCurrentServerName(),
       tableNo: 'Shop',
       items: [...currentOrder.items],
-      total: totals.total,
+      total: totals.total + deliveryFee,
       subtotal: totals.subtotal,
-      tax: totals.tax
+      tax: totals.tax,
+      deliveryFee
     };
   }
 
@@ -8747,7 +8783,7 @@ function getReceiptPromoMessage() {
  */
 function populateReceiptContent(transaction) {
   transaction = normalizeInvoicePrintData(transaction || {});
-  const { date, customerName, tableNo, items, total, subtotal, tax, discount, receiptType, paymentMethod, note, amountPaid, orderStatus, servedBy, customerNameReal, serviceOrder = {}, orderType } = transaction;
+  const { date, customerName, tableNo, items, total, subtotal, tax, deliveryFee = 0, discount, receiptType, paymentMethod, note, amountPaid, orderStatus, servedBy, customerNameReal, serviceOrder = {}, orderType } = transaction;
   const displayCustomerName = customerNameReal || transaction.customer?.name || customerName || 'Walk-in Customer';
   const transactionId = new Date(date).getTime();
   const invoiceNumber = getInvoiceNumber(transaction);
@@ -8792,6 +8828,9 @@ function populateReceiptContent(transaction) {
 
   const taxHtml = (displayTax > 0)
     ? `<div class="summary-line"><span>Tax (${settings.taxRate}%)</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(displayTax)}</span></div>`
+    : '';
+  const deliveryFeeHtml = Number(deliveryFee) > 0
+    ? `<div class="summary-line"><span>Delivery Fee</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(deliveryFee)}</span></div>`
     : '';
 
   // Add cache-buster for robust CORS handling in receipts
@@ -8868,6 +8907,7 @@ function populateReceiptContent(transaction) {
           ${adjustedLines}
           ${balanceLine}
           ${taxHtml}
+          ${deliveryFeeHtml}
           ${discountHtml}
           <div class="summary-line total" style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:nowrap;">
             <span>TOTAL</span>
