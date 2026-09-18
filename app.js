@@ -169,6 +169,7 @@ const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app);
 let currentUser = null;
+let emailLoginSuccessFeedbackPending = false;
 let userMetadata = null; // Stores status and subscription info
 let registrationInProgress = false;
 let pendingApprovalNotice = false;
@@ -4909,14 +4910,24 @@ function getLoginFeedbackHtml() {
   `;
 }
 
+const LOGIN_FEEDBACK_DISPLAY_MS = 3000;
+const LOGIN_LOADING_MINIMUM_MS = LOGIN_FEEDBACK_DISPLAY_MS;
+const LOGIN_SUCCESS_DISPLAY_MS = 5000;
+let loginFeedbackStartedAt = 0;
+let loginFeedbackTimer = null;
+
 function showLoginFeedback(state, message = '') {
   const feedback = document.getElementById('login-feedback');
   const image = document.getElementById('login-feedback-image');
   const messageEl = document.getElementById('login-feedback-message');
   if (!feedback || !image || !messageEl) return;
+  if (loginFeedbackTimer) {
+    window.clearTimeout(loginFeedbackTimer);
+    loginFeedbackTimer = null;
+  }
 
   const feedbackStates = {
-    loading: { image: 'loading.svg', message: 'Signing in...' },
+    loading: { image: 'loading.svg', message: message || 'Signing in...' },
     success: { image: 'Unlocked.svg', message: 'Unlocked' },
     error: { image: 'wrong.svg', message: message || 'Wrong email or password. Try again.' }
   };
@@ -4931,6 +4942,19 @@ function showLoginFeedback(state, message = '') {
   messageEl.textContent = nextState.message;
   messageEl.style.color = state === 'error' ? '#ffd7d7' : 'white';
   feedback.style.display = 'block';
+  if (state === 'loading') loginFeedbackStartedAt = Date.now();
+  if (state === 'error') {
+    loginFeedbackTimer = window.setTimeout(() => {
+      if (feedback) feedback.style.display = 'none';
+      loginFeedbackTimer = null;
+    }, LOGIN_FEEDBACK_DISPLAY_MS);
+  }
+}
+
+async function waitForLoginLoadingMinimum() {
+  const elapsed = Date.now() - loginFeedbackStartedAt;
+  const remaining = Math.max(0, LOGIN_LOADING_MINIMUM_MS - elapsed);
+  if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining));
 }
 
 function showAuthLoginError(message = 'Invalid email or password') {
@@ -5013,12 +5037,14 @@ async function loginWithEmail() {
     submitBtn.innerHTML = '<span class="spinner"></span> Signing in...';
   }
   showLoginFeedback('loading');
+  emailLoginSuccessFeedbackPending = true;
 
   try {
     await signInWithEmailAndPassword(auth, email, password);
     try { closeAppPopup({ confirmed: false, value: null }); } catch (e) { /* ignore */ }
     try { playNotificationSound(); } catch (e) { /* ignore audio errors */ }
   } catch (error) {
+    emailLoginSuccessFeedbackPending = false;
     console.error('Email login failed:', error);
     try { playErrorSound(); } catch (e) { /* ignore audio errors */ }
     showLoginFeedback('error', 'Wrong email or password. Try again.');
@@ -15642,6 +15668,11 @@ async function mainInit() {
       }
 
       if (user) console.log("Your Firebase UID is:", user.uid);
+      if (user && emailLoginSuccessFeedbackPending) {
+        showLoginFeedback('success');
+        await new Promise(resolve => window.setTimeout(resolve, LOGIN_SUCCESS_DISPLAY_MS));
+        emailLoginSuccessFeedbackPending = false;
+      }
       updateAuthUI(user);
 
       if (user) {
@@ -16269,8 +16300,8 @@ async function loginWithPIN() {
   const staffName = staffNameInput ? staffNameInput.value.trim() : '';
   const pinInput = document.getElementById('loginPIN');
   const enteredPin = pinInput?.value || '';
-  showLoginFeedback('loading');
-  await new Promise(resolve => requestAnimationFrame(resolve));
+  showLoginFeedback('loading', 'Unlocking...');
+  await waitForLoginLoadingMinimum();
 
   if (loginSubStage === 'admin') {
     const shopAdminPin = settings.ShopAdminPIN || settings.managerPIN || settings.ShopAdmin;
@@ -16366,13 +16397,6 @@ function completePinLogin(role, permissions, staffName) {
   persistAuditTrail().catch(() => { });
 
   setAppShellLocked(false);
-  const overlay = document.getElementById('login-overlay');
-  showLoginFeedback('success');
-  if (overlay) {
-    window.setTimeout(() => {
-      overlay.style.display = 'none';
-    }, 1400);
-  }
 
   const lockBtn = document.getElementById('nav-lock-btn');
   if (lockBtn) lockBtn.style.display = 'inline-block';
@@ -16380,6 +16404,15 @@ function completePinLogin(role, permissions, staffName) {
   updateAuthUI(currentUser);
   applyRolePermissions();
   checkShopStatus();
+
+  const overlay = document.getElementById('login-overlay');
+  if (overlay) overlay.style.display = 'flex';
+  showLoginFeedback('success');
+  if (overlay) {
+    window.setTimeout(() => {
+      overlay.style.display = 'none';
+    }, LOGIN_SUCCESS_DISPLAY_MS);
+  }
 }
 
 // Placeholder functions for backward compatibility or future use
