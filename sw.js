@@ -27,6 +27,9 @@ const APP_SHELL_URLS = [
   '/assets/icons/ios512.png',
   '/assets/icons/wind400.png',
   '/assets/icons/market.png',
+  '/assets/icons/loading.svg',
+  '/assets/icons/Unlocked.svg',
+  '/assets/icons/wrong.svg',
   '/assets/icons/icon.png',
   '/assets/icons/Cloud.svg.svg',
 

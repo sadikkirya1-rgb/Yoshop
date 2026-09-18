@@ -4876,12 +4876,14 @@ async function login() {
   });
   const btn = document.querySelector('#login-overlay button');
   const originalContent = btn ? btn.innerHTML : 'Login with Google';
+  showLoginFeedback('loading');
   if (btn) btn.innerHTML = '<span class="spinner"></span> Signing in...';
 
   try {
     await signInWithPopup(auth, provider);
   } catch (error) {
     console.error("Login failed:", error);
+    showLoginFeedback('error', 'Wrong email or password. Try again.');
     await showAppAlert("Login failed: " + error.message, "Login Failed");
     if (btn) btn.innerHTML = originalContent;
     if (typeof showLoggedOutScreen === 'function') showLoggedOutScreen();
@@ -4896,6 +4898,39 @@ function resetAuthLoginSubmitButton() {
   submitBtn.disabled = false;
   submitBtn.innerHTML = originalHtml;
   submitBtn.dataset.originalHtml = originalHtml;
+}
+
+function getLoginFeedbackHtml() {
+  return `
+    <div id="login-feedback" style="display: none; width: 100%; max-width: 220px; margin: 0 auto 14px; text-align: center;">
+      <img id="login-feedback-image" src="assets/icons/loading.svg" alt="" style="width: 82px; height: 82px; object-fit: contain; display: block; margin: 0 auto 6px;">
+      <div id="login-feedback-message" style="font-size: 0.9em; font-weight: 700; color: white;"></div>
+    </div>
+  `;
+}
+
+function showLoginFeedback(state, message = '') {
+  const feedback = document.getElementById('login-feedback');
+  const image = document.getElementById('login-feedback-image');
+  const messageEl = document.getElementById('login-feedback-message');
+  if (!feedback || !image || !messageEl) return;
+
+  const feedbackStates = {
+    loading: { image: 'loading.svg', message: 'Signing in...' },
+    success: { image: 'Unlocked.svg', message: 'Unlocked' },
+    error: { image: 'wrong.svg', message: message || 'Wrong email or password. Try again.' }
+  };
+  const nextState = feedbackStates[state];
+  if (!nextState) {
+    feedback.style.display = 'none';
+    return;
+  }
+
+  image.src = `assets/icons/${nextState.image}`;
+  image.alt = nextState.message;
+  messageEl.textContent = nextState.message;
+  messageEl.style.color = state === 'error' ? '#ffd7d7' : 'white';
+  feedback.style.display = 'block';
 }
 
 function showAuthLoginError(message = 'Invalid email or password') {
@@ -4977,6 +5012,7 @@ async function loginWithEmail() {
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<span class="spinner"></span> Signing in...';
   }
+  showLoginFeedback('loading');
 
   try {
     await signInWithEmailAndPassword(auth, email, password);
@@ -4985,6 +5021,7 @@ async function loginWithEmail() {
   } catch (error) {
     console.error('Email login failed:', error);
     try { playErrorSound(); } catch (e) { /* ignore audio errors */ }
+    showLoginFeedback('error', 'Wrong email or password. Try again.');
 
     const authError = getAuthErrorMessage(error);
     const isCredentialFailure = error?.code === 'auth/invalid-credential' || error?.code === 'auth/user-not-found' || error?.code === 'auth/wrong-password';
@@ -4994,7 +5031,7 @@ async function loginWithEmail() {
 
     const errorEl = document.getElementById('auth-login-error');
     if (errorEl && isCredentialFailure) {
-      showAuthLoginError('Invalid email or password');
+      showAuthLoginError('Wrong email or password. Try again.');
     } else if (errorEl) {
       clearAuthLoginError();
     }
@@ -15945,6 +15982,7 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
         <div class="login-side login-center-card animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); max-width: none; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0; padding: 42px 38px; box-sizing: border-box; border-left: 1px solid rgba(255,255,255,0.3); border-right: 1px solid rgba(255,255,255,0.3); background: linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06) 42%, rgba(7,15,30,0.34)), rgba(20,28,45,0.52); box-shadow: 0 0 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(28px) saturate(140%); -webkit-backdrop-filter: blur(28px) saturate(140%);">
           <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
           <p style="font-size: 1.5em; margin-bottom: 25px; font-weight: bold;">${title}</p>
+          ${getLoginFeedbackHtml()}
           
           <div id="email-login-form" style="display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 320px; margin-bottom: 15px;">
             ${isRegister ? `<input type="text" id="authName" placeholder="Full Name" style="padding: 12px; border-radius: 8px; border: none; color: var(--text); background: white;">` : ''}
@@ -16094,6 +16132,7 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
           <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
           <p style="font-size: 1.5em; margin-bottom: 12px; font-weight: bold;">Welcome</p>
           <h1 style="font-size: 3em; margin-top: 0; margin-bottom: 12px;">${settings?.name || 'YoShop'}</h1>
+          ${getLoginFeedbackHtml()}
           ${statusDisplay}
 
           ${pinStageHtml}
@@ -16230,6 +16269,8 @@ async function loginWithPIN() {
   const staffName = staffNameInput ? staffNameInput.value.trim() : '';
   const pinInput = document.getElementById('loginPIN');
   const enteredPin = pinInput?.value || '';
+  showLoginFeedback('loading');
+  await new Promise(resolve => requestAnimationFrame(resolve));
 
   if (loginSubStage === 'admin') {
     const shopAdminPin = settings.ShopAdminPIN || settings.managerPIN || settings.ShopAdmin;
@@ -16239,6 +16280,7 @@ async function loginWithPIN() {
       completePinLogin('shopAdmin', [], 'ShopAdmin');
     } else {
       playErrorSound();
+      showLoginFeedback('error', 'Wrong email or password. Try again.');
       await showAppAlert("Incorrect Admin PIN.", "Login Failed");
     }
     return;
@@ -16246,6 +16288,7 @@ async function loginWithPIN() {
 
   if (!staffName || staffName.toLowerCase() === 'admin') {
     playErrorSound();
+    showLoginFeedback('error', 'Wrong email or password. Try again.');
     await showAppAlert("Identification Required: Please select your name.", "Login Failed");
     if (staffNameInput && staffNameInput.offsetParent !== null) {
       staffNameInput.focus();
@@ -16281,6 +16324,7 @@ async function loginWithPIN() {
     console.log(`Unlocked as ${loginRole === 'shopAdmin' ? 'ShopAdmin' : 'Staff'}: ${staffMember.name}`);
   } else {
     playErrorSound();
+    showLoginFeedback('error', 'Wrong email or password. Try again.');
     await showAppAlert("Incorrect Name or PIN. Please try again.", "Login Failed");
   }
 }
@@ -16323,7 +16367,12 @@ function completePinLogin(role, permissions, staffName) {
 
   setAppShellLocked(false);
   const overlay = document.getElementById('login-overlay');
-  if (overlay) overlay.style.display = 'none';
+  showLoginFeedback('success');
+  if (overlay) {
+    window.setTimeout(() => {
+      overlay.style.display = 'none';
+    }, 1400);
+  }
 
   const lockBtn = document.getElementById('nav-lock-btn');
   if (lockBtn) lockBtn.style.display = 'inline-block';
