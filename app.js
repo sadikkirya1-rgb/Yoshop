@@ -462,7 +462,7 @@ function hydrateEnterpriseRecord(entityType, record = {}, index = 0) {
 
   const now = new Date().toISOString();
   const context = getSyncMetadataContext();
-  const generatedId = record.id || record.recordId || createEntityId(entityType, { ...record, index });
+  const generatedId = record.id || record.recordId || createEntityId(entityType, record);
 
   return {
     ...record,
@@ -528,6 +528,49 @@ function hydrateEnterpriseRecords(entityType, records = []) {
     .map((record, index) => hydrateEnterpriseRecord(entityType, record, index));
 
   return entityType === 'products' ? normalizeProductCatalog(hydrated) : deduplicateRecords(hydrated, entityType);
+}
+
+function reconcileCustomerTransactionReferences() {
+  if (!Array.isArray(customers) || !Array.isArray(transactions)) return;
+
+  const customersByName = new Map();
+  customers.forEach(customer => {
+    const name = String(customer?.name || '').trim().toLowerCase();
+    if (name && customer?.id && !customersByName.has(name)) customersByName.set(name, customer);
+  });
+
+  transactions.forEach(transaction => {
+    if (!transaction || !transaction.customerId) return;
+    const linkedCustomer = customers.find(customer => customer?.id && String(customer.id) === String(transaction.customerId));
+    if (linkedCustomer) return;
+
+    const customerName = String(transaction.customerNameReal || transaction.customerName || '').trim().toLowerCase();
+    const recoveredCustomer = customersByName.get(customerName);
+    if (recoveredCustomer) {
+      transaction.customerId = recoveredCustomer.id;
+      transaction.customerNameReal = recoveredCustomer.name;
+    }
+  });
+}
+
+function mergeEnterpriseRecordsPreservingLocal(localRecords = [], incomingRecords = [], entityType = '') {
+  const merged = Array.isArray(localRecords) ? [...localRecords] : [];
+  const incoming = Array.isArray(incomingRecords) ? incomingRecords : [];
+  incoming.forEach(record => {
+    const hydrated = hydrateEnterpriseRecord(entityType, record);
+    const recordId = getEnterpriseRecordId(hydrated);
+    const existingIndex = merged.findIndex(existing => getEnterpriseRecordId(existing) === recordId);
+    if (existingIndex < 0) {
+      merged.push(hydrated);
+      return;
+    }
+
+    const existing = merged[existingIndex];
+    if (shouldAcceptIncomingRecord(existing, hydrated)) {
+      merged[existingIndex] = { ...existing, ...hydrated };
+    }
+  });
+  return merged;
 }
 function getEnterpriseMirrorSignature() {
   const summarize = (records = []) => {
@@ -2413,7 +2456,9 @@ const defaultSettings = {
   lowStockThreshold: 10,
   taxRate: 0,
   ShopAdminPIN: "1234", // Default ShopAdmin PIN
-  serviceMode: false
+  serviceMode: false,
+  invoiceDateFormat: 'locale',
+  invoiceCustomDateFormat: ''
 };
 let settings = { ...defaultSettings };
 const defaultStaff = [];
@@ -2477,6 +2522,70 @@ function normalizeInvoicePrintData(source = {}) {
     invoiceNumber: normalizeInvoiceNumber(source.invoiceNumber || source.invoiceNo || source.receiptNumber || source.transactionNumber || source.invoiceNo || undefined)
   };
 }
+
+function formatInvoiceDisplayDate(dateValue, options = {}) {
+  const parsedDate = dateValue ? new Date(dateValue) : new Date();
+  const date = Number.isFinite(parsedDate.getTime()) ? parsedDate : new Date();
+  const format = settings?.invoiceDateFormat || 'locale';
+  const includeTime = options.includeTime === true;
+  if (format === 'locale') return includeTime ? date.toLocaleString() : date.toLocaleDateString();
+
+  const tokens = {
+    DD: String(date.getDate()).padStart(2, '0'),
+    MM: String(date.getMonth() + 1).padStart(2, '0'),
+    MMM: date.toLocaleString(undefined, { month: 'short' }),
+    MMMM: date.toLocaleString(undefined, { month: 'long' }),
+    YYYY: String(date.getFullYear()),
+    HH: String(date.getHours()).padStart(2, '0'),
+    mm: String(date.getMinutes()).padStart(2, '0'),
+    ss: String(date.getSeconds()).padStart(2, '0')
+  };
+  const patterns = {
+    'DD/MM/YYYY': 'DD/MM/YYYY',
+    'MM/DD/YYYY': 'MM/DD/YYYY',
+    'YYYY-MM-DD': 'YYYY-MM-DD',
+    'DD-MM-YYYY': 'DD-MM-YYYY',
+    'DD/MM/YYYY HH:mm': 'DD/MM/YYYY HH:mm',
+    custom: settings?.invoiceCustomDateFormat || 'DD/MM/YYYY'
+  };
+  const pattern = patterns[format] || patterns.custom;
+  return pattern.replace(/YYYY|MMMM|MMM|DD|MM|HH|mm|ss/g, token => tokens[token]);
+}
+
+window.formatInvoiceDisplayDate = formatInvoiceDisplayDate;
+
+function getInvoiceEffectiveDate(source = {}) {
+  return source.invoiceDate || source.date || new Date().toISOString();
+}
+
+function toDateTimeLocalValue(dateValue) {
+  const date = new Date(dateValue || Date.now());
+  if (!Number.isFinite(date.getTime())) return '';
+  const offset = date.getTimezoneOffset();
+  return new Date(date.getTime() - offset * 60000).toISOString().slice(0, 16);
+}
+
+function updateInvoiceDateTimeByKey(recordKey, dateTimeValue) {
+  if (!dateTimeValue) return false;
+  const parsedDate = new Date(dateTimeValue);
+  if (!Number.isFinite(parsedDate.getTime())) return false;
+
+  const key = String(recordKey || '');
+  const transaction = transactions.find(entry => entry && (
+    String(entry.id || entry.recordId || entry.invoiceNumber || '') === key
+  ));
+  if (!transaction) return false;
+
+  transaction.invoiceDate = parsedDate.toISOString();
+  transaction.updatedAt = new Date().toISOString();
+  transaction.syncStatus = 'pending';
+  saveData().catch(error => console.warn('[INVOICE] Failed to save invoice date:', error));
+  renderTransactions();
+  renderInvoices();
+  return true;
+}
+
+window.updateInvoiceDateTimeByKey = updateInvoiceDateTimeByKey;
 
 /**
  * Ensures the App Admin tab has the required dashboard layout elements
@@ -3938,7 +4047,15 @@ function handleFirebaseError(error, context = "Firebase Operation", path = "unkn
  * Debounced cloud sync - fires immediately but only syncs to cloud once per debounce period
  * This prevents excessive Firebase writes while ensuring rapid local updates
  */
+let saveDataQueue = Promise.resolve();
+
 async function saveData(syncToCloud = true, options = {}) {
+  const saveOperation = saveDataQueue.then(() => saveDataNow(syncToCloud, options));
+  saveDataQueue = saveOperation.catch(() => {});
+  return saveOperation;
+}
+
+async function saveDataNow(syncToCloud = true, options = {}) {
   try {
     menu = normalizeProductCatalog(menu || []);
     transactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
@@ -7713,7 +7830,8 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const data = normalizeInvoicePrintData(transactionData);
   const source = data;
   const invoiceNumber = data.invoiceNumber || 'INV-UNKNOWN';
-  const invoiceDate = data.date ? new Date(data.date).toLocaleString() : new Date().toLocaleString();
+  const invoiceDate = formatInvoiceDisplayDate(getInvoiceEffectiveDate(data), { includeTime: true });
+  const invoiceRecordKey = String(data.id || data.recordId || data.invoiceNumber || '');
   const customerName = data.customerName;
   const customerPhone = data.customerPhone;
   const customerAddress = data.customerAddress;
@@ -7793,7 +7911,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const adjustmentRowsHtml = adjustmentsArr.map((adj) => {
     const methodLabel = adj?.method ? String(adj.method) : 'On Account';
     const adjAmount = Number(adj?.amount || 0);
-    const adjDate = adj?.date ? new Date(adj.date).toLocaleDateString() : '';
+    const adjDate = adj?.date ? formatInvoiceDisplayDate(adj.date) : '';
     return `<tr><td>Adjusted (${methodLabel})${adjDate ? ` <small>(${adjDate})</small>` : ''}</td><td align="right">-${currencySymbol}${formatCurrency(adjAmount)}</td></tr>`;
   }).join('');
   const subtotalText = `${currencySymbol}${formatCurrency(subtotal)}`;
@@ -7873,6 +7991,20 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     }
   </style>
   <script>
+    function saveInvoiceDateTime() {
+      const input = document.getElementById('editable-invoice-date');
+      if (!input || !input.value) return;
+      const value = new Date(input.value);
+      if (!Number.isFinite(value.getTime())) return;
+      if (window.opener && typeof window.opener.updateInvoiceDateTimeByKey === 'function') {
+        window.opener.updateInvoiceDateTimeByKey(${JSON.stringify(invoiceRecordKey)}, input.value);
+      }
+      const dateLabel = document.querySelector('.invoice-title div:last-child');
+      if (dateLabel && window.opener && typeof window.opener.formatInvoiceDisplayDate === 'function') {
+        dateLabel.textContent = window.opener.formatInvoiceDisplayDate(value.toISOString(), { includeTime: true });
+      }
+    }
+
     function changeA4Zoom(delta) {
       window.a4ZoomLevel = Math.max(0.4, Math.min(2.0, (window.a4ZoomLevel || 1) + delta));
       const wrapper = document.getElementById('preview-zoom-wrapper');
@@ -7938,6 +8070,11 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
 </head>
 <body>
   <div class="preview-controls">
+    <div class="date-edit-group" style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+      <label for="editable-invoice-date" style="font-size:0.8rem; font-weight:600;">Invoice date/time</label>
+      <input id="editable-invoice-date" type="datetime-local" value="${toDateTimeLocalValue(getInvoiceEffectiveDate(data))}" style="padding:8px; border:1px solid #cbd5e1; border-radius:6px;">
+      <button class="btn btn-success preview-btn" onclick="saveInvoiceDateTime()">Save Date</button>
+    </div>
     <div class="zoom-group">
       <button class="btn btn-secondary preview-btn zoom-btn" onclick="changeA4Zoom(-0.1)" aria-label="Zoom out">-</button>
       <div class="zoom-label">
@@ -8041,6 +8178,9 @@ function previewOrder(transactionData = null) {
   let currentTransaction;
   console.log('previewOrder called with:', transactionData);
 
+
+  const dateInput = document.getElementById('receiptInvoiceDateTime');
+  if (dateInput) dateInput.value = toDateTimeLocalValue(getInvoiceEffectiveDate(currentTransaction));
   // Handle lookup by index if a numeric index is passed, or use the object directly
   if (typeof transactionData === 'number' || (typeof transactionData === 'string' && transactionData !== '' && !isNaN(transactionData))) {
     const idx = parseInt(transactionData, 10);
@@ -8112,6 +8252,28 @@ function previewOrder(transactionData = null) {
 
   updateCurrencyDisplay();
 }
+
+function saveCurrentInvoiceDateTime() {
+  const receiptModal = document.getElementById('receiptModal');
+  const dateInput = document.getElementById('receiptInvoiceDateTime');
+  const transaction = receiptModal?._transactionData;
+  if (!transaction || !dateInput?.value) return;
+
+  const parsedDate = new Date(dateInput.value);
+  if (!Number.isFinite(parsedDate.getTime())) return;
+  const recordKey = String(transaction.id || transaction.recordId || transaction.invoiceNumber || '');
+  const updated = updateInvoiceDateTimeByKey(recordKey, dateInput.value);
+  transaction.invoiceDate = parsedDate.toISOString();
+  if (!updated) {
+    populateReceiptContent(transaction);
+    saveData().catch(error => console.warn('[INVOICE] Failed to save invoice date:', error));
+  } else {
+    receiptModal._transactionData = transactions.find(entry => entry && String(entry.id || entry.recordId || entry.invoiceNumber || '') === recordKey) || transaction;
+    populateReceiptContent(receiptModal._transactionData);
+  }
+}
+
+window.saveCurrentInvoiceDateTime = saveCurrentInvoiceDateTime;
 
 function closeReceiptModal() {
   const receiptModal = document.getElementById('receiptModal');
@@ -8464,7 +8626,7 @@ async function printReceipt() {
       </div>
       <div class="receipt-details">
         <div><span>Invoice No:</span> <span>${getInvoiceNumber(printTransaction)}</span></div>
-        <div><span>Date:</span> <span>${new Date(printTransaction.date).toLocaleDateString()}</span></div>
+        <div><span>Date:</span> <span>${formatInvoiceDisplayDate(printTransaction.date)}</span></div>
         <div><span>Served By:</span> <span>${escapeHtml(getCurrentServerName())}</span></div>
       </div>
       <div class="receipt-summary">
@@ -8956,6 +9118,7 @@ function getReceiptPromoMessage() {
  */
 function populateReceiptContent(transaction) {
   transaction = normalizeInvoicePrintData(transaction || {});
+  transaction.date = getInvoiceEffectiveDate(transaction);
   const { date, customerName, tableNo, items, total, subtotal, tax, deliveryFee = 0, discount, receiptType, paymentMethod, note, amountPaid, orderStatus, servedBy, customerNameReal, serviceOrder = {}, orderType } = transaction;
   const displayCustomerName = customerNameReal || transaction.customer?.name || customerName || 'Walk-in Customer';
   const transactionId = new Date(date).getTime();
@@ -9022,7 +9185,7 @@ function populateReceiptContent(transaction) {
   const adjustedLines = adjustmentsArr.map(adj => {
     const methodLabel = adj.method ? String(adj.method) : 'On Account';
     const adjAmount = parseFloat(adj.amount) || 0;
-    const adjDate = adj.date ? new Date(adj.date).toLocaleDateString() : '';
+    const adjDate = adj.date ? formatInvoiceDisplayDate(adj.date) : '';
     return `<div class="summary-line"><span>Adjusted (${methodLabel})</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(adjAmount)} <small style="opacity:0.8;">${adjDate}</small></span></div>`;
   }).join('');
   const totalAmountLine = (isAdjustmentReceipt || isDebtReceipt) && transaction.totalAmount !== undefined
@@ -9046,7 +9209,7 @@ function populateReceiptContent(transaction) {
           <div><span>Invoice Type:</span> <span>${isAdjustmentReceipt ? 'Customer Adjustment' : 'Transaction'}</span></div>
           <div><span>Invoice No:</span> <span>${invoiceNumber}</span></div>
           <div><span>Transaction ID:</span> <span>${transactionId}</span></div>
-          <div><span>Date:</span> <span>${new Date(date).toLocaleDateString()}</span></div>
+          <div><span>Date:</span> <span>${formatInvoiceDisplayDate(date)}</span></div>
           <div><span>Time:</span> <span>${new Date(date).toLocaleTimeString()}</span></div>
         </div>
         <div class="receipt-items">
@@ -9083,7 +9246,7 @@ function populateReceiptContent(transaction) {
           </div>
           <div style="display:flex; justify-content:space-between; align-items:center; margin-top:6px; font-size:0.82rem; opacity:0.78; letter-spacing:0.03em;">
             <span style="font-weight:700;">INVOICE</span>
-            <span>${invoiceNumber} • ${new Date(date).toLocaleDateString()}</span>
+            <span>${invoiceNumber} • ${formatInvoiceDisplayDate(date)}</span>
           </div>
         </div>
         <div class="receipt-footer"><p style="font-weight: bold; margin: 0 0 10px;">${titleText}</p>${barcodeHtml}<div class="promo" style="display:inline-flex; align-items:center; justify-content:center; white-space:nowrap; max-width:100%;">${promoMessage}</div><p style="font-size:0.75em; margin: 12px 0 0; opacity:0.5;">Power by YoShop POS</p></div>
@@ -10794,6 +10957,8 @@ async function saveSettings() {
   settings.lowStockThreshold = isNaN(lowStockThresholdVal) ? 10 : lowStockThresholdVal;
   settings.defaultMarkup = parseFloat(document.getElementById('defaultMarkup').value) || 200;
   settings.taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
+  settings.invoiceDateFormat = document.getElementById('invoiceDateFormat')?.value || 'locale';
+  settings.invoiceCustomDateFormat = document.getElementById('invoiceCustomDateFormat')?.value.trim() || '';
   settings.serviceMode = Boolean(document.getElementById('serviceMode')?.checked);
   settings.promoMessage = document.getElementById('promoMessage').value.trim();
   settings.ShopAdminPIN = pin;
@@ -11036,6 +11201,8 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('lowStockThreshold', (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10);
   setVal('taxRate', settings.taxRate || 0);
   setVal('promoMessage', settings.promoMessage || '');
+  setVal('invoiceDateFormat', settings.invoiceDateFormat || 'locale');
+  setVal('invoiceCustomDateFormat', settings.invoiceCustomDateFormat || '');
   setVal('ShopAdminPIN', settings.ShopAdminPIN || "");
   setVal('confirmShopAdminPIN', settings.ShopAdminPIN || "");
   const serviceModeCheckbox = document.getElementById('serviceMode');
@@ -14802,6 +14969,7 @@ function setupEnterpriseRecordCollectionSync(uid) {
         });
 
         config.setRecords(nextRecords);
+        if (config.entityType === 'customers') reconcileCustomerTransactionReferences();
         try {
           if (config.collectionName === 'products') {
             const presentIds = (nextRecords || []).map(r => getEnterpriseRecordId(r));
@@ -15025,7 +15193,8 @@ function setupRealTimeSync(uid) {
                   settings = updateData.settings;
                   staff = updateData.staff;
                   dishCategories = updateData.dishCategories;
-                  customers = updateData.customers;
+                  customers = mergeEnterpriseRecordsPreservingLocal(customers, updateData.customers, 'customers');
+                  reconcileCustomerTransactionReferences();
                   units = updateData.units;
                   supplierList = updateData.suppliers;
                   purchaseHistory = updateData.purchaseHistory;

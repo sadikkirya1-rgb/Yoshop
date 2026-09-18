@@ -155,6 +155,17 @@ export function createEntityId(entityType, payload = {}) {
     if (cleanName) return `prod-${cleanName}`;
   }
 
+  if ((entityType === 'customers' || entityType === 'customer') && source.name && typeof source.name === 'string' && source.name.trim()) {
+    const identity = [source.name, source.email, source.whatsapp, source.contact]
+      .map(value => String(value || '').trim().toLowerCase())
+      .join('|');
+    let hash = 0;
+    for (let i = 0; i < identity.length; i += 1) {
+      hash = (hash * 31 + identity.charCodeAt(i)) >>> 0;
+    }
+    return `cust-${hash.toString(16)}`;
+  }
+
   const base = JSON.stringify(source);
   let hash = 0;
   for (let i = 0; i < base.length; i += 1) {

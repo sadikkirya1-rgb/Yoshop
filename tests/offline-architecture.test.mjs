@@ -13,6 +13,22 @@ test('createEntityId preserves an explicit id', () => {
   assert.equal(id, 'tx-123');
 });
 
+test('createEntityId keeps customer identity stable when mutable fields change', () => {
+  const first = createEntityId('customers', {
+    name: 'Amina Yusuf',
+    contact: '+123456789',
+    balance: -150,
+    updatedAt: '2026-06-26T00:00:00.000Z'
+  });
+  const second = createEntityId('customers', {
+    name: 'Amina Yusuf',
+    contact: '+123456789',
+    balance: -75,
+    updatedAt: '2026-06-27T00:00:00.000Z'
+  });
+  assert.equal(first, second);
+});
+
 test('mergeSnapshotData prefers newer array items and preserves local data when remote is empty', () => {
   const local = [{ id: 'a', name: 'Coffee', updatedAt: '2026-06-25T00:00:00.000Z' }];
   const remote = [{ id: 'a', name: 'Coffee', updatedAt: '2026-06-26T00:00:00.000Z' }, { id: 'b', name: 'Tea', updatedAt: '2026-06-26T00:00:00.000Z' }];

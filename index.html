@@ -297,6 +297,11 @@
       <div id="receiptContent" class="receipt-paper">
         <!-- Receipt content will be injected here -->
       </div>
+      <div class="input-row" style="align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
+        <label for="receiptInvoiceDateTime">Invoice date/time:</label>
+        <input type="datetime-local" id="receiptInvoiceDateTime" style="flex:1; min-width:190px;">
+        <button class="btn btn-secondary" type="button" onclick="saveCurrentInvoiceDateTime()">Save Date</button>
+      </div>
       <div class="receipt-actions" style="align-items:center; gap:8px; flex-wrap:wrap;">
         <button class="btn" onclick="downloadCurrentReceiptAsPDF()" class="save-pdf-btn">PDF</button>
         <button class="btn btn-info" onclick="downloadCurrentReceiptAsJPG()" class="save-jpg-btn">JPG</button>
@@ -1399,6 +1404,22 @@
             <div class="input-row">
               <label for="taxRate">Tax Rate (%):</label>
               <input type="number" id="taxRate" placeholder="e.g., 16" min="0" step="0.01">
+            </div>
+            <div class="input-row">
+              <label for="invoiceDateFormat">Invoice/Bill Date Format:</label>
+              <select id="invoiceDateFormat" class="u-flex-1 u-p-8 u-border u-br-6">
+                <option value="locale">Default local format</option>
+                <option value="DD/MM/YYYY">DD/MM/YYYY</option>
+                <option value="MM/DD/YYYY">MM/DD/YYYY</option>
+                <option value="YYYY-MM-DD">YYYY-MM-DD</option>
+                <option value="DD-MM-YYYY">DD-MM-YYYY</option>
+                <option value="DD/MM/YYYY HH:mm">DD/MM/YYYY HH:mm</option>
+                <option value="custom">Custom format</option>
+              </select>
+            </div>
+            <div class="input-row">
+              <label for="invoiceCustomDateFormat">Custom Date Pattern:</label>
+              <input type="text" id="invoiceCustomDateFormat" placeholder="e.g. DD MMM YYYY" title="Use DD, MM, MMM, MMMM, YYYY, HH, mm, and ss tokens">
             </div>
             <div class="input-row">
               <label for="serviceMode">Service Business Mode:</label>
