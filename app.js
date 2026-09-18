@@ -6504,7 +6504,6 @@ function populateStockNameList() {
 
 function formatCurrency(number) {
   const num = parseFloat(number) || 0;
-  // Using toLocaleString to automatically add thousand separators and limit to 1 decimal place
   return num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 1 });
 }
 
@@ -6517,11 +6516,8 @@ function openBillSplitModal() {
     return alert("No active order to split.");
   }
   document.getElementById('splitBillTableId').textContent = "Current Order";
-
-  // Initialize split state from the current order
-  splitState.unassigned = JSON.parse(JSON.stringify(currentOrder.items)); // Deep copy
+  splitState.unassigned = JSON.parse(JSON.stringify(currentOrder.items));
   splitState.bills = [];
-
   renderSplitBillUI();
   document.getElementById('billSplitModal').style.display = 'flex';
 }
@@ -15940,10 +15936,13 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
 
     overlay.innerHTML = `
         ${deviceLabel}
-        <div class="marketing-side animate-panel-left" style="flex: 1.2; background: rgba(0,0,0,0.2); display: flex; align-items: center; justify-content: center; padding: 0; border-right: 1px solid rgba(255,255,255,0.1); backdrop-filter: blur(10px); overflow: hidden;">
-          <img src="assets/icons/market.png" crossorigin="anonymous" style="width: 100%; height: 100%; object-fit: cover;">
+        <div class="marketing-side animate-panel-left" style="order: 1; flex: 0 1 26%; width: min(26vw, 360px); height: min(76vh, 680px); margin: 5vh 1vw; padding: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+          <img src="assets/icons/market.jpeg" crossorigin="anonymous" style="display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain;">
         </div>
-        <div class="login-side animate-panel-right" style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px;">
+        <div class="marketing-side animate-panel-right" style="order: 3; flex: 0 1 26%; width: min(26vw, 360px); height: min(76vh, 680px); margin: 5vh 1vw; padding: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
+          <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain;">
+        </div>
+        <div class="login-side animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px;">
           <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
           <p style="font-size: 1.5em; margin-bottom: 25px; font-weight: bold;">${title}</p>
           
