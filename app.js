@@ -15936,11 +15936,11 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
 
     overlay.innerHTML = `
         ${deviceLabel}
-        <div class="marketing-side animate-panel-left" style="order: 1; flex: 0 1 26%; width: min(26vw, 360px); height: min(76vh, 680px); margin: 5vh 1vw; padding: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-          <img src="assets/icons/market.jpeg" crossorigin="anonymous" style="display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain;">
+        <div class="marketing-side animate-panel-left" style="order: 1; flex: 1 1 32%; width: auto; height: 100%; margin: 0; padding: 0; display: flex; align-items: stretch; justify-content: stretch; overflow: hidden;">
+          <img src="assets/icons/market.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
         </div>
-        <div class="marketing-side animate-panel-right" style="order: 3; flex: 0 1 26%; width: min(26vw, 360px); height: min(76vh, 680px); margin: 5vh 1vw; padding: 10px; display: flex; align-items: center; justify-content: center; overflow: hidden;">
-          <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain;">
+        <div class="marketing-side animate-panel-right" style="order: 3; flex: 1 1 32%; width: auto; height: 100%; margin: 0; padding: 0; display: flex; align-items: stretch; justify-content: stretch; overflow: hidden;">
+          <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
         </div>
         <div class="login-side animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px;">
           <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
