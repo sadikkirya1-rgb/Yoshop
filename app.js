@@ -15942,7 +15942,7 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
         <div class="marketing-side animate-panel-right" style="order: 3; flex: 1 1 32%; width: auto; height: 100%; margin: 0; padding: 0; display: flex; align-items: stretch; justify-content: stretch; overflow: hidden;">
           <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
         </div>
-        <div class="login-side animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 40px;">
+        <div class="login-side login-center-card animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); max-width: none; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0; padding: 42px 38px; box-sizing: border-box; border-left: 1px solid rgba(255,255,255,0.3); border-right: 1px solid rgba(255,255,255,0.3); background: linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06) 42%, rgba(7,15,30,0.34)), rgba(20,28,45,0.52); box-shadow: 0 0 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(28px) saturate(140%); -webkit-backdrop-filter: blur(28px) saturate(140%);">
           <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
           <p style="font-size: 1.5em; margin-bottom: 25px; font-weight: bold;">${title}</p>
           
