@@ -16013,8 +16013,8 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
     const deviceLabel = deviceId ? `<div style="position: absolute; top: 10px; left: 10px; background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 4px; font-size: 0.7em;">Simulated Device: ${deviceId}</div>` : '';
 
     // Stage 2: PIN Access
-    overlay.style.flexDirection = 'column';
-    overlay.style.alignItems = 'center';
+    overlay.style.flexDirection = 'row';
+    overlay.style.alignItems = 'stretch';
     overlay.style.justifyContent = 'center';
 
     const subInfo = getSubscriptionInfo();
@@ -16084,14 +16084,21 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
 
     overlay.innerHTML = `
         ${deviceLabel}
-        ${logoHtml}
-        <p style="font-size: 1.2em; margin: 0 0 12px;">Welcome</p>
-        <h1 style="font-size: 3em; margin-top: 0px; margin-bottom: 0px;">${settings?.name || 'YoShop'}</h1>
-        ${statusDisplay}
+        <div class="marketing-side animate-panel-left" style="order: 1; flex: 1 1 32%; width: auto; height: 100%; margin: 0; padding: 0; display: flex; align-items: stretch; justify-content: stretch; overflow: hidden;">
+          <img src="assets/icons/market.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
+        </div>
+        <div class="marketing-side animate-panel-right" style="order: 3; flex: 1 1 32%; width: auto; height: 100%; margin: 0; padding: 0; display: flex; align-items: stretch; justify-content: stretch; overflow: hidden;">
+          <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
+        </div>
+        <div class="login-side login-center-card animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); max-width: none; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0; padding: 42px 38px; box-sizing: border-box; border-left: 1px solid rgba(255,255,255,0.3); border-right: 1px solid rgba(255,255,255,0.3); background: linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06) 42%, rgba(7,15,30,0.34)), rgba(20,28,45,0.52); box-shadow: 0 0 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(28px) saturate(140%); -webkit-backdrop-filter: blur(28px) saturate(140%);">
+          <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
+          <p style="font-size: 1.5em; margin-bottom: 12px; font-weight: bold;">Welcome</p>
+          <h1 style="font-size: 3em; margin-top: 0; margin-bottom: 12px;">${settings?.name || 'YoShop'}</h1>
+          ${statusDisplay}
 
-        ${pinStageHtml}
+          ${pinStageHtml}
 
-        <div style="position: absolute; bottom: 20px; font-size: 0.65em; opacity: 0.7; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
+          <div style="margin-top: 40px; font-size: 0.65em; opacity: 0.7; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 100%;">
           <div style="display: flex; gap: 20px; font-size: 1.2em; margin-bottom: 2px;">
             <a href="#" style="color: white; text-decoration: none;">Privacy Policy</a>
             <a href="#" style="color: white; text-decoration: none;">Terms of Service</a>
@@ -16102,6 +16109,7 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
             <span>📧 sadikkirya@gmail.com</span>
           </div>
           <div style="margin-top: 5px; opacity: 0.8;">&copy; ${new Date().getFullYear()} ${settings?.name || 'YoShop'}. All rights reserved.</div>
+          </div>
         </div>
       `;
   }
