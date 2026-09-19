@@ -1323,6 +1323,44 @@ select option:checked {
   background: var(--primary);
   color: #fff;
 }
+.data-table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+}
+.data-table-toolbar [data-table-search] {
+  flex: 1 1 240px;
+  min-width: 180px;
+  min-height: 38px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+}
+.data-table-toolbar .btn {
+  margin: 0;
+}
+.data-table-filter-panel {
+  display: none;
+  flex-basis: 100%;
+  gap: 8px;
+  align-items: center;
+}
+.data-table-filter-panel.is-open {
+  display: flex;
+}
+.data-table-filter-panel select {
+  min-height: 36px;
+  min-width: 170px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--text);
+}
 
 #purchaseTab select:hover,
 #purchaseTab select:focus {

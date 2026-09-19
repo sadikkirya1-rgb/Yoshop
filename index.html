@@ -584,6 +584,12 @@
           <button class="btn print-barcodes-btn" onclick="generateAndPrintBarcodes()">🖨️ Print</button>
           <button class="btn btn-danger" id="deleteMarkedProductsBtn" style="display:none; margin-left:8px;" onclick="deleteMarkedProducts()">🗑️ Delete marked</button>
         </h3>
+        <div class="data-table-toolbar" data-table-controls="dishesTableBody" data-filter-options="all:All products|product:Products|service:Services">
+          <input type="search" data-table-search placeholder="Search products..." aria-label="Search products">
+          <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+          <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+          <div class="data-table-filter-panel" data-table-filter-panel></div>
+        </div>
           <div class="u-overflow-x-auto">
           <table class="u-table-nowrap-amounts table-excel">
             <thead>
@@ -612,6 +618,12 @@
             <input type="text" id="categoryNameInput" placeholder="New Category Name">
             <button class="btn" onclick="addCategory()">Add Category</button>
           </div>
+          <div class="data-table-toolbar" data-table-controls="categoryListBody">
+            <input type="search" data-table-search placeholder="Search categories..." aria-label="Search categories">
+            <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+            <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+            <div class="data-table-filter-panel" data-table-filter-panel></div>
+          </div>
           <table class="u-mt-15 table-excel">
             <thead>
               <tr>
@@ -635,6 +647,12 @@
             <input type="text" id="unitFullNameInput" placeholder="Full Name (e.g., Kilogram)">
             <input type="text" id="unitNameInput" placeholder="Short Name (e.g., kg)">
             <button class="btn" onclick="addUnit()">Add Unit</button>
+          </div>
+          <div class="data-table-toolbar" data-table-controls="unitListBody">
+            <input type="search" data-table-search placeholder="Search units..." aria-label="Search units">
+            <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+            <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+            <div class="data-table-filter-panel" data-table-filter-panel></div>
           </div>
           <table class="u-mt-15 table-excel">
             <thead>
@@ -684,6 +702,12 @@
             <label><input type="checkbox" value="settingsTab"> Settings</label>
             <label><input type="checkbox" value="lockPin" checked> Lock PIN</label>
             <label><input type="checkbox" value="logoutAccount" checked> Logout</label>
+          </div>
+          <div class="data-table-toolbar" data-table-controls="staffListBody" data-filter-options="all:All staff|shopadmin:Shop admins|staff:Staff">
+            <input type="search" data-table-search placeholder="Search staff..." aria-label="Search staff">
+            <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+            <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+            <div class="data-table-filter-panel" data-table-filter-panel></div>
           </div>
           <table class="u-mt-15 table-excel">
             <thead>
@@ -750,6 +774,12 @@
               <button class="btn btn-info" type="button" onclick="sendAllCustomersStatusNotificationByEmail()" title="Send to all customers with email" style="white-space: nowrap;">📧 Email All</button>
             </div>
           </div>
+          <div class="data-table-toolbar" data-table-controls="customerListBody">
+            <input type="search" data-table-search placeholder="Search customers..." aria-label="Search customers">
+            <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+            <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+            <div class="data-table-filter-panel" data-table-filter-panel></div>
+          </div>
           <table class="u-mt-15 table-excel">
             <thead>
               <tr>
@@ -784,6 +814,12 @@
             <button class="btn btn-warning" type="button" onclick="clearAllAdjustments()" title="Clear all invoice and customer adjustments">Clear Adjustments</button>
             <button class="btn btn-primary invoice-status-update-btn" type="button" id="invoiceStatusUpdateBtn" onclick="openInvoiceStatusModal()">Update Status</button>
           </div>
+        </div>
+        <div class="data-table-toolbar" data-table-controls="invoiceListBody" data-filter-options="all:All invoices|pending:Pending|paid:Paid">
+          <input type="search" data-table-search placeholder="Search invoices..." aria-label="Search invoices">
+          <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+          <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+          <div class="data-table-filter-panel" data-table-filter-panel></div>
         </div>
         <div class="u-overflow-x-auto">
           <table class="u-mt-15 table-excel">
@@ -1119,6 +1155,12 @@
 
         <div class="u-mt-20">
           <h5 class="u-m-0">Purchase History</h5>
+          <div class="data-table-toolbar" data-table-controls="purchaseHistoryBody">
+            <input type="search" data-table-search placeholder="Search purchases..." aria-label="Search purchases">
+            <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+            <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+            <div class="data-table-filter-panel" data-table-filter-panel></div>
+          </div>
           <div class="u-overflow-x-auto">
             <table class="u-mt-10 table-excel">
               <thead>
@@ -1163,6 +1205,12 @@
 
         <div class="u-mt-20">
           <h5 class="u-m-0">Supplier List</h5>
+          <div class="data-table-toolbar" data-table-controls="supplierListBody">
+            <input type="search" data-table-search placeholder="Search suppliers..." aria-label="Search suppliers">
+            <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+            <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+            <div class="data-table-filter-panel" data-table-filter-panel></div>
+          </div>
           <div class="u-overflow-x-auto">
             <table class="u-mt-10 table-excel">
               <thead>
@@ -1211,6 +1259,12 @@
 
         <div class="u-mt-20">
           <h5 class="u-m-0">Waste / Loss History</h5>
+          <div class="data-table-toolbar" data-table-controls="wastageLossHistoryBody">
+            <input type="search" data-table-search placeholder="Search waste/loss..." aria-label="Search waste and loss records">
+            <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+            <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+            <div class="data-table-filter-panel" data-table-filter-panel></div>
+          </div>
           <div class="u-overflow-x-auto">
             <table class="u-mt-10 table-excel">
               <thead>
@@ -1307,6 +1361,12 @@
         <div class="input-row u-mb-15" style="gap:8px; align-items:center; flex-wrap:wrap;">
           <input type="date" id="transactionFilterDate" onchange="renderTransactions()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
           <button class="btn btn-primary invoice-status-update-btn" type="button" onclick="openInvoiceStatusModal()">Update Status</button>
+        </div>
+        <div class="data-table-toolbar" data-table-controls="transactionHistoryBody" data-filter-options="all:All sales|product:Products|service:Services">
+          <input type="search" data-table-search placeholder="Search sales..." aria-label="Search sales">
+          <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+          <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
+          <div class="data-table-filter-panel" data-table-filter-panel></div>
         </div>
         <div class="u-mb-10" id="transactionCountInfo">Showing 0 of 0 bills</div>
         <div class="u-overflow-x-auto" id="transactionListContainer">

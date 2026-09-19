@@ -14697,14 +14697,69 @@ function deleteSupplierEntry(id) {
   showAppAlert('Supplier deleted.', 'Deleted');
 }
 
+function applyDataTableControls(toolbar) {
+  if (!toolbar) return;
+  const body = document.getElementById(toolbar.dataset.tableControls);
+  if (!body) return;
+
+  const search = toolbar.querySelector('[data-table-search]');
+  const filter = toolbar.querySelector('[data-table-filter]');
+  const searchValue = String(search?.value || '').trim().toLowerCase();
+  const filterValue = String(filter?.value || 'all').toLowerCase();
+
+  body.querySelectorAll(':scope > tr').forEach(row => {
+    const rowText = String(row.textContent || '').toLowerCase();
+    const isService = rowText.includes('service');
+    const matchesFilter = filterValue === 'all'
+      || (filterValue === 'product' && !isService)
+      || rowText.includes(filterValue);
+    row.hidden = !(matchesFilter && (!searchValue || rowText.includes(searchValue)));
+  });
+}
+
+function initializeDataTableControls() {
+  document.querySelectorAll('[data-table-controls]').forEach(toolbar => {
+    const panel = toolbar.querySelector('[data-table-filter-panel]');
+    if (panel && !panel.querySelector('[data-table-filter]')) {
+      const options = String(toolbar.dataset.filterOptions || 'all:All rows')
+        .split('|')
+        .map(option => option.split(':'))
+        .filter(option => option[0] && option[1]);
+      panel.innerHTML = `<label>Show <select data-table-filter aria-label="Filter table rows">${options
+        .map(([value, label]) => `<option value="${value}">${label}</option>`).join('')}</select></label>`;
+    }
+
+    const search = toolbar.querySelector('[data-table-search]');
+    const filter = toolbar.querySelector('[data-table-filter]');
+    search?.addEventListener('input', () => applyDataTableControls(toolbar));
+    filter?.addEventListener('change', () => applyDataTableControls(toolbar));
+    toolbar.querySelector('[data-table-filter-toggle]')?.addEventListener('click', () => {
+      panel?.classList.toggle('is-open');
+    });
+    toolbar.querySelector('[data-table-reset]')?.addEventListener('click', () => {
+      if (search) search.value = '';
+      if (filter) filter.value = 'all';
+      applyDataTableControls(toolbar);
+    });
+
+    const body = document.getElementById(toolbar.dataset.tableControls);
+    if (body) {
+      new MutationObserver(() => applyDataTableControls(toolbar)).observe(body, { childList: true });
+    }
+    applyDataTableControls(toolbar);
+  });
+}
+
 function clearTableFilters() {
-  document.querySelectorAll('table input[type="text"], table select').forEach(el => {
-    el.value = '';
+  document.querySelectorAll('[data-table-controls]').forEach(toolbar => {
+    toolbar.querySelector('[data-table-reset]')?.click();
   });
   renderPurchaseHistory();
   renderWastageLossHistory();
   renderSupplierList();
 }
+
+initializeDataTableControls();
 
 function previewPurchaseEntry(id) {
   const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(record => record.id === id);
