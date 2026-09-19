@@ -2870,6 +2870,77 @@ section#menuTab.active {
   flex-wrap: nowrap;
 }
 
+.picked-items-panel {
+  display: none;
+  margin: 12px 0 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--card);
+}
+
+.picked-items-panel.has-items {
+  display: block;
+}
+
+.picked-item-row,
+.picked-items-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 70px 100px 100px 28px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 12px;
+}
+
+.picked-items-heading {
+  background: color-mix(in srgb, var(--primary) 10%, var(--card));
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.picked-item-row + .picked-item-row {
+  border-top: 1px solid var(--border-color);
+}
+
+.picked-item-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.picked-item-remove {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--danger, #dc3545);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.picked-item-remove svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  vertical-align: middle;
+}
+
+.picked-item-remove:hover,
+.picked-item-remove:focus-visible {
+  background: rgba(220, 53, 69, 0.12);
+}
+
+@media (max-width: 600px) {
+  .picked-item-row,
+  .picked-items-heading {
+    grid-template-columns: minmax(0, 1fr) 45px 75px 80px 28px;
+    gap: 6px;
+    padding: 8px;
+    font-size: 0.85rem;
+  }
+}
+
 #categoryFilter {
   padding: 8px;
   border: 1px solid #ddd;

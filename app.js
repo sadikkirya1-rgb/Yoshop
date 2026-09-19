@@ -4069,8 +4069,8 @@ async function saveDataNow(syncToCloud = true, options = {}) {
         allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
       }),
       saveState('activeOrders', activeOrders || {}, {
-        enqueueSync: syncToCloud,
-        allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
+        enqueueSync: false,
+        allowEmptyOverwriteFields: ['activeOrders']
       }),
       saveState('transactions', transactions || [], {
         enqueueSync: false,
@@ -5784,6 +5784,7 @@ function renderMenu() {
   const sellableMenu = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
   const searchTerm = document.getElementById('menuSearch')?.value.toLowerCase() || '';
   const categoryFilter = document.getElementById('categoryFilter')?.value || '';
+  renderPickedItems();
 
   // Filter for the search term AND ensure the item is a sellable dish (has a recipe).
   // Also filter out items that don't have a category.
@@ -5889,6 +5890,55 @@ function renderMenu() {
 
   // Initial orders sync
   updateOrders(CART_ID, false);
+}
+
+function renderPickedItems() {
+  const container = document.getElementById('menuPickedItems');
+  if (!container) return;
+
+  const items = (activeOrders[CART_ID]?.items || []).filter(item => (Number(item.qty) || 0) > 0);
+  if (items.length === 0) {
+    container.innerHTML = '';
+    container.classList.remove('has-items');
+    return;
+  }
+
+  const currency = settings.currency || '$';
+  const rows = items.map((item, index) => {
+    const quantity = Number(item.qty) || 0;
+    const unitPrice = Number(item.price) || 0;
+    return `<div class="picked-item-row">
+      <span class="picked-item-name">${escapeHtml(item.name || 'Item')}</span>
+      <span>${quantity}</span>
+      <span>${currency}${formatCurrency(unitPrice)}</span>
+      <strong>${currency}${formatCurrency(unitPrice * quantity)}</strong>
+      <button type="button" class="picked-item-remove" data-picked-item-index="${index}" title="Remove picked item" aria-label="Remove ${escapeHtml(item.name || 'item')}"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5zm3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0V6z"/><path fill-rule="evenodd" d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1v1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4H4.118zM2.5 3V2h11v1h-11z"/></svg></button>
+    </div>`;
+  }).join('');
+
+  container.classList.add('has-items');
+  container.innerHTML = `<div class="picked-items-heading"><strong>Picked items</strong><span>Qty</span><span>Unit</span><span>Total</span><span aria-hidden="true"></span></div>${rows}`;
+  container.querySelectorAll('[data-picked-item-index]').forEach(button => {
+    button.addEventListener('click', event => {
+      event.stopPropagation();
+      removePickedItem(Number(button.dataset.pickedItemIndex));
+    });
+  });
+}
+
+function removePickedItem(index) {
+  const order = activeOrders[CART_ID];
+  if (!order || !Array.isArray(order.items)) return;
+  const pickedItems = order.items.filter(item => (Number(item.qty) || 0) > 0);
+  const itemToRemove = pickedItems[index];
+  if (!itemToRemove) return;
+
+  const itemIndex = order.items.indexOf(itemToRemove);
+  if (itemIndex >= 0) order.items.splice(itemIndex, 1);
+  if (order.items.length === 0) delete activeOrders[CART_ID];
+  saveData(false).catch(error => console.warn('[CART] Failed to save removed picked item:', error));
+  updateOrders(CART_ID, false);
+  updateMenuUI();
 }
 
 function escapeJsString(str) {
@@ -6084,6 +6134,8 @@ function updateMenuUI() {
     const plusBtn = card.querySelector('.item-controls button:last-child');
     if (plusBtn) plusBtn.disabled = isOutOfStock;
   });
+
+  renderPickedItems();
 }
 
 function getLowStockThreshold(item) {
@@ -7448,10 +7500,20 @@ async function finalizePayment(isSplit = false) {
 
     await recordTransaction(transaction);
     const changeDue = amountTendered - amountPaid;
-    delete activeOrders[CART_ID];
+    activeOrders[CART_ID] = { items: [], server: '' };
     await saveData();
+    updateOrders(CART_ID, false);
     renderMenu();
-    
+
+    ['amountTendered', 'discountInput', 'deliveryFeeInput', 'pickupDate', 'dropoffDate', 'serviceDuration', 'serviceNotes'].forEach(id => {
+      const field = document.getElementById(id);
+      if (field) field.value = '';
+    });
+    const paymentMethodInput = document.getElementById('paymentMethod');
+    if (paymentMethodInput) paymentMethodInput.selectedIndex = 0;
+    const paymentCustomerSelect = document.getElementById('paymentCustomerSelect');
+    if (paymentCustomerSelect) paymentCustomerSelect.value = '';
+
     // Reset order customer selection dropdown
     const orderSelect = document.getElementById('orderCustomerSelect');
     if (orderSelect) orderSelect.value = '';
@@ -15202,7 +15264,8 @@ function setupRealTimeSync(uid) {
               };
               pendingUpdate = {
                 menu: hydrateEnterpriseRecords('products', safeArray(getCloudMenuItems(cloudData), menu)),
-                activeOrders: safeObj(cloudData.activeOrders, activeOrders),
+                // Picked shop items are device-local and must not appear on another device.
+                activeOrders,
                 settings: pickNewestSettingsRecord(settings, cloudData.settings, defaultSettings),
                 staff: hydrateEnterpriseRecords('staff', safeArray(cloudData.staff, staff)),
                 dishCategories: safeArray(getCloudCategoryList(cloudData), dishCategories),
@@ -15474,6 +15537,7 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
   settings = normalizeSettings(localData[3], defaultSettings);
   menu = hydrateEnterpriseRecords('products', localData[0] || []);
   activeOrders = localData[1] || {};
+  clearLocalShopCartAfterLoad();
   transactions = deduplicateTransactions(hydrateEnterpriseRecords('sales', localData[2] || []));
   staff = hydrateEnterpriseRecords('staff', localData[4] || []);
   dishCategories = localData[5] || [];
@@ -15555,6 +15619,14 @@ function resetDashboardCartState() {
   }
 }
 
+function clearLocalShopCartAfterLoad() {
+  activeOrders = resetActiveOrdersCart(activeOrders, CART_ID);
+  saveState('activeOrders', activeOrders, {
+    enqueueSync: false,
+    allowEmptyOverwriteFields: ['activeOrders']
+  }).catch(error => console.warn('[CART] Failed to clear local shop cart:', error));
+}
+
 async function mainInit() {
   try {
     // Check if we are opening in Mobile Scanner Client Mode
@@ -15605,6 +15677,7 @@ async function mainInit() {
     // Populate state from local storage immediately
     menu = hydrateEnterpriseRecords('products', localData[0] || defaultMenu);
     activeOrders = localData[1] || {};
+    clearLocalShopCartAfterLoad();
     transactions = deduplicateTransactions(hydrateEnterpriseRecords('sales', localData[2] || []));
     staff = hydrateEnterpriseRecords('staff', localData[4] || defaultStaff);
     dishCategories = localData[5] || defaultDishCategories;
