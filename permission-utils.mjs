@@ -20,6 +20,17 @@ const DEFAULT_PERMISSION_TOKENS = [
   'priceOverride'
 ];
 
+const ACTION_PERMISSION_TOKENS = [
+  'products.create', 'products.edit', 'products.delete',
+  'categories.create', 'categories.edit', 'categories.delete',
+  'units.create', 'units.edit', 'units.delete',
+  'staff.create', 'staff.edit', 'staff.delete', 'staff.permissions',
+  'customers.create', 'customers.edit', 'customers.delete',
+  'sales.create', 'sales.edit', 'sales.delete',
+  'invoices.edit', 'invoices.delete', 'inventory.create', 'inventory.edit', 'inventory.delete',
+  'settings.edit', 'reports.export', 'printing.use'
+];
+
 const FEATURE_ALIASES = {
   dashboard: 'dashboardTab',
   shop: 'menuTab',
@@ -99,6 +110,7 @@ function getFirstAllowedTab(role, permissions = [], fallback = 'menuTab') {
 
 export {
   DEFAULT_PERMISSION_TOKENS,
+  ACTION_PERMISSION_TOKENS,
   FEATURE_ALIASES,
   normalizePermissions,
   hasPermission,

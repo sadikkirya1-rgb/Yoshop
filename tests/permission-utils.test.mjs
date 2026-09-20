@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from '../permission-utils.mjs';
+import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from '../permission-utils.mjs';
 
 test('normalizePermissions collapses duplicates and filters empty values', () => {
   assert.deepEqual(normalizePermissions(['menuTab', '', 'menuTab', 'reportsTab']), ['menuTab', 'reportsTab']);
@@ -27,4 +27,10 @@ test('getEffectivePermissions returns a normalized permission list for staff', (
 test('getFirstAllowedTab picks the first allowed tab safely', () => {
   assert.equal(getFirstAllowedTab('staff', ['reportsTab', 'menuTab'], 'menuTab'), 'reportsTab');
   assert.equal(getFirstAllowedTab('staff', [], 'menuTab'), 'menuTab');
+});
+
+test('action permission tokens support section-specific staff actions', () => {
+  assert.ok(ACTION_PERMISSION_TOKENS.includes('sales.edit'));
+  assert.equal(hasPermission('staff', ['sales.edit'], 'sales.edit'), true);
+  assert.equal(hasPermission('staff', ['sales.edit'], 'sales.delete'), false);
 });

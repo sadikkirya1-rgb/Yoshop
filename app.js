@@ -16,7 +16,7 @@ import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
 import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
-import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab } from './permission-utils.mjs';
+import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
@@ -321,7 +321,62 @@ function appendAuditEvent(type, details = {}) {
   }
 
   auditTrail = limitAuditTrail(nextTrail, 500);
+  renderAuditTrail();
   return auditTrail;
+}
+
+function renderAuditTrail() {
+  const container = document.getElementById('auditTrailList');
+  if (!container) return;
+  const rows = (Array.isArray(auditTrail) ? auditTrail : []).slice(-100).reverse();
+  container.innerHTML = rows.length === 0
+    ? '<p class="u-fs-08 u-text-muted">No audit events yet.</p>'
+    : `<table class="table-excel"><thead><tr><th>Date</th><th>Who</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead><tbody>${rows.map(event => {
+      const details = event.details || {};
+      const who = details.changedBy || event.staffId || event.userId || 'system';
+      return `<tr><td>${escapeHtml(new Date(event.timestamp).toLocaleString())}</td><td>${escapeHtml(who)}</td><td>${escapeHtml(event.type || event.eventType || '')}</td><td>${escapeHtml(details.entity || '')}</td><td>${escapeHtml(JSON.stringify(details))}</td></tr>`;
+    }).join('')}</tbody></table>`;
+}
+
+function auditMutation(action, entity, details = {}) {
+  appendAuditEvent('mutation', {
+    action,
+    entity,
+    changedBy: currentLoggedInStaffName || currentUser?.displayName || currentUser?.email || 'system',
+    ...details
+  });
+  persistAuditTrail().catch(() => {});
+}
+
+function canPerformAction(permission = '') {
+  const normalizedRole = String(currentUserRole || '').toLowerCase();
+  if (normalizedRole === 'shopadmin' || normalizedRole === 'appadmin') return true;
+  return hasPermission(currentUserRole, currentUserPermissions, permission);
+}
+
+function requireActionPermission(permission, label = 'this action') {
+  if (canPerformAction(permission)) return true;
+  showAppAlert(`You do not have permission to perform ${label}.`, 'Permission Denied');
+  return false;
+}
+
+function getButtonActionPermission(button) {
+  const explicit = button?.dataset?.actionPermission;
+  if (explicit) return explicit;
+  const onclick = button?.getAttribute('onclick') || '';
+  const text = (button?.textContent || '').toLowerCase();
+  const section = button?.closest('section')?.id || '';
+  const sectionKey = {
+    addDishTab: 'products', categoryTab: 'categories', unitTab: 'units', staffTab: 'staff',
+    customerTab: 'customers', transactionsTab: 'sales', invoicesTab: 'invoices', stockTab: 'inventory',
+    settingsTab: 'settings', reportsTab: 'reports', menuTab: 'sales'
+  }[section];
+  if (sectionKey && /delete|remove|clear/.test(onclick + text)) return `${sectionKey}.delete`;
+  if (sectionKey && /edit|update|save|add|create|adjust|discount/.test(onclick + text)) return `${sectionKey}.${/add|create/.test(onclick + text) ? 'create' : 'edit'}`;
+  if (/delete|remove|clear/.test(onclick + text)) return 'deleteTab';
+  if (/print|pdf|share/.test(onclick + text)) return 'printing.use';
+  if (/export|csv/.test(onclick + text)) return 'reports.export';
+  return '';
 }
 
 async function persistAuditTrail() {
@@ -2458,6 +2513,7 @@ const defaultSettings = {
   lowStockThreshold: 10,
   taxRate: 0,
   ShopAdminPIN: "1234", // Default ShopAdmin PIN
+  transactionEditWindowMinutes: 30,
   serviceMode: false,
   invoiceDateFormat: 'locale',
   invoiceCustomDateFormat: ''
@@ -2481,6 +2537,28 @@ function getCurrentServerName() {
     if (currentUser.email) return currentUser.email.split('@')[0];
   }
   return 'N/A';
+}
+
+function getTransactionStaffName(transaction = {}) {
+  return transaction.servedBy || transaction.staffName || transaction.cashier || transaction.createdByName || 'N/A';
+}
+
+function canModifyTransaction(transaction = {}) {
+  if (!transaction || isFullAccessRole()) return true;
+  const currentStaff = String(getCurrentServerName() || '').trim().toLowerCase();
+  const transactionStaff = String(getTransactionStaffName(transaction) || '').trim().toLowerCase();
+  if (!currentStaff || currentStaff === 'n/a' || !transactionStaff || currentStaff !== transactionStaff) return false;
+  const windowMinutes = Math.max(0, Number(settings?.transactionEditWindowMinutes ?? 30));
+  if (windowMinutes === 0) return false;
+  const transactionTime = new Date(transaction.createdAt || transaction.date || 0).getTime();
+  return Number.isFinite(transactionTime) && Date.now() - transactionTime <= windowMinutes * 60 * 1000;
+}
+
+function getTransactionActionLockTitle(transaction = {}) {
+  if (isFullAccessRole()) return '';
+  return canModifyTransaction(transaction)
+    ? ''
+    : 'Locked: staff transaction action window has expired or this sale belongs to another staff member';
 }
 
 function normalizeInvoicePrintData(source = {}) {
@@ -2577,6 +2655,10 @@ function updateInvoiceDateTimeByKey(recordKey, dateTimeValue) {
     String(entry.id || entry.recordId || entry.invoiceNumber || entry.date || '') === key
   ));
   if (!transaction) return false;
+  if (!canModifyTransaction(transaction)) {
+    showAppAlert(getTransactionActionLockTitle(transaction), 'Transaction Locked');
+    return false;
+  }
 
   const effectiveDate = parsedDate.toISOString();
   transaction.invoiceDate = effectiveDate;
@@ -5522,6 +5604,7 @@ window.sendOrderStatusNotification = sendOrderStatusNotification;
 window.promptAndUpdateOrderStatus = promptAndUpdateOrderStatus;
 window.updateReceiptOrderStatus = updateReceiptOrderStatus;
 window.updateTransactionStatusByIndex = updateTransactionStatusByIndex;
+window.renderAuditTrail = renderAuditTrail;
 window.openInvoiceStatusModal = openInvoiceStatusModal;
 window.closeInvoiceStatusModal = closeInvoiceStatusModal;
 window.handleInvoiceStatusButtonClick = handleInvoiceStatusButtonClick;
@@ -6158,6 +6241,7 @@ function getLowStockThreshold(item) {
 }
 
 async function addDish(buttonElement) {
+  if (!requireActionPermission('products.edit', 'product changes')) return;
   const dishIndexInput = document.getElementById('dishIndex').value;
   const isUpdate = dishIndexInput !== '';
   const name = document.getElementById('dishName').value.trim();
@@ -6292,6 +6376,13 @@ async function addDish(buttonElement) {
     renderMenu();
     renderDishesTable(); // Update the dishes list
     updateDashboard();
+    auditMutation(isUpdate ? 'product_edited' : 'product_created', 'products', {
+      productName: name,
+      productId: menu.find(item => item.name === name)?.id || menu.find(item => item.name === name)?.recordId,
+      price,
+      category,
+      unit
+    });
     saveData(); // Ensure changes are saved
     toggleAddDishForm(false); // Hide form on save
   } catch (error) {
@@ -6766,6 +6857,7 @@ async function processSplitPayments() {
       const paymentDate = Number.isFinite(parsedPaymentDate.getTime()) ? parsedPaymentDate.toISOString() : new Date().toISOString();
       const transaction = {
         date: paymentDate,
+        createdAt: new Date().toISOString(),
         invoiceDate: paymentDate,
         customerName: serverName,
         tableNo: 'Shop',
@@ -7488,6 +7580,7 @@ async function finalizePayment(isSplit = false) {
 
     const transaction = {
       date: paymentDate,
+      createdAt: new Date().toISOString(),
       invoiceDate: paymentDate,
       customerName: currentServerName, // This is the staff name for compatibility
       servedBy: currentServerName,
@@ -9301,9 +9394,13 @@ function closeTransactionEditModal() {
 async function confirmDraftTransaction(index) {
   const draft = Array.isArray(transactions) ? transactions[index] : null;
   if (!draft || String(draft.orderStatus || draft.status || '').toLowerCase() !== 'draft') return;
+  if (!canModifyTransaction(draft)) {
+    await showAppAlert(getTransactionActionLockTitle(draft), 'Transaction Locked');
+    return;
+  }
 
   const confirmed = await showAppConfirm('Confirm this draft invoice? Stock and customer account changes will be applied.', 'Confirm Draft', 'Confirm', 'Cancel');
-  if (!confirmed) return;
+  if (!confirmed?.confirmed) return;
 
   const totals = getTransactionEditTotals(draft);
   const customer = draft.customerId
@@ -9344,6 +9441,11 @@ async function confirmDraftTransaction(index) {
   }
 
   transactions[index] = updatedTransaction;
+  auditMutation('draft_confirmed', 'sales', {
+    transactionId: updatedTransaction.id || updatedTransaction.recordId || updatedTransaction.date,
+    total: updatedTransaction.total,
+    itemCount: updatedTransaction.items.length
+  });
   await saveState('transactions', transactions, { enqueueSync: false });
   await mirrorSaleDetailsLocally(updatedTransaction);
   await enqueueTransactionSync(updatedTransaction);
@@ -9357,6 +9459,9 @@ async function confirmDraftTransaction(index) {
 function editTransaction(index) {
   const source = Array.isArray(transactions) ? transactions[index] : null;
   if (!source) return;
+  if (!canModifyTransaction(source)) {
+    return showAppAlert(getTransactionActionLockTitle(source), 'Transaction Locked');
+  }
   resetTransactionProductForm();
   transactionEditState = {
     index,
@@ -9421,6 +9526,10 @@ async function saveTransactionEdit() {
   }
 
   transactions[index] = updatedTransaction;
+  auditMutation('sale_edited', 'sales', {
+    transactionId: updatedTransaction.id || updatedTransaction.recordId || updatedTransaction.date,
+    total: updatedTransaction.total
+  });
   if (updatedTransaction.customerId && !isDraftOriginal) {
     const customer = customers.find(entry => entry && String(entry.id) === String(updatedTransaction.customerId));
     if (customer) {
@@ -9507,6 +9616,7 @@ function renderTransactions() {
         <td>${i + 1}</td>
         <td class="u-fs-08 u-nowrap">${escapeHtml(getInvoiceNumber(t) || '—')}</td>
         <td class="u-fs-08 u-nowrap">${new Date(t.date).toLocaleString()}${(t.duplicateCount || 0) > 0 ? ' <span class="duplicate-sale-badge">Duplicate</span>' : ''}</td>
+        <td class="u-fs-08 u-nowrap">${escapeHtml(getTransactionStaffName(t))}</td>
         <td class="u-fs-08 u-nowrap">${escapeHtml(String(t.orderType === 'service' ? 'Service' : 'Product'))}</td>
         <td class="service-status-column">${getOrderStatusBadge(t.orderStatus || 'pending')}</td>
         <td class="u-text-right u-fs-08 u-nowrap"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(t.total)}</td>
@@ -9514,11 +9624,11 @@ function renderTransactions() {
           <button class="btn u-fs-08 row-preview-btn" data-tx-index="${txIndex}" style="display: inline-block; padding: 6px 8px; margin: 0 2px; background: #17a2b8;"> 
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; color: #fff;"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8z"></path><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z" fill="#fff"></path></svg>
           </button>
-          <button class="icon-btn" title="Edit Sale" onclick="editTransaction(${txIndex})">✎</button>
-          <button class="icon-btn" title="Send Order Status" onclick="sendOrderStatusNotification(${txIndex})" style="margin-right:4px;">📩</button>
-          <button class="icon-btn" title="Re-Open Bill" onclick="reopenTransaction(${txIndex})">${iconReopen}</button>
+          <button class="icon-btn" title="Edit Sale" onclick="editTransaction(${txIndex})" ${canModifyTransaction(t) ? '' : 'disabled'}>✎</button>
+          <button class="icon-btn" title="Send Order Status" onclick="sendOrderStatusNotification(${txIndex})" style="margin-right:4px;" ${canModifyTransaction(t) ? '' : 'disabled'}>📩</button>
+          <button class="icon-btn" title="Re-Open Bill" onclick="reopenTransaction(${txIndex})" ${canModifyTransaction(t) ? '' : 'disabled'}>${iconReopen}</button>
           <button class="icon-btn" title="Download PDF" onclick="downloadBillAsPDF(${txIndex})">${iconDownload}</button>
-          <button class="icon-btn" title="Delete Bill" onclick="deleteTransaction(${txIndex})">${iconDelete}</button>
+          <button class="icon-btn" title="Delete Bill" onclick="deleteTransaction(${txIndex})" ${canModifyTransaction(t) ? '' : 'disabled'}>${iconDelete}</button>
         </td>
       `;
 
@@ -9554,7 +9664,7 @@ function renderTransactions() {
 
     tbody.innerHTML = `
       <tr>
-        <td colspan="8" style="padding: 22px 12px;">
+        <td colspan="9" style="padding: 22px 12px;">
           <div style="display:flex; align-items:center; justify-content:center; min-height: 180px; border: 1px solid var(--border-color, #dfe3ec); background: linear-gradient(180deg, rgba(23, 162, 184, 0.06), rgba(15, 23, 42, 0.02)); border-radius: 14px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.25);">
             <div style="text-align:center; max-width: 420px; color: var(--text, #1f2937); padding: 18px;">
               <div style="font-size: 2rem; margin-bottom: 8px;">🧾</div>
@@ -9787,6 +9897,11 @@ function populateReceiptContent(transaction) {
 }
 
 async function deleteTransaction(index) {
+  const transactionToDelete = Array.isArray(transactions) ? transactions[index] : null;
+  if (!canModifyTransaction(transactionToDelete)) {
+    await showAppAlert(getTransactionActionLockTitle(transactionToDelete), 'Transaction Locked');
+    return;
+  }
   const pin = await showAppPrompt("Enter Admin PIN to delete transaction:", "Admin PIN Required", "Admin PIN");
   const adminPin = settings.ShopAdminPIN || settings.managerPIN;
   if (!adminPin || pin !== adminPin) {
@@ -9829,6 +9944,10 @@ async function deleteTransaction(index) {
     });
   }
   transactions.splice(index, 1);
+  auditMutation('sale_deleted', 'sales', {
+    transactionId: txToDelete?.id || txToDelete?.recordId || txToDelete?.date,
+    total: txToDelete?.total || 0
+  });
   await saveData(true);
   renderTransactions();
   renderMenu();
@@ -9896,6 +10015,10 @@ async function deleteTransaction(index) {
 }
 async function reopenTransaction(index) {
   const transactionToEdit = transactions[index];
+  if (!canModifyTransaction(transactionToEdit)) {
+    await showAppAlert(getTransactionActionLockTitle(transactionToEdit), 'Transaction Locked');
+    return;
+  }
 
   if (activeOrders[CART_ID] && activeOrders[CART_ID].items.length > 0) {
     await showAppAlert(`Cannot re-open this bill because the cart is currently occupied. Please clear the cart first.`, "Action Blocked");
@@ -11491,6 +11614,8 @@ async function saveSettings() {
   settings.taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
   settings.invoiceDateFormat = document.getElementById('invoiceDateFormat')?.value || 'locale';
   settings.invoiceCustomDateFormat = document.getElementById('invoiceCustomDateFormat')?.value.trim() || '';
+  const transactionWindow = parseInt(document.getElementById('transactionEditWindowMinutes')?.value, 10);
+  settings.transactionEditWindowMinutes = Number.isFinite(transactionWindow) ? Math.max(0, transactionWindow) : 30;
   settings.serviceMode = Boolean(document.getElementById('serviceMode')?.checked);
   settings.promoMessage = document.getElementById('promoMessage').value.trim();
   settings.ShopAdminPIN = pin;
@@ -11735,6 +11860,7 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('promoMessage', settings.promoMessage || '');
   setVal('invoiceDateFormat', settings.invoiceDateFormat || 'locale');
   setVal('invoiceCustomDateFormat', settings.invoiceCustomDateFormat || '');
+  setVal('transactionEditWindowMinutes', settings.transactionEditWindowMinutes ?? 30);
   setVal('ShopAdminPIN', settings.ShopAdminPIN || "");
   setVal('confirmShopAdminPIN', settings.ShopAdminPIN || "");
   const serviceModeCheckbox = document.getElementById('serviceMode');
@@ -12208,12 +12334,22 @@ function openStaffPermissionsModal(index) {
     { id: 'settingsTab', label: 'Settings' }
   ];
 
-  container.innerHTML = tabs.map(tab => `
+  const actions = ACTION_PERMISSION_TOKENS.map(id => ({
+    id,
+    label: id.replace('.', ' / ').replace(/\b\w/g, character => character.toUpperCase())
+  }));
+
+  container.innerHTML = `<strong style="grid-column:1/-1;">Sections</strong>${tabs.map(tab => `
       <label style="cursor: pointer; display: flex; align-items: center; gap: 8px;">
         <input type="checkbox" value="${tab.id}" ${member.permissions?.includes(tab.id) ? 'checked' : ''}>
         ${tab.label}
       </label>
-    `).join('');
+    `).join('')}<strong style="grid-column:1/-1; margin-top:8px;">Action Buttons</strong>${actions.map(action => `
+      <label style="cursor:pointer; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" value="${action.id}" ${member.permissions?.includes(action.id) ? 'checked' : ''}>
+        ${action.label}
+      </label>
+    `).join('')}`;
 
   document.getElementById('staffPermissionsModal').style.display = 'flex';
 }
@@ -12228,18 +12364,20 @@ function saveStaffPermissions() {
   enqueueEnterpriseRecordChange('staff', staff[index], 'upsert').catch(console.warn);
 
   saveData();
+  auditMutation('permissions_updated', 'staff', { staffName: staff[index].name, permissions });
   document.getElementById('staffPermissionsModal').style.display = 'none';
   alert("Permissions updated successfully.");
 }
 
 async function deleteStaff(index) {
   const confirmed = await showAppConfirm(`Are you sure you want to remove ${staff[index].name}?`, "Remove Staff", "Remove", "Cancel");
-  if (!confirmed) return;
+  if (!confirmed?.confirmed) return;
 
   const staffToDelete = staff[index];
   enqueueEnterpriseRecordChange('staff', staffToDelete, 'delete').catch(console.warn);
 
   staff.splice(index, 1);
+  auditMutation('staff_deleted', 'staff', { staffName: staffToDelete.name, staffId: staffToDelete.id || staffToDelete.recordId });
   saveData();
   renderStaffList();
 }
@@ -12362,6 +12500,7 @@ function populateCategoryFilter() {
 }
 
 function addCategory() {
+  if (!requireActionPermission('categories.create', 'category changes')) return;
   const nameInput = document.getElementById('categoryNameInput');
   const name = nameInput.value.trim();
   if (!name) return showAppAlert("Category name cannot be empty.", 'Category Required');
@@ -12377,6 +12516,7 @@ function addCategory() {
   populateCategoryDropdown();
   populateCategoryFilter();
   updateDashboard();
+  auditMutation('category_created', 'categories', { category: name });
 }
 
 async function editCategory(index) {
@@ -12489,6 +12629,7 @@ function renderUnitList() {
 }
 
 function addUnit() {
+  if (!requireActionPermission('units.create', 'unit changes')) return;
   const nameInput = document.getElementById('unitNameInput');
   const fullNameInput = document.getElementById('unitFullNameInput');
   const shortName = nameInput.value.trim();
@@ -12510,6 +12651,7 @@ function addUnit() {
   fullNameInput.value = '';
 
   appendAuditEvent('unit_created', { shortName, fullName });
+  auditMutation('unit_created', 'units', { shortName, fullName });
 
   saveData();
   renderUnitList();
@@ -12517,12 +12659,14 @@ function addUnit() {
 }
 
 async function deleteUnit(index) {
+  if (!requireActionPermission('units.delete', 'unit deletion')) return;
   const unit = units[index];
   const confirmed = await showAppConfirm(`Are you sure you want to delete the unit "${unit.short} (${unit.full})"?`, 'Delete Unit', 'Delete', 'Cancel');
   if (confirmed?.confirmed) {
     const unitToDelete = units[index];
     enqueueEnterpriseRecordChange('units', unitToDelete, 'delete').catch(console.warn);
     units.splice(index, 1);
+    auditMutation('unit_deleted', 'units', { shortName: unitToDelete.short, fullName: unitToDelete.full });
     saveData();
     renderUnitList();
     populateUnitDropdown();
@@ -12860,6 +13004,10 @@ async function updateTransactionStatusByIndex(transactionIndex, status) {
   }
   const transaction = transactions[transactionIndex];
   if (!transaction || typeof status !== 'string') return null;
+  if (!canModifyTransaction(transaction)) {
+    await showAppAlert(getTransactionActionLockTitle(transaction), 'Transaction Locked');
+    return null;
+  }
   const previousStatus = String(transaction.orderStatus || transaction.status || '').trim().toLowerCase();
   const normalizedStatus = String(status || '').trim().toLowerCase();
   const isBeingCanceled = previousStatus !== 'canceled' && normalizedStatus === 'canceled';
@@ -12997,6 +13145,9 @@ function sendOrderStatusNotification(index, overrideStatus) {
   const tx = Array.isArray(transactions) ? transactions[index] : null;
   if (!tx) {
     return showAppAlert('Order not found.', 'Send Order Status');
+  }
+  if (!canModifyTransaction(tx)) {
+    return showAppAlert(getTransactionActionLockTitle(tx), 'Transaction Locked');
   }
 
   const currentStatus = String(tx.orderStatus || tx.status || 'pending').trim().toLowerCase();
@@ -13241,7 +13392,7 @@ function renderInvoices() {
     if (filteredRows.length === 0) {
       const emptyRow = document.createElement('tr');
       const emptyCell = document.createElement('td');
-      emptyCell.colSpan = 11;
+      emptyCell.colSpan = 12;
       emptyCell.className = 'u-text-center';
       emptyCell.textContent = 'No debt invoices found.';
       emptyRow.appendChild(emptyCell);
@@ -13256,6 +13407,8 @@ function renderInvoices() {
         const invoiceNumber = row.invoiceNumber || 'INV-UNKNOWN';
         const lastDate = row.date ? new Date(row.date).toLocaleString() : new Date().toLocaleString();
         const transactionIndex = Array.isArray(transactions) ? transactions.indexOf(row.transaction) : -1;
+        const salesBy = getTransactionStaffName(row.transaction || {});
+        const transactionActionsAllowed = canModifyTransaction(row.transaction || {});
         const isDraft = String(row.transaction?.orderStatus || row.transaction?.status || '').toLowerCase() === 'draft';
         const allAdjustments = Array.isArray(previewData?.adjustments) ? previewData.adjustments : [];
         const lastAdjustment = previewData?.lastAdjustment || (allAdjustments.length > 0 ? allAdjustments[allAdjustments.length - 1] : null);
@@ -13269,8 +13422,8 @@ function renderInvoices() {
         adjustButton.className = 'btn invoice-action-btn';
         adjustButton.type = 'button';
         adjustButton.textContent = 'Adjust';
-        adjustButton.disabled = adjustDisabled;
-        adjustButton.style.cssText = adjustDisabled ? 'opacity:0.45; pointer-events:none;' : '';
+        adjustButton.disabled = adjustDisabled || !transactionActionsAllowed;
+        adjustButton.style.cssText = adjustButton.disabled ? 'opacity:0.45; pointer-events:none;' : '';
         adjustButton.addEventListener('click', event => {
           event.stopPropagation();
           showInvoiceAdjustmentPrompt(row.transaction?.id || row.transaction?.invoiceNumber || '');
@@ -13324,6 +13477,8 @@ function renderInvoices() {
         editButton.className = 'btn invoice-action-btn';
         editButton.type = 'button';
         editButton.textContent = 'Edit';
+        editButton.disabled = !transactionActionsAllowed;
+        editButton.title = transactionActionsAllowed ? 'Edit invoice' : getTransactionActionLockTitle(row.transaction);
         editButton.addEventListener('click', event => {
           event.stopPropagation();
           if (transactionIndex >= 0) editTransaction(transactionIndex);
@@ -13334,6 +13489,8 @@ function renderInvoices() {
         deleteInvoiceButton.type = 'button';
         deleteInvoiceButton.textContent = 'Delete';
         deleteInvoiceButton.title = 'Delete invoice';
+        deleteInvoiceButton.disabled = !transactionActionsAllowed;
+        if (deleteInvoiceButton.disabled) deleteInvoiceButton.style.cssText = 'opacity:0.45; pointer-events:none;';
         deleteInvoiceButton.addEventListener('click', event => {
           event.stopPropagation();
           if (transactionIndex >= 0) deleteTransaction(transactionIndex);
@@ -13344,6 +13501,8 @@ function renderInvoices() {
           confirmDraftButton.className = 'btn invoice-action-btn';
           confirmDraftButton.type = 'button';
           confirmDraftButton.textContent = 'Confirm Draft';
+          confirmDraftButton.disabled = !transactionActionsAllowed;
+          if (confirmDraftButton.disabled) confirmDraftButton.style.cssText = 'opacity:0.45; pointer-events:none;';
           confirmDraftButton.addEventListener('click', event => {
             event.stopPropagation();
             if (transactionIndex >= 0) confirmDraftTransaction(transactionIndex);
@@ -13370,6 +13529,7 @@ function renderInvoices() {
           checkboxTd,
           idx + 1,
           lastDate,
+          salesBy,
           row.customerName || 'Unknown Customer',
           invoiceNumber,
           statusBadgeHtml,
@@ -13396,12 +13556,13 @@ function renderInvoices() {
           if (index === 0) return;
           const cell = document.createElement('td');
           if (textCellStyles[index]) cell.style.cssText = textCellStyles[index];
-          if (index === 5) {
+          if (index === 6) {
             cell.classList.add('invoice-status-column');
             cell.innerHTML = value;
           } else if (index === 2) {
             const dateInput = document.createElement('input');
             dateInput.type = 'datetime-local';
+            dateInput.disabled = !transactionActionsAllowed;
             dateInput.value = toDateTimeLocalValue(row.transaction?.invoiceDate || row.transaction?.date || row.date);
             dateInput.title = 'Edit invoice date';
             dateInput.style.cssText = 'min-width:190px; padding:6px; border:1px solid #cbd5e1; border-radius:6px;';
@@ -13412,6 +13573,7 @@ function renderInvoices() {
                 dateInput.value = toDateTimeLocalValue(row.transaction?.invoiceDate || row.transaction?.date);
               }
             });
+            if (dateInput.disabled) dateInput.title = getTransactionActionLockTitle(row.transaction);
             cell.appendChild(dateInput);
           } else {
             cell.textContent = value;
@@ -13751,6 +13913,7 @@ function onPaymentCustomerChange() {
 }
 
 function addCustomer() {
+  if (!requireActionPermission('customers.edit', 'customer changes')) return;
   const nameInput = document.getElementById('customerNameInput');
   const contactInput = document.getElementById('customerContactInput');
   const emailInput = document.getElementById('customerEmailInput');
@@ -13780,9 +13943,11 @@ function addCustomer() {
   if (index !== '') {
     customers[parsedIndex] = customerData;
     appendAuditEvent('customer_updated', { customerName: customerData.name });
+    auditMutation('customer_edited', 'customers', { customerId: customerData.id || customerData.recordId, customerName: customerData.name });
   } else {
     customers.push(customerData);
     appendAuditEvent('customer_created', { customerName: customerData.name });
+    auditMutation('customer_created', 'customers', { customerId: customerData.id || customerData.recordId, customerName: customerData.name });
   }
 
   enqueueEnterpriseRecordChange('customers', customerData, 'upsert').catch(console.warn);
@@ -16862,6 +17027,15 @@ function applyRolePermissions() {
         btn.style.display = normalizedPermissions.includes(tabId) ? 'flex' : 'none';
       }
     }
+  });
+
+  document.querySelectorAll('section button, section input[type="button"], section input[type="submit"]').forEach(button => {
+    const permission = getButtonActionPermission(button);
+    if (!permission || hasFullAccess) return;
+    const allowed = permission === 'deleteTab'
+      ? normalizedPermissions.includes('deleteTab')
+      : canPerformAction(permission);
+    button.style.display = allowed ? '' : 'none';
   });
 
   const securityGroup = document.getElementById('securitySettingsGroup');
