@@ -371,6 +371,12 @@ function getButtonActionPermission(button) {
     customerTab: 'customers', transactionsTab: 'sales', invoicesTab: 'invoices', stockTab: 'inventory',
     settingsTab: 'settings', reportsTab: 'reports', menuTab: 'sales'
   }[section];
+  if (/editTransaction\(|reopenTransaction\(|sendOrderStatusNotification\(/.test(onclick)) return 'sales.edit';
+  if (/deleteTransaction\(/.test(onclick)) return 'sales.delete';
+  if (/openStaffPermissionsModal\(/.test(onclick)) return 'staff.permissions';
+  if (/deleteItem\(|deleteMarkedProducts\(/.test(onclick)) return 'products.delete';
+  if (/editDish\(/.test(onclick)) return 'products.edit';
+  if (/addDish\(|saveDish\(/.test(onclick)) return 'products.create';
   if (sectionKey && /delete|remove|clear/.test(onclick + text)) return `${sectionKey}.delete`;
   if (sectionKey && /edit|update|save|add|create|adjust|discount/.test(onclick + text)) return `${sectionKey}.${/add|create/.test(onclick + text) ? 'create' : 'edit'}`;
   if (/delete|remove|clear/.test(onclick + text)) return 'deleteTab';
@@ -387,6 +393,7 @@ async function persistAuditTrail() {
   }
 }
 let currentLoggedInStaffName = sessionStorage.getItem('currentLoggedInStaffName') || localStorage.getItem('currentLoggedInStaffName') || '';
+let actionPermissionObserver = null;
 function getCurrentDeviceId() {
   return new URLSearchParams(window.location.search).get('device') || 'browser';
 }
@@ -570,6 +577,14 @@ function findExactDuplicateProductName(name = '', excludeIndex = null, options =
       const isSellable = hasRecipe || (price > 0 && Boolean(category));
       if (!isSellable) continue;
     }
+    
+function getSectionPermissionKey(tabId = '') {
+  return {
+    dashboardTab: 'dashboard', menuTab: 'sales', addDishTab: 'products', categoryTab: 'categories',
+    unitTab: 'units', staffTab: 'staff', customerTab: 'customers', stockTab: 'inventory',
+    transactionsTab: 'sales', reportsTab: 'reports', settingsTab: 'settings', invoicesTab: 'invoices'
+  }[tabId] || '';
+}
 
     if (product.name.trim().toLowerCase() === normalizedName) {
       return { index, record: product };
@@ -2647,6 +2662,7 @@ function toDateTimeLocalValue(dateValue) {
 
 function updateInvoiceDateTimeByKey(recordKey, dateTimeValue) {
   if (!dateTimeValue) return false;
+  if (!requireActionPermission('invoices.edit', 'editing the invoice date')) return false;
   const parsedDate = new Date(dateTimeValue);
   if (!Number.isFinite(parsedDate.getTime())) return false;
 
@@ -8132,6 +8148,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const safePaymentStatus = escapeHtml(paymentStatus);
   const safeCashier = escapeHtml(cashier);
   const safeNote = escapeHtml(note);
+  const safePromoMessage = escapeHtml(getReceiptPromoMessage());
   const safeTableNo = escapeHtml(tableNo);
   const safeReceiptType = escapeHtml(receiptType === 'customerAdjustment' ? 'Customer Adjustment' : receiptType === 'customerDebtInvoice' ? 'Customer Debt Invoice' : 'Transaction Invoice');
   const logoHtml = logoUrl
@@ -8226,6 +8243,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:15px; font-weight:bold; border-radius:10px; }
     .footer { margin-top:12px; text-align:center; }
     .footer p { font-size:0.82rem; }
+    .promo { display:inline-block; margin-top:8px; padding:6px 10px; border:1px dashed #94a3b8; color:#475569; font-size:0.76rem; font-weight:700; }
     .note { margin-top:10px; padding:10px 12px; background:linear-gradient(135deg,#eff6ff,#f8fafc); border-left:5px solid var(--primary); border-radius:10px; color:#475569; font-size:0.76rem; }
     .actions { display:flex; justify-content:center; gap:12px; margin:25px auto; }
     .preview-controls { position:sticky; top:0; z-index:100; display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px; row-gap:8px; padding:10px 12px; width:100%; max-width:100%; box-sizing:border-box; background:rgba(255,255,255,0.95); border-bottom:1px solid #ddd; backdrop-filter:blur(6px); }
@@ -8419,6 +8437,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
           </div>
           <div class="footer">
             <p><b>Thank you for shopping with ${safeStoreName} ❤️</b></p>
+            <div class="promo">${safePromoMessage}</div>
           </div>
           ${barcodeHtml}
           <div class="note">${safeNote}</div>
@@ -9190,7 +9209,7 @@ function directPrint() {
   sendDataToPrinter(plainTextReceipt);
 }
 
-let transactionEditState = { index: -1, transaction: null };
+let transactionEditState = { index: -1, transaction: null, permission: 'sales.edit' };
 let transactionEditSelectedProductIndex = -1;
 
 function getTransactionEditProducts() {
@@ -9388,12 +9407,13 @@ function closeTransactionEditModal() {
   const modal = document.getElementById('transactionEditModal');
   if (modal) modal.style.display = 'none';
   resetTransactionProductForm();
-  transactionEditState = { index: -1, transaction: null };
+  transactionEditState = { index: -1, transaction: null, permission: 'sales.edit' };
 }
 
 async function confirmDraftTransaction(index) {
   const draft = Array.isArray(transactions) ? transactions[index] : null;
   if (!draft || String(draft.orderStatus || draft.status || '').toLowerCase() !== 'draft') return;
+  if (!requireActionPermission('invoices.edit', 'confirming this draft invoice')) return;
   if (!canModifyTransaction(draft)) {
     await showAppAlert(getTransactionActionLockTitle(draft), 'Transaction Locked');
     return;
@@ -9456,15 +9476,17 @@ async function confirmDraftTransaction(index) {
   await showAppAlert('Draft invoice confirmed and inventory updated.', 'Draft Confirmed');
 }
 
-function editTransaction(index) {
+function editTransaction(index, permission = 'sales.edit') {
   const source = Array.isArray(transactions) ? transactions[index] : null;
   if (!source) return;
+  if (!requireActionPermission(permission, 'editing this transaction')) return;
   if (!canModifyTransaction(source)) {
     return showAppAlert(getTransactionActionLockTitle(source), 'Transaction Locked');
   }
   resetTransactionProductForm();
   transactionEditState = {
     index,
+    permission,
     transaction: {
       ...source,
       items: (Array.isArray(source.items) ? source.items : []).map(item => ({ ...item }))
@@ -9476,7 +9498,8 @@ function editTransaction(index) {
 }
 
 async function saveTransactionEdit() {
-  const { index, transaction: draft } = transactionEditState;
+  const { index, transaction: draft, permission = 'sales.edit' } = transactionEditState;
+  if (!requireActionPermission(permission, 'saving transaction changes')) return;
   const original = Array.isArray(transactions) ? transactions[index] : null;
   if (!draft || !original || !Array.isArray(draft.items)) return;
 
@@ -9896,8 +9919,9 @@ function populateReceiptContent(transaction) {
   document.getElementById('receiptContent').innerHTML = receiptHtml;
 }
 
-async function deleteTransaction(index) {
+async function deleteTransaction(index, permission = 'sales.delete') {
   const transactionToDelete = Array.isArray(transactions) ? transactions[index] : null;
+  if (!requireActionPermission(permission, 'deleting this transaction')) return;
   if (!canModifyTransaction(transactionToDelete)) {
     await showAppAlert(getTransactionActionLockTitle(transactionToDelete), 'Transaction Locked');
     return;
@@ -12339,10 +12363,24 @@ function openStaffPermissionsModal(index) {
     label: id.replace('.', ' / ').replace(/\b\w/g, character => character.toUpperCase())
   }));
 
+  const sectionAccess = [
+    ['dashboard', 'Dashboard'], ['sales', 'Sales / Shop'], ['products', 'Products'],
+    ['categories', 'Categories'], ['units', 'Units'], ['staff', 'Staff'],
+    ['customers', 'Customers'], ['inventory', 'Inventory'], ['reports', 'Reports'],
+    ['settings', 'Settings'], ['invoices', 'Invoices']
+  ];
+
   container.innerHTML = `<strong style="grid-column:1/-1;">Sections</strong>${tabs.map(tab => `
       <label style="cursor: pointer; display: flex; align-items: center; gap: 8px;">
         <input type="checkbox" value="${tab.id}" ${member.permissions?.includes(tab.id) ? 'checked' : ''}>
         ${tab.label}
+      </label>
+    `).join('')}<strong style="grid-column:1/-1; margin-top:8px;">Section Access</strong>${sectionAccess.map(([id, label]) => `
+      <label style="cursor:pointer; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" value="${id}.read" ${member.permissions?.includes(`${id}.read`) ? 'checked' : ''}> ${label} / Read only
+      </label>
+      <label style="cursor:pointer; display:flex; align-items:center; gap:8px;">
+        <input type="checkbox" value="${id}.write" ${member.permissions?.includes(`${id}.write`) ? 'checked' : ''}> ${label} / Read &amp; Write
       </label>
     `).join('')}<strong style="grid-column:1/-1; margin-top:8px;">Action Buttons</strong>${actions.map(action => `
       <label style="cursor:pointer; display:flex; align-items:center; gap:8px;">
@@ -13004,6 +13042,7 @@ async function updateTransactionStatusByIndex(transactionIndex, status) {
   }
   const transaction = transactions[transactionIndex];
   if (!transaction || typeof status !== 'string') return null;
+  if (!requireActionPermission('sales.edit', 'updating this transaction')) return null;
   if (!canModifyTransaction(transaction)) {
     await showAppAlert(getTransactionActionLockTitle(transaction), 'Transaction Locked');
     return null;
@@ -13481,7 +13520,7 @@ function renderInvoices() {
         editButton.title = transactionActionsAllowed ? 'Edit invoice' : getTransactionActionLockTitle(row.transaction);
         editButton.addEventListener('click', event => {
           event.stopPropagation();
-          if (transactionIndex >= 0) editTransaction(transactionIndex);
+          if (transactionIndex >= 0) editTransaction(transactionIndex, 'invoices.edit');
         });
         actionWrapper.appendChild(editButton);
         const deleteInvoiceButton = document.createElement('button');
@@ -13493,7 +13532,7 @@ function renderInvoices() {
         if (deleteInvoiceButton.disabled) deleteInvoiceButton.style.cssText = 'opacity:0.45; pointer-events:none;';
         deleteInvoiceButton.addEventListener('click', event => {
           event.stopPropagation();
-          if (transactionIndex >= 0) deleteTransaction(transactionIndex);
+          if (transactionIndex >= 0) deleteTransaction(transactionIndex, 'invoices.delete');
         });
         actionWrapper.appendChild(deleteInvoiceButton);
         if (isDraft) {
@@ -16989,6 +17028,19 @@ function applyRolePermissions() {
   const nav = document.querySelector('nav');
   if (!nav) return;
 
+  if (!actionPermissionObserver && document.body) {
+    let permissionRefreshQueued = false;
+    actionPermissionObserver = new MutationObserver(() => {
+      if (permissionRefreshQueued) return;
+      permissionRefreshQueued = true;
+      window.requestAnimationFrame(() => {
+        permissionRefreshQueued = false;
+        applyRolePermissions();
+      });
+    });
+    actionPermissionObserver.observe(document.body, { childList: true, subtree: true });
+  }
+
   const activeTab = document.querySelector('section.active');
   const isInAdminTab = activeTab && activeTab.id === 'appAdminTab';
 
@@ -17025,6 +17077,9 @@ function applyRolePermissions() {
         btn.style.display = tabId === 'appAdminTab' ? 'none' : 'flex';
       } else {
         btn.style.display = normalizedPermissions.includes(tabId) ? 'flex' : 'none';
+        const sectionKey = getSectionPermissionKey(tabId);
+        const hasSectionRead = sectionKey && (canPerformAction(`${sectionKey}.read`) || canPerformAction(`${sectionKey}.write`));
+        btn.style.display = normalizedPermissions.includes(tabId) || hasSectionRead ? 'flex' : 'none';
       }
     }
   });

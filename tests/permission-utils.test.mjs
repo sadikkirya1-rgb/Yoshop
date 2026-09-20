@@ -34,3 +34,10 @@ test('action permission tokens support section-specific staff actions', () => {
   assert.equal(hasPermission('staff', ['sales.edit'], 'sales.edit'), true);
   assert.equal(hasPermission('staff', ['sales.edit'], 'sales.delete'), false);
 });
+
+test('section read and write permissions are distinct and write implies actions', () => {
+  assert.equal(hasPermission('staff', ['products.read'], 'products.read'), true);
+  assert.equal(hasPermission('staff', ['products.read'], 'products.edit'), false);
+  assert.equal(hasPermission('staff', ['products.write'], 'products.read'), true);
+  assert.equal(hasPermission('staff', ['products.write'], 'products.edit'), true);
+});

@@ -21,6 +21,17 @@ const DEFAULT_PERMISSION_TOKENS = [
 ];
 
 const ACTION_PERMISSION_TOKENS = [
+  'dashboard.read', 'dashboard.write',
+  'sales.read', 'sales.write',
+  'products.read', 'products.write',
+  'categories.read', 'categories.write',
+  'units.read', 'units.write',
+  'staff.read', 'staff.write',
+  'customers.read', 'customers.write',
+  'inventory.read', 'inventory.write',
+  'reports.read', 'reports.write',
+  'settings.read', 'settings.write',
+  'invoices.read', 'invoices.write',
   'products.create', 'products.edit', 'products.delete',
   'categories.create', 'categories.edit', 'categories.delete',
   'units.create', 'units.edit', 'units.delete',
@@ -89,9 +100,19 @@ function hasPermission(role, permissions = [], feature = '') {
   const legacyAliases = FEATURE_LEGACY_ALIASES[featureName] || [];
   const targets = [featureKey, alias, ...legacyAliases].filter(Boolean);
 
-  return targets.length === 0
+  const directMatch = targets.length === 0
     ? normalizedPermissions.length > 0
     : targets.some(permission => normalizedPermissions.includes(permission));
+  if (directMatch) return true;
+
+  const featureParts = featureKey.toLowerCase().split('.');
+  const section = featureParts[0];
+  const requestedAction = featureParts[1] || '';
+  if (!section) return false;
+  if (requestedAction === 'read' || requestedAction === 'create' || requestedAction === 'edit' || requestedAction === 'delete' || requestedAction === 'permissions') {
+    return normalizedPermissions.includes(`${section}.write`);
+  }
+  return false;
 }
 
 function getEffectivePermissions(role, permissions = []) {
@@ -105,7 +126,15 @@ function getFirstAllowedTab(role, permissions = [], fallback = 'menuTab') {
   if (normalizedRole === 'appAdmin' || normalizedRole === 'shopAdmin') return fallback;
 
   const normalizedPermissions = normalizePermissions(permissions, []);
-  return normalizedPermissions.find(permission => permission.endsWith('Tab')) || fallback;
+  const sectionTabs = {
+    dashboard: 'dashboardTab', sales: 'menuTab', products: 'addDishTab', categories: 'categoryTab',
+    units: 'unitTab', staff: 'staffTab', customers: 'customerTab', inventory: 'stockTab',
+    reports: 'reportsTab', settings: 'settingsTab', invoices: 'invoicesTab'
+  };
+  const directTab = normalizedPermissions.find(permission => permission.endsWith('Tab'));
+  if (directTab) return directTab;
+  const sectionPermission = normalizedPermissions.find(permission => /\.(read|write)$/.test(permission));
+  return sectionPermission ? (sectionTabs[sectionPermission.split('.')[0]] || fallback) : fallback;
 }
 
 export {
