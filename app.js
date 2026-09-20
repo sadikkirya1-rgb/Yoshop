@@ -9796,7 +9796,7 @@ async function deleteTransaction(index) {
   }
 
   const confirmed = await showAppConfirm(`Are you sure you want to permanently delete this transaction? This action cannot be undone.`, "Delete Transaction", "Delete", "Cancel");
-  if (!confirmed) return;
+  if (!confirmed?.confirmed) return;
 
   if (navigator.onLine && currentUser && dbFirestore) {
     renderSyncStatus({
@@ -13329,6 +13329,16 @@ function renderInvoices() {
           if (transactionIndex >= 0) editTransaction(transactionIndex);
         });
         actionWrapper.appendChild(editButton);
+        const deleteInvoiceButton = document.createElement('button');
+        deleteInvoiceButton.className = 'btn invoice-action-btn invoice-delete-action-btn';
+        deleteInvoiceButton.type = 'button';
+        deleteInvoiceButton.textContent = 'Delete';
+        deleteInvoiceButton.title = 'Delete invoice';
+        deleteInvoiceButton.addEventListener('click', event => {
+          event.stopPropagation();
+          if (transactionIndex >= 0) deleteTransaction(transactionIndex);
+        });
+        actionWrapper.appendChild(deleteInvoiceButton);
         if (isDraft) {
           const confirmDraftButton = document.createElement('button');
           confirmDraftButton.className = 'btn invoice-action-btn';
