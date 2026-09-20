@@ -9588,9 +9588,51 @@ window.closeTransactionEditModal = closeTransactionEditModal;
 window.confirmDraftTransaction = confirmDraftTransaction;
 
 // ===== Transactions =====
+function populateSalesHistoryFilters() {
+  const staffFilter = document.getElementById('transactionStaffFilter');
+  if (!staffFilter) return;
+
+  const currentValue = String(staffFilter.value || 'all');
+  const staffNames = Array.from(new Set(
+    (Array.isArray(transactions) ? transactions : [])
+      .map(tx => getTransactionStaffName(tx))
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+
+  const options = ['<option value="all">Sold by: all</option>'];
+  staffNames.forEach(name => {
+    options.push(`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`);
+  });
+
+  staffFilter.innerHTML = options.join('');
+  staffFilter.value = staffNames.includes(currentValue) ? currentValue : 'all';
+}
+
+function clearSalesHistoryFilters() {
+  const searchInput = document.getElementById('transactionSearch');
+  const dateInput = document.getElementById('transactionFilterDate');
+  const typeFilter = document.getElementById('transactionTypeFilter');
+  const statusFilter = document.getElementById('transactionStatusFilter');
+  const staffFilter = document.getElementById('transactionStaffFilter');
+
+  if (searchInput) searchInput.value = '';
+  if (dateInput) dateInput.value = '';
+  if (typeFilter) typeFilter.value = 'all';
+  if (statusFilter) statusFilter.value = 'all';
+  if (staffFilter) staffFilter.value = 'all';
+  renderTransactions();
+}
+
 function renderTransactions() {
+  populateSalesHistoryFilters();
+
   const startDate = document.getElementById('transactionStartDate')?.value || document.getElementById('transactionFilterDate')?.value;
   const endDate = document.getElementById('transactionEndDate')?.value;
+  const searchValue = String(document.getElementById('transactionSearch')?.value || '').trim().toLowerCase();
+  const rawTypeValue = String(document.getElementById('transactionTypeFilter')?.value || '').toLowerCase();
+  const typeValue = rawTypeValue === '' ? 'all' : rawTypeValue;
+  const statusValue = String(document.getElementById('transactionStatusFilter')?.value || 'all').toLowerCase();
+  const staffValue = String(document.getElementById('transactionStaffFilter')?.value || 'all');
 
   const normalizedTransactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
   if (Array.isArray(transactions) && normalizedTransactions.length !== transactions.length) {
@@ -9598,19 +9640,39 @@ function renderTransactions() {
     saveState('transactions', transactions, { enqueueSync: false }).catch(() => {});
   }
 
-  let filteredTransactions = normalizedTransactions;
+  let filteredTransactions = normalizedTransactions.filter(t => {
+    const tDate = String(t.date || '').split('T')[0];
+    if (startDate && tDate && tDate < startDate) return false;
+    if (endDate && tDate && tDate > endDate) return false;
 
-  if (startDate || endDate) {
-    filteredTransactions = normalizedTransactions.filter(t => {
-      const tDate = t.date.split('T')[0];
-      if (startDate && tDate < startDate) return false;
-      if (endDate && tDate > endDate) return false;
-      return true;
-    });
-  }
+    const transactionType = String(t.orderType || 'product').toLowerCase();
+    if (typeValue !== 'all' && transactionType !== typeValue) return false;
 
-  const sourceArray = (startDate || endDate) ? filteredTransactions : normalizedTransactions;
-  console.log('renderTransactions called — transactions length:', Array.isArray(normalizedTransactions) ? normalizedTransactions.length : typeof normalizedTransactions, 'sourceArray length:', Array.isArray(sourceArray) ? sourceArray.length : typeof sourceArray, 'startDate:', startDate, 'endDate:', endDate);
+    const transactionStatus = String(t.orderStatus || t.status || 'pending').trim().toLowerCase();
+    if (statusValue !== 'all' && transactionStatus !== statusValue) return false;
+
+    const soldBy = String(getTransactionStaffName(t) || '').trim();
+    if (staffValue !== 'all' && soldBy.toLowerCase() !== staffValue.toLowerCase()) return false;
+
+    if (searchValue) {
+      const searchableText = [
+        getInvoiceNumber(t),
+        soldBy,
+        transactionType,
+        transactionStatus,
+        t.customerName || t.customer?.name || '',
+        t.paymentMethod || '',
+        String(t.total || '')
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      if (!searchableText.includes(searchValue)) return false;
+    }
+
+    return true;
+  });
+
+  const sourceArray = (startDate || endDate || searchValue || typeValue !== 'all' || statusValue !== 'all' || staffValue !== 'all') ? filteredTransactions : normalizedTransactions;
+  console.log('renderTransactions called — transactions length:', Array.isArray(normalizedTransactions) ? normalizedTransactions.length : typeof normalizedTransactions, 'sourceArray length:', Array.isArray(sourceArray) ? sourceArray.length : typeof sourceArray, 'startDate:', startDate, 'endDate:', endDate, 'searchValue:', searchValue, 'typeValue:', typeValue, 'statusValue:', statusValue, 'staffValue:', staffValue);
 
   const serviceOrderCount = sourceArray.filter(tx => String(tx.orderType || '').toLowerCase() === 'service').length;
   const transactionCountInfo = document.getElementById('transactionCountInfo');
@@ -11953,6 +12015,12 @@ function applyServiceModeUI(enabled) {
   if (orderStatusSection) {
     orderStatusSection.style.display = enabled ? 'flex' : 'none';
   }
+
+  document.querySelectorAll('.service-only-filter').forEach(el => {
+    if (el) {
+      el.style.display = enabled ? '' : 'none';
+    }
+  });
 
   document.querySelectorAll('.invoice-status-update-btn').forEach(button => {
     if (button) {
@@ -17226,6 +17294,7 @@ function completePinLogin(role, permissions, staffName) {
   const overlay = document.getElementById('login-overlay');
   if (overlay) overlay.style.display = 'flex';
   showLoginFeedback('success');
+  try { playNotificationSound(); } catch (e) { /* ignore audio errors */ }
   if (overlay) {
     window.setTimeout(() => {
       overlay.style.display = 'none';

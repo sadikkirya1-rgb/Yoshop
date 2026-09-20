@@ -1437,15 +1437,27 @@
       <!-- Transactions -->
       <section id="transactionsTab">
         <h3>🧾 Sales History</h3>
-        <div class="input-row u-mb-15" style="gap:8px; align-items:center; flex-wrap:wrap;">
+        <div class="sales-history-controls">
+          <input type="search" id="transactionSearch" placeholder="Search sales..." aria-label="Search sales" oninput="renderTransactions()">
           <input type="date" id="transactionFilterDate" onchange="renderTransactions()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
+          <select id="transactionTypeFilter" class="service-only-filter" onchange="renderTransactions()" aria-label="Filter sales by type">
+            <option value="">Type</option>
+            <option value="product">Products</option>
+            <option value="service">Services</option>
+          </select>
+          <select id="transactionStatusFilter" class="service-only-filter" onchange="renderTransactions()" aria-label="Filter sales by status">
+            <option value="all">All statuses</option>
+            <option value="pending">Pending</option>
+            <option value="ready">Ready</option>
+            <option value="completed">Completed</option>
+            <option value="canceled">Canceled</option>
+            <option value="draft">Draft</option>
+          </select>
+          <select id="transactionStaffFilter" onchange="renderTransactions()" aria-label="Filter sales by sold by">
+            <option value="all">Sold by: all</option>
+          </select>
+          <button class="btn btn-secondary" type="button" onclick="clearSalesHistoryFilters()">Clear</button>
           <button class="btn btn-primary invoice-status-update-btn" type="button" onclick="openInvoiceStatusModal()">Update Status</button>
-        </div>
-        <div class="data-table-toolbar" data-table-controls="transactionHistoryBody" data-filter-options="all:All sales|product:Products|service:Services">
-          <input type="search" data-table-search placeholder="Search sales..." aria-label="Search sales">
-          <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
-          <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
-          <div class="data-table-filter-panel" data-table-filter-panel></div>
         </div>
         <div class="u-mb-10" id="transactionCountInfo">Showing 0 of 0 bills</div>
         <div class="u-overflow-x-auto" id="transactionListContainer">
