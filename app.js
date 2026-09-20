@@ -183,6 +183,7 @@ let currentUserPermissions = normalizePermissions(JSON.parse(sessionStorage.getI
 let isPinVerified = (sessionStorage.getItem('isPinVerified') || localStorage.getItem('isPinVerified')) === 'true' && !!currentUserRole;
 let auditTrail = [];
 let isLoggingOut = false;
+let logoutInProgress = false;
 
 function getNormalizedRole(role = currentUserRole) {
   const normalized = String(role || '').trim().toLowerCase();
@@ -5539,10 +5540,16 @@ async function handleChangePassword() {
   }
 }
 async function logout() {
+  if (logoutInProgress) return;
+  logoutInProgress = true;
   isLoggingOut = true;
   isInitialLoadComplete = false;
   const shouldLogout = await showAppConfirm("Are you sure you want to log out?", "Logout", "Logout", "Cancel");
-  if (!shouldLogout) return;
+  if (!shouldLogout?.confirmed) {
+    logoutInProgress = false;
+    isLoggingOut = false;
+    return;
+  }
 
   try {
     appendAuditEvent('logout', { message: 'User logged out' });
@@ -5611,6 +5618,7 @@ async function logout() {
   }
 
   showLoggedOutScreen();
+  logoutInProgress = false;
 }
 
 function updateItemUnit(itemIndex, newUnit) {
@@ -5621,16 +5629,7 @@ function updateItemUnit(itemIndex, newUnit) {
 }
 
 async function refreshApp() {
-  try {
-    await saveData();
-    location.reload();
-  } catch (error) {
-    console.error("Failed to save data before refresh:", error);
-    const proceed = await showAppConfirm("Could not save data before refreshing. You may lose unsaved changes. Do you still want to refresh?", "Refresh App", "Continue", "Cancel");
-    if (proceed) {
-      location.reload();
-    }
-  }
+  location.reload();
 }
 
 function getCurrencySymbol() {
@@ -16688,8 +16687,8 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
               <button onclick="prepareLogin('admin')" class="btn" style="background: rgba(255,255,255,0.15); border: 1px solid white; color: white; padding: 15px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 10px;">🛡️ Login as Admin</button>
               <button onclick="prepareLogin('staff')" class="btn" style="background: rgba(255,255,255,0.15); border: 1px solid white; color: white; padding: 15px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 10px;">👥 Login as Staff</button>
               <button onclick="logout()" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 12px; font-weight: bold; width: 100%; border-radius: 8px; margin: 10px 0 0 0; display: flex; align-items: center; justify-content: center; gap: 10px;">
-                <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 16px; height: 16px;">
-                Logout Google Account
+                <span aria-hidden="true" style="font-size:1.1em;">↪</span>
+                Logout Account
               </button>
             </div>
           </div>
@@ -16722,8 +16721,8 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; width: 100%; gap: 10px;">
                   <a href="#" onclick="forgotPIN()" style="color: white; font-size: 0.85em; text-decoration: underline; opacity: 0.8;">Forgot PIN?</a>
                   <button onclick="logout()" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 5px 12px; font-size: 0.8em; margin: 0; cursor: pointer; border-radius: 8px; display: flex; align-items: center; gap: 8px;">
-                    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" style="width: 14px; height: 14px;">
-                    Logout Google Account
+                    <span aria-hidden="true" style="font-size:1.1em;">↪</span>
+                    Logout Account
                   </button>
               </div>
             </div>
