@@ -247,7 +247,8 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
       const balance = paymentSummary.balance;
 
       const hasRealCustomer = Boolean(customer?.id);
-      const shouldIncludeInvoice = hasRealCustomer && (balance <= 0 || transaction.amountPaid !== undefined);
+      const isDraft = String(transaction.orderStatus || transaction.status || '').toLowerCase() === 'draft';
+      const shouldIncludeInvoice = isDraft || (hasRealCustomer && (balance <= 0 || transaction.amountPaid !== undefined));
       if (!shouldIncludeInvoice) return null;
 
       const mergedAdjustments = getRelevantAdjustments(transaction, customer);

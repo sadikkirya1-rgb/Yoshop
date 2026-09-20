@@ -2517,7 +2517,8 @@ section#menuTab.active {
 #paymentItemsEditor {
   width: 100%;
   max-width: 100%;
-  overflow-x: auto;
+  max-height: min(38vh, 340px);
+  overflow: auto;
   margin: 10px 0 12px;
 }
 
@@ -2651,6 +2652,220 @@ section#menuTab.active {
 
 .confirm-payment-btn {
   background: #28a745;
+}
+
+.transaction-edit-modal-content {
+  width: min(96vw, 980px);
+  max-width: min(96vw, 980px);
+}
+
+.transaction-edit-product-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+}
+
+#transactionEditModal.transaction-edit-product-expanded .transaction-edit-modal-content {
+  max-height: min(96vh, 920px);
+  overflow: visible;
+}
+
+.transaction-edit-items {
+  max-height: 52vh;
+  overflow: auto;
+  margin: 12px 0;
+}
+
+.transaction-edit-header,
+.transaction-edit-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 2fr) minmax(80px, 1fr) minmax(70px, 0.75fr) minmax(100px, 1fr) minmax(90px, 1fr) minmax(90px, 1fr) 32px;
+  gap: 8px;
+  align-items: center;
+  min-width: 700px;
+}
+
+.transaction-edit-header {
+  padding: 0 0 6px;
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.transaction-edit-row {
+  padding: 7px 0;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.transaction-edit-row input,
+.transaction-edit-row select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 7px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: #fff;
+}
+
+.transaction-edit-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(100px, 1fr));
+  gap: 10px;
+  width: 100%;
+  margin: 12px 0 4px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border-color);
+}
+
+.transaction-edit-summary > div {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+  text-align: right;
+}
+
+.transaction-edit-total-cell span {
+  color: #475569;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.transaction-edit-total-cell strong {
+  white-space: nowrap;
+}
+
+.transaction-edit-product-search {
+  min-width: 220px;
+  flex: 1;
+  padding: 9px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.transaction-edit-product-form {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: rgba(248, 250, 252, 0.9);
+}
+
+.transaction-edit-product-form:has(.transaction-edit-product-dropdown:not([hidden])) {
+  align-items: flex-start;
+}
+
+.transaction-edit-product-form[hidden] {
+  display: none;
+}
+
+.transaction-edit-product-filter,
+.transaction-edit-product-select {
+  min-width: 180px;
+  flex: 1;
+  padding: 9px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.transaction-edit-product-picker {
+  position: relative;
+  flex: 1;
+  min-width: 240px;
+}
+
+.transaction-edit-product-select {
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.transaction-edit-product-dropdown {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.16);
+}
+
+#transactionEditModal.transaction-edit-product-expanded .transaction-edit-product-dropdown {
+  max-height: min(62vh, 560px);
+}
+
+.transaction-edit-product-dropdown[hidden] {
+  display: none;
+}
+
+.transaction-edit-product-dropdown .transaction-edit-product-search {
+  width: 100%;
+  box-sizing: border-box;
+  margin-bottom: 6px;
+}
+
+.transaction-edit-product-dropdown .transaction-edit-product-filter {
+  width: 100%;
+  min-width: 0;
+  margin-bottom: 6px;
+}
+
+.transaction-edit-product-options {
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.transaction-edit-product-option {
+  display: block;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.transaction-edit-product-option:hover {
+  background: #eef2ff;
+}
+
+.transaction-edit-no-products {
+  padding: 10px;
+  color: #64748b;
+  text-align: center;
+}
+
+.transaction-edit-total {
+  padding-left: 10px;
+  border-left: 1px solid var(--border-color);
+  font-size: 1.05rem;
+}
+
+@media (max-width: 700px) {
+  .transaction-edit-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .transaction-edit-total {
+    border-left: 0;
+  }
 }
 
 /* Camera Scanner Modal */

@@ -2573,11 +2573,13 @@ function updateInvoiceDateTimeByKey(recordKey, dateTimeValue) {
 
   const key = String(recordKey || '');
   const transaction = transactions.find(entry => entry && (
-    String(entry.id || entry.recordId || entry.invoiceNumber || '') === key
+    String(entry.id || entry.recordId || entry.invoiceNumber || entry.date || '') === key
   ));
   if (!transaction) return false;
 
-  transaction.invoiceDate = parsedDate.toISOString();
+  const effectiveDate = parsedDate.toISOString();
+  transaction.invoiceDate = effectiveDate;
+  transaction.date = effectiveDate;
   transaction.updatedAt = new Date().toISOString();
   transaction.syncStatus = 'pending';
   saveData().catch(error => console.warn('[INVOICE] Failed to save invoice date:', error));
@@ -5951,6 +5953,7 @@ function isStockTrackingEnabled() {
 
 function getOrderStatusLabel(status = 'pending') {
   const normalized = String(status || 'pending').toLowerCase();
+  if (normalized === 'draft') return 'Draft';
   if (normalized === 'pending') return 'Pending';
   if (normalized === 'in_progress' || normalized === 'in progress') return 'In Progress';
   if (normalized === 'ready') return 'Ready';
@@ -5962,6 +5965,7 @@ function getOrderStatusLabel(status = 'pending') {
 function getOrderStatusBadge(status = 'pending') {
   const normalized = String(status || 'pending').toLowerCase();
   const styles = {
+    draft: 'background:#e2e8f0; color:#334155;',
     pending: 'background:#ffc107; color:#212529;',
     in_progress: 'background:#fff9c4; color:#f57f17;',
     ready: 'background:#0d6efd; color:#fff;',
@@ -5969,6 +5973,15 @@ function getOrderStatusBadge(status = 'pending') {
     canceled: 'background:#f8d7da; color:#842029;'
   };
   return `<span class="status-badge" style="font-size:0.75rem; padding:4px 8px; border-radius:999px; display:inline-flex; align-items:center; gap:4px; ${styles[normalized] || styles.pending}">${getOrderStatusLabel(normalized)}</span>`;
+}
+
+function toggleDraftPaymentFields() {
+  const isDraft = document.getElementById('savePaymentAsDraft')?.checked === true;
+  const confirmButton = document.getElementById('confirmPaymentBtn');
+  if (confirmButton) confirmButton.textContent = isDraft ? 'Save Draft' : 'Confirm Payment';
+  setPaymentProcessingState(false, isDraft
+    ? 'Drafts do not deduct stock or update customer accounts until confirmed.'
+    : 'Review the total and confirm payment.', 'info');
 }
 
 function toggleServiceMode() {
@@ -6729,6 +6742,8 @@ async function processSplitPayments() {
     const billTotals = calculateTransactionTotals(bill.items);
     const deliveryFeeInput = document.getElementById('deliveryFeeInput');
     if (deliveryFeeInput) deliveryFeeInput.value = '';
+    const paymentDateInput = document.getElementById('paymentDateTime');
+    if (paymentDateInput) paymentDateInput.value = '';
     const deliveryFeeDisplay = document.getElementById('paymentDeliveryFeeDisplay');
     if (deliveryFeeDisplay) deliveryFeeDisplay.textContent = '0.00';
     const billTotal = billTotals.total;
@@ -6748,8 +6763,11 @@ async function processSplitPayments() {
     if (paymentConfirmed) {
       const paymentMethod = document.getElementById('paymentMethod').value;
       const deliveryFee = Math.max(0, parseFloat(deliveryFeeInput?.value) || 0);
+      const parsedPaymentDate = paymentDateInput?.value ? new Date(paymentDateInput.value) : new Date();
+      const paymentDate = Number.isFinite(parsedPaymentDate.getTime()) ? parsedPaymentDate.toISOString() : new Date().toISOString();
       const transaction = {
-        date: new Date().toISOString(),
+        date: paymentDate,
+        invoiceDate: paymentDate,
         customerName: serverName,
         tableNo: 'Shop',
         items: bill.items,
@@ -6888,7 +6906,9 @@ function updateOrders(cartId, shouldSave = true) {
     currentOrder.items.forEach(orderItem => {
       const dish = menu.find(d => d.name === orderItem.name);
       if (dish) {
-        orderItem.price = parseFloat(dish.price) || 0;
+        if (!orderItem.priceEdited) {
+          orderItem.price = parseFloat(dish.price) || 0;
+        }
         orderItem.costPrice = parseFloat(dish.costPrice) || 0;
       }
     });
@@ -7023,8 +7043,9 @@ function renderPaymentItemEditor() {
     const qty = Number.isFinite(parseInt(item.qty, 10)) ? parseInt(item.qty, 10) : 0;
     const normalizedQty = Math.max(0, qty);
     const unitPrice = Number(item.price || 0);
+    const basePrice = Number(item.basePrice ?? unitPrice);
     const discountAmount = Math.max(0, Number(item.discountAmount || 0) || 0);
-    const lineTotal = Math.max(0, (normalizedQty * unitPrice) - discountAmount);
+    const lineTotal = Math.max(0, (normalizedQty * basePrice) - discountAmount);
     const stockInfo = getPaymentItemStockInfo(item);
     const stockLabel = stockInfo.availableStock !== null ? `${stockInfo.availableStock}` : 'n/a';
     const canIncrease = stockInfo.maxAllowedQty === null || stockInfo.availableStock === null || stockInfo.availableStock > 0;
@@ -7062,8 +7083,9 @@ function updateLineTotalInDOM(itemId, item) {
 
   const qty = Math.max(0, parseInt(item.qty, 10) || 0);
   const unitPrice = Number(item.price || 0);
+  const basePrice = Number(item.basePrice ?? unitPrice);
   const discountAmount = Math.max(0, Number(item.discountAmount || 0) || 0);
-  const lineTotal = Math.max(0, (qty * unitPrice) - discountAmount);
+  const lineTotal = Math.max(0, (qty * basePrice) - discountAmount);
 
   // Update line total text
   const totalEl = row.querySelector('.payment-item-total');
@@ -7103,6 +7125,9 @@ function updatePaymentItemQuantity(itemId, value) {
 
   const maxAllowedQty = Number.isFinite(stockInfo.maxAllowedQty) ? stockInfo.maxAllowedQty : Infinity;
   item.qty = Math.max(0, Math.min(parsedQty, maxAllowedQty));
+  if (item.priceEdited && !item.discountEdited) {
+    item.discountAmount = Math.max(0, Math.round((Number(item.basePrice || item.price || 0) - Number(item.price || 0)) * item.qty));
+  }
 
   updateOrders(CART_ID, false);
   updatePaymentTotals();
@@ -7118,7 +7143,13 @@ function updatePaymentItemPrice(itemId, value) {
   if (!item) return;
 
   const parsedPrice = parseFloat(value);
+  const currentMenuPrice = menu.find(dish => dish.name === item.name)?.price;
+  const basePrice = Number(item.basePrice ?? currentMenuPrice ?? item.price ?? 0);
+  item.basePrice = basePrice;
   item.price = Number.isFinite(parsedPrice) && parsedPrice >= 0 ? parsedPrice : 0;
+  item.priceEdited = true;
+  item.discountEdited = false;
+  item.discountAmount = Math.max(0, Math.round((basePrice - item.price) * (parseInt(item.qty, 10) || 0)));
   updatePaymentTotals();
   updateLineTotalInDOM(itemId, item);
 }
@@ -7158,6 +7189,7 @@ function updatePaymentItemDiscount(itemId, value) {
 
   const parsedDiscount = parseFloat(value);
   item.discountAmount = Number.isFinite(parsedDiscount) && parsedDiscount >= 0 ? Math.round(parsedDiscount) : 0;
+  item.discountEdited = true;
   updateOrders(CART_ID, false);
   updatePaymentTotals();
   updateLineTotalInDOM(itemId, item);
@@ -7210,7 +7242,11 @@ function processBill() { // This now opens the payment modal
 
   document.getElementById('discountInput').value = '';
   document.getElementById('deliveryFeeInput').value = '';
+  document.getElementById('paymentDateTime').value = '';
   document.getElementById('amountTendered').value = '';
+  const draftCheckbox = document.getElementById('savePaymentAsDraft');
+  if (draftCheckbox) draftCheckbox.checked = false;
+  toggleDraftPaymentFields();
   document.getElementById('changeDue').textContent = '0.00';
 
   // Pre-populate customer selection in payment modal from the Shop tab dropdown
@@ -7238,6 +7274,7 @@ async function handleConfirmPaymentClick() {
   const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
   const tenderedInput = document.getElementById('amountTendered');
   const amountTendered = parseFloat(tenderedInput?.value) || 0;
+  const isDraft = document.getElementById('savePaymentAsDraft')?.checked === true;
   const currentOrder = activeOrders[CART_ID];
   const totals = currentOrder && Array.isArray(currentOrder.items) ? calculateTransactionTotals(currentOrder.items) : { total: 0 };
 
@@ -7249,7 +7286,7 @@ async function handleConfirmPaymentClick() {
   if (discountAmount < 0) discountAmount = 0;
   const finalTotal = totalBeforeDiscount - discountAmount;
 
-  const canConfirm = isCustomerSelected || (tenderedInput && tenderedInput.value !== '' && amountTendered >= finalTotal);
+  const canConfirm = isDraft || isCustomerSelected || (tenderedInput && tenderedInput.value !== '' && amountTendered >= finalTotal);
   if (!canConfirm) {
     await showAppAlert(`Amount is low. Select a customer for credit or enter at least ${formatCurrency(finalTotal)}.`, 'Amount Below Total');
     return;
@@ -7386,6 +7423,7 @@ async function finalizePayment(isSplit = false) {
 
   const paymentMethod = document.getElementById('paymentMethod').value;
   const amountTendered = parseFloat(document.getElementById('amountTendered').value);
+  const isDraft = document.getElementById('savePaymentAsDraft')?.checked === true;
   const totals = calculateTransactionTotals(currentOrder.items);
   const paymentSelect = document.getElementById('paymentCustomerSelect');
   const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
@@ -7403,6 +7441,13 @@ async function finalizePayment(isSplit = false) {
     ? customers.find(entry => entry && String(entry.id) === String(paymentSelect.value))
     : null;
 
+  const paymentDateInput = document.getElementById('paymentDateTime')?.value || '';
+  const parsedPaymentDate = paymentDateInput ? new Date(paymentDateInput) : new Date();
+  if (!Number.isFinite(parsedPaymentDate.getTime())) {
+    await showAppAlert("Please enter a valid payment date.", "Invalid Date");
+    return;
+  }
+  const paymentDate = parsedPaymentDate.toISOString();
   const pickupDate = document.getElementById('pickupDate')?.value || null;
   const dropoffDate = document.getElementById('dropoffDate')?.value || null;
   const serviceDuration = document.getElementById('serviceDuration')?.value.trim() || null;
@@ -7411,19 +7456,19 @@ async function finalizePayment(isSplit = false) {
   const currentServerName = getCurrentServerName();
 
   let amountPaid = finalTotal;
-  if (isNaN(amountTendered) || amountTendered < 0) {
+  if (!isDraft && (isNaN(amountTendered) || amountTendered < 0)) {
     await showAppAlert("Please enter a valid amount tendered.", "Invalid Amount");
     return;
   }
 
-  if (!isCustomerSelected && amountTendered < finalTotal) {
+  if (!isDraft && !isCustomerSelected && amountTendered < finalTotal) {
     await showAppAlert(`Amount tendered is below the total. Please enter at least ${formatCurrency(finalTotal)} or select a customer account to continue.`, "Amount Below Total");
     return;
   }
 
-  amountPaid = amountTendered;
+  amountPaid = isDraft ? (Number.isFinite(amountTendered) ? amountTendered : 0) : amountTendered;
 
-  if (paymentMethod === 'Cash' && amountTendered < finalTotal && !isCustomerSelected) {
+  if (!isDraft && paymentMethod === 'Cash' && amountTendered < finalTotal && !isCustomerSelected) {
     await showAppAlert(`Amount tendered is below the total. Please enter at least ${formatCurrency(finalTotal)} or select a customer account to continue.`, "Amount Below Total");
     return;
   }
@@ -7431,7 +7476,7 @@ async function finalizePayment(isSplit = false) {
   setPaymentProcessingState(true, navigator.onLine ? 'Processing payment…' : 'Offline mode: saving your sale locally and syncing it when the connection returns.', navigator.onLine ? 'info' : 'success');
 
   try {
-    if (isStockTrackingEnabled()) {
+    if (!isDraft && isStockTrackingEnabled()) {
       currentOrder.items.forEach(orderItem => {
         const dish = menu.find(d => d.name === orderItem.name);
         if (dish && dish.name) {
@@ -7440,10 +7485,11 @@ async function finalizePayment(isSplit = false) {
       });
     }
 
-    const balanceChange = isCustomerSelected ? (amountPaid - finalTotal) : 0;
+    const balanceChange = !isDraft && isCustomerSelected ? (amountPaid - finalTotal) : 0;
 
     const transaction = {
-      date: new Date().toISOString(),
+      date: paymentDate,
+      invoiceDate: paymentDate,
       customerName: currentServerName, // This is the staff name for compatibility
       servedBy: currentServerName,
       tableNo: 'Shop',
@@ -7462,7 +7508,7 @@ async function finalizePayment(isSplit = false) {
       deliveryFee,
       paymentMethod: paymentMethod,
       discount: { value: discountInput, type: 'fixed', amount: discountAmount },
-      orderStatus: document.getElementById('orderStatusSelect')?.value || 'pending',
+      orderStatus: isDraft ? 'draft' : (document.getElementById('orderStatusSelect')?.value || 'pending'),
       orderType: settings.serviceMode ? 'service' : 'product',
       serviceOrder: {
         pickupDate,
@@ -7477,7 +7523,7 @@ async function finalizePayment(isSplit = false) {
       customerWhatsApp: customer ? customer.whatsapp || '' : '',
       customerId: customer ? customer.id || customer.recordId : null,
       customerNameReal: customer ? customer.name : 'Walk-in Customer',
-      amountPaid: amountPaid,
+      amountPaid: isDraft ? 0 : amountPaid,
       balanceChange: balanceChange
     };
 
@@ -7487,7 +7533,7 @@ async function finalizePayment(isSplit = false) {
     }
 
     // 1. Update customer balance in local state and db
-    if (customer) {
+    if (customer && !isDraft) {
       const currentBalance = getCustomerAccountBalance(customer);
       customer.balance = currentBalance + balanceChange;
       customer.totalSales = (parseFloat(customer.totalSales) || 0) + finalTotal;
@@ -7499,13 +7545,13 @@ async function finalizePayment(isSplit = false) {
     }
 
     await recordTransaction(transaction);
-    const changeDue = amountTendered - amountPaid;
+    const changeDue = isDraft ? 0 : amountTendered - amountPaid;
     activeOrders[CART_ID] = { items: [], server: '' };
     await saveData();
     updateOrders(CART_ID, false);
     renderMenu();
 
-    ['amountTendered', 'discountInput', 'deliveryFeeInput', 'pickupDate', 'dropoffDate', 'serviceDuration', 'serviceNotes'].forEach(id => {
+    ['amountTendered', 'paymentDateTime', 'discountInput', 'deliveryFeeInput', 'pickupDate', 'dropoffDate', 'serviceDuration', 'serviceNotes'].forEach(id => {
       const field = document.getElementById(id);
       if (field) field.value = '';
     });
@@ -7513,6 +7559,9 @@ async function finalizePayment(isSplit = false) {
     if (paymentMethodInput) paymentMethodInput.selectedIndex = 0;
     const paymentCustomerSelect = document.getElementById('paymentCustomerSelect');
     if (paymentCustomerSelect) paymentCustomerSelect.value = '';
+    const draftCheckbox = document.getElementById('savePaymentAsDraft');
+    if (draftCheckbox) draftCheckbox.checked = false;
+    toggleDraftPaymentFields();
 
     // Reset order customer selection dropdown
     const orderSelect = document.getElementById('orderCustomerSelect');
@@ -7520,7 +7569,11 @@ async function finalizePayment(isSplit = false) {
 
     document.getElementById('paymentModal').style.display = 'none';
     setPaymentProcessingState(false);
-    showSaleSuccessCelebration(transaction, changeDue > 0 ? changeDue : 0);
+    if (isDraft) {
+      await showAppAlert('Draft invoice saved. Stock and customer accounts were not changed.', 'Draft Saved');
+    } else {
+      showSaleSuccessCelebration(transaction, changeDue > 0 ? changeDue : 0);
+    }
   } catch (error) {
     console.error('[PAYMENT] Checkout failed:', error);
     setPaymentProcessingState(false, 'Payment could not be completed. Please try again.', 'error');
@@ -7533,7 +7586,7 @@ function calculateTransactionTotals(items) {
   const subtotal = (Array.isArray(items) ? items : []).reduce((sum, item) => {
     if (!item || (parseInt(item?.qty, 10) || 0) <= 0) return sum;
     const qty = Math.max(0, parseInt(item?.qty, 10) || 0);
-    const unitPrice = Number(item?.price || 0);
+    const unitPrice = Number(item?.basePrice ?? item?.price ?? 0);
     const discountAmount = Math.max(0, Number(item?.discountAmount || 0) || 0);
     const lineTotal = Math.max(0, (qty * unitPrice) - discountAmount);
     return sum + lineTotal;
@@ -9045,6 +9098,364 @@ function directPrint() {
   sendDataToPrinter(plainTextReceipt);
 }
 
+let transactionEditState = { index: -1, transaction: null };
+let transactionEditSelectedProductIndex = -1;
+
+function getTransactionEditProducts() {
+  return Array.isArray(menu) ? menu.filter(product => product && product.name) : [];
+}
+
+function renderTransactionEditProductForm() {
+  const products = getTransactionEditProducts();
+  const searchInput = document.getElementById('transactionEditProductSearch');
+  const categorySelect = document.getElementById('transactionEditProductCategory');
+  const productOptions = document.getElementById('transactionEditProductOptions');
+  if (!searchInput || !categorySelect || !productOptions) return;
+
+  const selectedCategory = categorySelect.value || '';
+  const searchValue = searchInput.value.trim().toLowerCase();
+  const categories = [...new Set(products.map(product => String(product.category || 'Uncategorized').trim() || 'Uncategorized'))].sort((a, b) => a.localeCompare(b));
+  categorySelect.innerHTML = `<option value="">All Categories</option>${categories.map(category => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join('')}`;
+  categorySelect.value = categories.includes(selectedCategory) ? selectedCategory : '';
+
+  const filteredProducts = products.filter(product => {
+    const category = String(product.category || 'Uncategorized').trim() || 'Uncategorized';
+    const matchesCategory = !categorySelect.value || category === categorySelect.value;
+    const haystack = `${product.name} ${product.barcode || ''} ${category}`.toLowerCase();
+    return matchesCategory && (!searchValue || haystack.includes(searchValue));
+  });
+  productOptions.innerHTML = filteredProducts.map(product => {
+    const productIndex = products.indexOf(product);
+    const unit = product.unit ? ` · ${product.unit}` : '';
+    return `<button type="button" class="transaction-edit-product-option" onclick="selectTransactionEditProduct(${productIndex})">${escapeHtml(product.name)}${escapeHtml(unit)} · ${getCurrencySymbol()}${formatCurrency(Number(product.price || 0))}</button>`;
+  }).join('');
+  if (filteredProducts.length === 0) {
+    productOptions.innerHTML = '<div class="transaction-edit-no-products">No matching products</div>';
+  }
+}
+
+function toggleTransactionProductDropdown() {
+  const dropdown = document.getElementById('transactionEditProductDropdown');
+  const modal = document.getElementById('transactionEditModal');
+  if (!dropdown) return;
+  dropdown.hidden = !dropdown.hidden;
+  if (modal) modal.classList.toggle('transaction-edit-product-expanded', !dropdown.hidden);
+  if (!dropdown.hidden) {
+    renderTransactionEditProductForm();
+    document.getElementById('transactionEditProductSearch')?.focus();
+  }
+}
+
+function selectTransactionEditProduct(index) {
+  const product = getTransactionEditProducts()[index];
+  const button = document.getElementById('transactionEditProductSelect');
+  const dropdown = document.getElementById('transactionEditProductDropdown');
+  if (!product || !button) return;
+  transactionEditSelectedProductIndex = index;
+  button.textContent = `${product.name}${product.unit ? ` · ${product.unit}` : ''} · ${getCurrencySymbol()}${formatCurrency(Number(product.price || 0))}`;
+  if (dropdown) {
+    dropdown.hidden = true;
+    document.getElementById('transactionEditModal')?.classList.remove('transaction-edit-product-expanded');
+  }
+}
+
+function toggleTransactionProductForm() {
+  const form = document.getElementById('transactionEditProductForm');
+  if (!form) return;
+  form.hidden = !form.hidden;
+  if (!form.hidden) {
+    renderTransactionEditProductForm();
+    toggleTransactionProductDropdown();
+  } else {
+    resetTransactionProductForm();
+  }
+}
+
+function resetTransactionProductForm() {
+  const form = document.getElementById('transactionEditProductForm');
+  const modal = document.getElementById('transactionEditModal');
+  if (form) form.hidden = true;
+  if (modal) modal.classList.remove('transaction-edit-product-expanded');
+  const searchInput = document.getElementById('transactionEditProductSearch');
+  if (searchInput) searchInput.value = '';
+  const productButton = document.getElementById('transactionEditProductSelect');
+  if (productButton) productButton.textContent = 'Select product';
+  const dropdown = document.getElementById('transactionEditProductDropdown');
+  if (dropdown) dropdown.hidden = true;
+  transactionEditSelectedProductIndex = -1;
+}
+
+function getTransactionEditTotals(transaction) {
+  const totals = calculateTransactionTotals(transaction.items);
+  const deliveryFee = Math.max(0, Number(transaction.deliveryFee || 0));
+  const storedDiscount = transaction.discount && typeof transaction.discount === 'object'
+    ? (transaction.discount.amount ?? transaction.discount.value)
+    : transaction.discount;
+  const discountAmount = Math.max(0, Number(storedDiscount || 0));
+  const finalDiscount = Math.min(discountAmount, totals.total + deliveryFee);
+  return {
+    ...totals,
+    deliveryFee,
+    discountAmount: finalDiscount,
+    finalTotal: Math.max(0, totals.total + deliveryFee - finalDiscount)
+  };
+}
+
+function renderTransactionEditItems() {
+  const container = document.getElementById('transactionEditItems');
+  const transaction = transactionEditState.transaction;
+  if (!container || !transaction) return;
+
+  const productNames = [...new Set([
+    ...(Array.isArray(menu) ? menu.map(item => item?.name).filter(Boolean) : []),
+    ...(Array.isArray(transaction.items) ? transaction.items.map(item => item?.name).filter(Boolean) : [])
+  ])];
+  renderTransactionEditProductForm();
+
+  const rows = transaction.items.map((item, index) => {
+    const options = productNames.map(name => `<option value="${escapeHtml(name)}"${name === item.name ? ' selected' : ''}>${escapeHtml(name)}</option>`).join('');
+    return `<div class="transaction-edit-row">
+      <select aria-label="Product" onchange="updateTransactionEditItem(${index}, 'name', this.value)">${options}</select>
+      <input type="text" aria-label="Unit" placeholder="Unit" value="${escapeHtml(item.unit || '')}" onchange="updateTransactionEditItem(${index}, 'unit', this.value)">
+      <input type="number" aria-label="Quantity" min="0" step="1" value="${Math.max(0, parseInt(item.qty, 10) || 0)}" onchange="updateTransactionEditItem(${index}, 'qty', this.value)">
+      <input type="number" aria-label="Unit price" min="0" step="0.01" value="${Math.max(0, Number(item.price || 0)).toFixed(2)}" onchange="updateTransactionEditItem(${index}, 'price', this.value)">
+      <input type="number" aria-label="Discount" min="0" step="0.01" value="${Math.max(0, Number(item.discountAmount || 0)).toFixed(2)}" onchange="updateTransactionEditItem(${index}, 'discountAmount', this.value)">
+      <strong>${getCurrencySymbol()}${formatCurrency(Math.max(0, (Number(item.qty || 0) * Number(item.price || 0)) - Number(item.discountAmount || 0)))}</strong>
+      <button type="button" class="icon-btn" title="Remove item" onclick="removeTransactionEditItem(${index})">&times;</button>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `<div class="transaction-edit-header"><span>Product</span><span>Unit</span><span>Qty</span><span>Unit Price</span><span>Discount</span><span>Total</span><span></span></div>${rows || '<p class="u-text-muted">No items. Add an item before saving.</p>'}`;
+  updateTransactionEditTotals();
+}
+
+function updateTransactionEditTotals() {
+  const transaction = transactionEditState.transaction;
+  if (!transaction) return;
+  const totals = getTransactionEditTotals(transaction);
+  const currency = getCurrencySymbol();
+  const setText = (id, value) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = `${currency}${formatCurrency(value)}`;
+  };
+  setText('transactionEditSubtotal', totals.subtotal);
+  setText('transactionEditTax', totals.tax);
+  const discountElement = document.getElementById('transactionEditDiscount');
+  if (discountElement) discountElement.textContent = `-${currency}${formatCurrency(totals.discountAmount)}`;
+  setText('transactionEditDeliveryFee', totals.deliveryFee);
+  setText('transactionEditTotal', totals.finalTotal);
+}
+
+function updateTransactionEditItem(index, field, value) {
+  const item = transactionEditState.transaction?.items?.[index];
+  if (!item) return;
+  if (field === 'qty') item.qty = Math.max(0, parseInt(value, 10) || 0);
+  else if (field === 'price' || field === 'discountAmount') item[field] = Math.max(0, Number(value) || 0);
+  else if (field === 'name') {
+    item.name = value;
+    const product = Array.isArray(menu) ? menu.find(entry => entry?.name === value) : null;
+    if (product) {
+      item.price = Number(product.price || 0);
+      item.unit = product.unit || '';
+      item.productId = product.recordId || product.id || item.productId || '';
+    }
+  } else item[field] = value;
+  renderTransactionEditItems();
+}
+
+function addTransactionEditItem() {
+  const products = getTransactionEditProducts();
+  const selectedIndex = transactionEditSelectedProductIndex;
+  const firstProduct = Number.isInteger(selectedIndex) ? products[selectedIndex] : null;
+  if (!transactionEditState.transaction) return;
+  if (!firstProduct) {
+    showAppAlert('Choose a product from the product list before adding it.', 'Product Not Found');
+    return;
+  }
+  transactionEditState.transaction.items.push({
+    ...(firstProduct || {}),
+    name: firstProduct?.name || '',
+    qty: 1,
+    price: Number(firstProduct?.price || 0),
+    unit: firstProduct?.unit || '',
+    discountAmount: 0
+  });
+  const searchInput = document.getElementById('transactionEditProductSearch');
+  if (searchInput) searchInput.value = '';
+  renderTransactionEditItems();
+}
+
+function removeTransactionEditItem(index) {
+  if (!transactionEditState.transaction?.items) return;
+  transactionEditState.transaction.items.splice(index, 1);
+  renderTransactionEditItems();
+  renderTransactionEditProductForm();
+}
+
+function closeTransactionEditModal() {
+  const modal = document.getElementById('transactionEditModal');
+  if (modal) modal.style.display = 'none';
+  resetTransactionProductForm();
+  transactionEditState = { index: -1, transaction: null };
+}
+
+async function confirmDraftTransaction(index) {
+  const draft = Array.isArray(transactions) ? transactions[index] : null;
+  if (!draft || String(draft.orderStatus || draft.status || '').toLowerCase() !== 'draft') return;
+
+  const confirmed = await showAppConfirm('Confirm this draft invoice? Stock and customer account changes will be applied.', 'Confirm Draft', 'Confirm', 'Cancel');
+  if (!confirmed) return;
+
+  const totals = getTransactionEditTotals(draft);
+  const customer = draft.customerId
+    ? customers.find(entry => entry && String(entry.id) === String(draft.customerId))
+    : null;
+  const amountPaid = customer ? Math.max(0, Number(draft.amountPaid || 0)) : totals.finalTotal;
+  const balanceChange = customer ? amountPaid - totals.finalTotal : 0;
+  const updatedTransaction = buildTransactionSyncPayload({
+    ...draft,
+    orderStatus: 'pending',
+    status: 'pending',
+    amountPaid,
+    balanceChange,
+    balance: Math.min(0, balanceChange),
+    updatedAt: new Date().toISOString(),
+    synced: false,
+    syncStatus: 'pending'
+  });
+
+  if (isStockTrackingEnabled() && !updatedTransaction.inventoryRestored) {
+    updatedTransaction.items = updatedTransaction.items.map(item => {
+      const product = Array.isArray(menu) ? menu.find(entry => entry?.name === item.name) : null;
+      return {
+        ...item,
+        stockBeforeSale: product && Number.isFinite(Number(product.stock)) ? Number(product.stock) : null
+      };
+    });
+    deductTransactionStock(updatedTransaction);
+  }
+
+  if (customer) {
+    customer.balance = (Number(customer.balance) || 0) + balanceChange;
+    customer.totalSales = (Number(customer.totalSales) || 0) + totals.finalTotal;
+    customer.subtotalSales = (Number(customer.subtotalSales) || 0) + totals.subtotal;
+    customer.totalPaid = (Number(customer.totalPaid) || 0) + amountPaid;
+    customer.lastTransactionDate = updatedTransaction.date;
+    enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
+  }
+
+  transactions[index] = updatedTransaction;
+  await saveState('transactions', transactions, { enqueueSync: false });
+  await mirrorSaleDetailsLocally(updatedTransaction);
+  await enqueueTransactionSync(updatedTransaction);
+  await saveData(false);
+  renderTransactions();
+  renderInvoices();
+  updateDashboard();
+  await showAppAlert('Draft invoice confirmed and inventory updated.', 'Draft Confirmed');
+}
+
+function editTransaction(index) {
+  const source = Array.isArray(transactions) ? transactions[index] : null;
+  if (!source) return;
+  resetTransactionProductForm();
+  transactionEditState = {
+    index,
+    transaction: {
+      ...source,
+      items: (Array.isArray(source.items) ? source.items : []).map(item => ({ ...item }))
+    }
+  };
+  renderTransactionEditItems();
+  const modal = document.getElementById('transactionEditModal');
+  if (modal) modal.style.display = 'flex';
+}
+
+async function saveTransactionEdit() {
+  const { index, transaction: draft } = transactionEditState;
+  const original = Array.isArray(transactions) ? transactions[index] : null;
+  if (!draft || !original || !Array.isArray(draft.items)) return;
+
+  const items = draft.items
+    .filter(item => item && String(item.name || '').trim() && (parseInt(item.qty, 10) || 0) > 0)
+    .map(item => ({ ...item, qty: parseInt(item.qty, 10) || 0, price: Math.max(0, Number(item.price) || 0), discountAmount: Math.max(0, Number(item.discountAmount) || 0) }));
+  if (items.length === 0) {
+    await showAppAlert('Add at least one item with a quantity greater than zero.', 'Cannot Save Sale');
+    return;
+  }
+
+  const updatedDraft = { ...draft, items };
+  const totals = getTransactionEditTotals(updatedDraft);
+  const isDraftOriginal = String(original.orderStatus || original.status || '').toLowerCase() === 'draft';
+  const oldTotal = Number(original.total || 0);
+  const amountPaid = isDraftOriginal ? 0 : (Number(original.amountPaid ?? original.totalPaid ?? totals.finalTotal) || 0);
+  const oldBalanceChange = Number.isFinite(Number(original.balanceChange)) ? Number(original.balanceChange) : amountPaid - oldTotal;
+  const balanceChange = isDraftOriginal ? 0 : amountPaid - totals.finalTotal;
+  const updatedTransaction = buildTransactionSyncPayload({
+    ...original,
+    ...updatedDraft,
+    subtotal: totals.subtotal,
+    tax: totals.tax,
+    deliveryFee: totals.deliveryFee,
+    discount: { ...(original.discount || {}), value: totals.discountAmount, type: 'fixed', amount: totals.discountAmount },
+    total: totals.finalTotal,
+    amountPaid,
+    balanceChange,
+    balance: Math.min(0, balanceChange),
+    updatedAt: new Date().toISOString(),
+    synced: false,
+    syncStatus: 'pending'
+  });
+
+  const isCanceled = String(original.orderStatus || original.status || '').toLowerCase() === 'canceled';
+  const hasRestoredStock = original.inventoryRestored === true || Boolean(original.inventoryRestoredAt);
+  if (!isCanceled && !isDraftOriginal && !hasRestoredStock && isStockTrackingEnabled()) {
+    await restoreTransactionStock(original);
+    updatedTransaction.items = updatedTransaction.items.map(item => {
+      const product = Array.isArray(menu) ? menu.find(entry => entry?.name === item.name) : null;
+      return {
+        ...item,
+        stockBeforeSale: product && Number.isFinite(Number(product.stock)) ? Number(product.stock) : null
+      };
+    });
+    deductTransactionStock(updatedTransaction);
+  }
+
+  transactions[index] = updatedTransaction;
+  if (updatedTransaction.customerId && !isDraftOriginal) {
+    const customer = customers.find(entry => entry && String(entry.id) === String(updatedTransaction.customerId));
+    if (customer) {
+      customer.balance = (Number(customer.balance) || 0) + balanceChange - oldBalanceChange;
+      customer.totalSales = (Number(customer.totalSales) || 0) + totals.finalTotal - oldTotal;
+      customer.subtotalSales = (Number(customer.subtotalSales) || 0) + totals.subtotal - Number(original.subtotal || 0);
+      enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
+    }
+  }
+
+  await saveState('transactions', transactions, { enqueueSync: false });
+  await mirrorSaleDetailsLocally(updatedTransaction);
+  await enqueueTransactionSync(updatedTransaction);
+  await saveData(false);
+  closeTransactionEditModal();
+  renderTransactions();
+  renderInvoices();
+  updateDashboard();
+  await showAppAlert('Sale updated successfully.', 'Sale Updated');
+}
+
+window.editTransaction = editTransaction;
+window.renderTransactionEditProductForm = renderTransactionEditProductForm;
+window.toggleTransactionProductForm = toggleTransactionProductForm;
+window.toggleTransactionProductDropdown = toggleTransactionProductDropdown;
+window.selectTransactionEditProduct = selectTransactionEditProduct;
+window.resetTransactionProductForm = resetTransactionProductForm;
+window.addTransactionEditItem = addTransactionEditItem;
+window.updateTransactionEditItem = updateTransactionEditItem;
+window.removeTransactionEditItem = removeTransactionEditItem;
+window.saveTransactionEdit = saveTransactionEdit;
+window.closeTransactionEditModal = closeTransactionEditModal;
+window.confirmDraftTransaction = confirmDraftTransaction;
+
 // ===== Transactions =====
 function renderTransactions() {
   const startDate = document.getElementById('transactionStartDate')?.value || document.getElementById('transactionFilterDate')?.value;
@@ -9104,6 +9515,7 @@ function renderTransactions() {
           <button class="btn u-fs-08 row-preview-btn" data-tx-index="${txIndex}" style="display: inline-block; padding: 6px 8px; margin: 0 2px; background: #17a2b8;"> 
             <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 16 16" fill="currentColor" style="vertical-align: middle; color: #fff;"><path d="M16 8s-3-5.5-8-5.5S0 8 0 8s3 5.5 8 5.5S16 8 16 8z"></path><path d="M8 5.5a2.5 2.5 0 1 0 0 5 2.5 2.5 0 0 0 0-5z" fill="#fff"></path></svg>
           </button>
+          <button class="icon-btn" title="Edit Sale" onclick="editTransaction(${txIndex})">✎</button>
           <button class="icon-btn" title="Send Order Status" onclick="sendOrderStatusNotification(${txIndex})" style="margin-right:4px;">📩</button>
           <button class="icon-btn" title="Re-Open Bill" onclick="reopenTransaction(${txIndex})">${iconReopen}</button>
           <button class="icon-btn" title="Download PDF" onclick="downloadBillAsPDF(${txIndex})">${iconDownload}</button>
@@ -12844,6 +13256,8 @@ function renderInvoices() {
         const previewData = row.previewData;
         const invoiceNumber = row.invoiceNumber || 'INV-UNKNOWN';
         const lastDate = row.date ? new Date(row.date).toLocaleString() : new Date().toLocaleString();
+        const transactionIndex = Array.isArray(transactions) ? transactions.indexOf(row.transaction) : -1;
+        const isDraft = String(row.transaction?.orderStatus || row.transaction?.status || '').toLowerCase() === 'draft';
         const allAdjustments = Array.isArray(previewData?.adjustments) ? previewData.adjustments : [];
         const lastAdjustment = previewData?.lastAdjustment || (allAdjustments.length > 0 ? allAdjustments[allAdjustments.length - 1] : null);
         const adjAmount = lastAdjustment ? (parseFloat(lastAdjustment.amount) || 0) : 0;
@@ -12851,7 +13265,7 @@ function renderInvoices() {
         const adjustedText = lastAdjustment ? `${adjMethod ? adjMethod + ' ' : ''}${currencySymbol}${formatCurrency(adjAmount)}` : '-';
 
         const isPaid = Math.abs(balance) === 0;
-        const adjustDisabled = isPaid || !customer?.id;
+        const adjustDisabled = isPaid || isDraft || !customer?.id;
         const adjustButton = document.createElement('button');
         adjustButton.className = 'btn invoice-action-btn';
         adjustButton.type = 'button';
@@ -12889,7 +13303,11 @@ function renderInvoices() {
         statusBadge.style.borderRadius = '6px';
         statusBadge.style.fontSize = '0.85em';
         statusBadge.style.display = 'inline-block';
-        if (isPaid) {
+        if (isDraft) {
+          statusBadge.style.background = '#e2e8f0';
+          statusBadge.style.color = '#334155';
+          statusBadge.textContent = 'Draft';
+        } else if (isPaid) {
           statusBadge.style.background = '#28a745';
           statusBadge.style.color = '#fff';
           statusBadge.textContent = 'Cleared';
@@ -12903,6 +13321,26 @@ function renderInvoices() {
         actionWrapper.className = 'invoice-action-group';
         actionWrapper.style.cssText = 'display:inline-flex; flex-wrap:nowrap; gap:4px; justify-content:flex-end; align-items:center; min-width:0; overflow-x:auto; white-space:nowrap;';
         actionWrapper.appendChild(adjustButton);
+        const editButton = document.createElement('button');
+        editButton.className = 'btn invoice-action-btn';
+        editButton.type = 'button';
+        editButton.textContent = 'Edit';
+        editButton.addEventListener('click', event => {
+          event.stopPropagation();
+          if (transactionIndex >= 0) editTransaction(transactionIndex);
+        });
+        actionWrapper.appendChild(editButton);
+        if (isDraft) {
+          const confirmDraftButton = document.createElement('button');
+          confirmDraftButton.className = 'btn invoice-action-btn';
+          confirmDraftButton.type = 'button';
+          confirmDraftButton.textContent = 'Confirm Draft';
+          confirmDraftButton.addEventListener('click', event => {
+            event.stopPropagation();
+            if (transactionIndex >= 0) confirmDraftTransaction(transactionIndex);
+          });
+          actionWrapper.appendChild(confirmDraftButton);
+        }
         actionWrapper.appendChild(bcButton);
         actionWrapper.appendChild(a4Button);
         actionWrapper.appendChild(statusBadge);
@@ -12952,6 +13390,20 @@ function renderInvoices() {
           if (index === 5) {
             cell.classList.add('invoice-status-column');
             cell.innerHTML = value;
+          } else if (index === 2) {
+            const dateInput = document.createElement('input');
+            dateInput.type = 'datetime-local';
+            dateInput.value = toDateTimeLocalValue(row.transaction?.invoiceDate || row.transaction?.date || row.date);
+            dateInput.title = 'Edit invoice date';
+            dateInput.style.cssText = 'min-width:190px; padding:6px; border:1px solid #cbd5e1; border-radius:6px;';
+            dateInput.addEventListener('click', event => event.stopPropagation());
+            dateInput.addEventListener('change', event => {
+              const recordKey = String(row.transaction?.id || row.transaction?.recordId || row.transaction?.invoiceNumber || row.transaction?.date || '');
+              if (updateInvoiceDateTimeByKey(recordKey, event.target.value)) {
+                dateInput.value = toDateTimeLocalValue(row.transaction?.invoiceDate || row.transaction?.date);
+              }
+            });
+            cell.appendChild(dateInput);
           } else {
             cell.textContent = value;
           }
