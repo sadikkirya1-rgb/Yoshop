@@ -8875,11 +8875,12 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .card h3 { color:var(--primary); margin-bottom:6px; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.05em; }
     .card p { margin:3px 0; line-height:1.2; color:#475569; font-size:0.76rem; }
     .badge { display:inline-block; padding:4px 8px; background:#10b981; color:white; border-radius:30px; font-size:10px; font-weight:bold; }
-    table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #e2e8f0; border-radius:12px; overflow:hidden; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #d8e1ea; border-radius:12px; overflow:hidden; }
     thead { background:linear-gradient(135deg,#ff7b42,#ff6b35); color:white; }
-    th { padding:8px 6px; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; text-align:center; }
-    td { padding:6px 8px; border-bottom:1px solid #e5e7eb; font-size:0.72rem; text-align:center; }
+    th { padding:8px 6px; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; text-align:center; border-bottom:1px solid rgba(100, 116, 139, 0.75); }
+    td { padding:6px 8px; border-bottom:1px solid rgba(148, 163, 184, 0.7); font-size:0.72rem; text-align:center; }
     tbody tr:nth-child(even) { background:#f8fafc; }
+    tbody tr:last-child td { border-bottom:none; }
     th:first-child, td:first-child { text-align:center; }
     th:nth-child(2), td:nth-child(2) { text-align:left; }
     th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { text-align:center; }
