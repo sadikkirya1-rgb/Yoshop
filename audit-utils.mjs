@@ -97,3 +97,19 @@ export function limitAuditTrail(trail, maxItems = 200) {
   if (trail.length <= maxItems) return trail;
   return trail.slice(-maxItems);
 }
+
+export function pruneExpiredAuditEntries(trail, maxAgeMs = 7 * 24 * 60 * 60 * 1000, now = Date.now()) {
+  if (!Array.isArray(trail)) return [];
+  const cutoff = now - maxAgeMs;
+
+  return trail.filter((entry) => {
+    if (!entry || typeof entry !== 'object') return false;
+    const timestampValue = entry.timestamp || entry.createdAt || entry.updatedAt || entry.date;
+    if (!timestampValue) return true;
+
+    const parsed = Date.parse(timestampValue);
+    if (!Number.isFinite(parsed)) return true;
+
+    return parsed >= cutoff;
+  });
+}

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createAuditEvent, limitAuditTrail, acquireRecordLock, releaseRecordLock, isRecordLockActive, getRecordLockKey } from '../audit-utils.mjs';
+import { createAuditEvent, limitAuditTrail, pruneExpiredAuditEntries, acquireRecordLock, releaseRecordLock, isRecordLockActive, getRecordLockKey } from '../audit-utils.mjs';
 
 test('createAuditEvent appends a structured event to the trail', () => {
   const trail = [];
@@ -52,4 +52,18 @@ test('record locks prevent two staff members editing the same shared record simu
 
   assert.equal(releaseRecordLock(locks, 'sales', 'tx-123', 'staff-a'), true);
   assert.equal(isRecordLockActive(locks, 'sales', 'tx-123', { now: 2_000 }), false);
+});
+
+test('pruneExpiredAuditEntries removes entries older than 7 days', () => {
+  const now = new Date('2026-09-21T12:00:00Z').getTime();
+  const trail = [
+    { id: 'new', timestamp: new Date(now - 1000).toISOString() },
+    { id: 'old', timestamp: new Date(now - 8 * 24 * 60 * 60 * 1000).toISOString() },
+    { id: 'exactly-7d', timestamp: new Date(now - 7 * 24 * 60 * 60 * 1000).toISOString() },
+    { id: 'missing-date' }
+  ];
+
+  const pruned = pruneExpiredAuditEntries(trail, 7 * 24 * 60 * 60 * 1000, now);
+
+  assert.deepEqual(pruned.map(item => item.id), ['new', 'exactly-7d', 'missing-date']);
 });

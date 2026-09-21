@@ -9,7 +9,7 @@ import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstat
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-functions.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
-import { createAuditEvent, limitAuditTrail, acquireRecordLock, releaseRecordLock } from './audit-utils.mjs';
+import { createAuditEvent, limitAuditTrail, pruneExpiredAuditEntries, acquireRecordLock, releaseRecordLock } from './audit-utils.mjs';
 import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity } from './admin-utils.mjs';
 import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField } from './sync-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
@@ -311,6 +311,49 @@ function clearPinSession() {
   localStorage.removeItem('currentLoggedInStaffName');
 }
 
+const AUDIT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+
+function formatAuditRetentionCountdown() {
+  const now = Date.now();
+  const newestTimestamp = Array.isArray(auditTrail) && auditTrail.length > 0
+    ? auditTrail.reduce((latest, event) => {
+        const value = new Date(event?.timestamp || event?.createdAt || 0).getTime();
+        return Number.isFinite(value) && value > latest ? value : latest;
+      }, 0)
+    : 0;
+
+  const lastValidTimestamp = newestTimestamp > 0 ? newestTimestamp : now;
+  const expiresAt = lastValidTimestamp + AUDIT_RETENTION_MS;
+  const remainingMs = Math.max(0, expiresAt - now);
+  const totalMinutes = Math.floor(remainingMs / 60000);
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+
+  if (remainingMs <= 0) {
+    return 'expired';
+  }
+
+  if (days > 0) {
+    return `${days} day${days === 1 ? '' : 's'} ${hours} hour${hours === 1 ? '' : 's'} left`;
+  }
+
+  if (hours > 0) {
+    return `${hours} hour${hours === 1 ? '' : 's'} ${minutes} minute${minutes === 1 ? '' : 's'} left`;
+  }
+
+  return `${minutes || 1} minute${minutes === 1 ? '' : 's'} left`;
+}
+
+function applyAuditRetentionPolicy() {
+  const prunedTrail = pruneExpiredAuditEntries(auditTrail, AUDIT_RETENTION_MS);
+  if (prunedTrail.length !== (Array.isArray(auditTrail) ? auditTrail.length : 0)) {
+    auditTrail = limitAuditTrail(prunedTrail, 500);
+    persistAuditTrail().catch(() => {});
+  }
+  return auditTrail;
+}
+
 function appendAuditEvent(type, details = {}) {
   const context = getSyncMetadataContext();
   const nextTrail = createAuditEvent(auditTrail, type, details, context);
@@ -320,7 +363,7 @@ function appendAuditEvent(type, details = {}) {
     nextTrail[nextTrail.length - 1] = enrichEnterpriseRecord('auditLog', latestEvent, latestEvent);
   }
 
-  auditTrail = limitAuditTrail(nextTrail, 500);
+  auditTrail = limitAuditTrail(pruneExpiredAuditEntries(nextTrail, AUDIT_RETENTION_MS), 500);
   renderAuditTrail();
   return auditTrail;
 }
@@ -336,6 +379,42 @@ function renderAuditTrail() {
       const who = details.changedBy || event.staffId || event.userId || 'system';
       return `<tr><td>${escapeHtml(new Date(event.timestamp).toLocaleString())}</td><td>${escapeHtml(who)}</td><td>${escapeHtml(event.type || event.eventType || '')}</td><td>${escapeHtml(details.entity || '')}</td><td>${escapeHtml(JSON.stringify(details))}</td></tr>`;
     }).join('')}</tbody></table>`;
+}
+
+function getAuditReportStaffLabel(event = {}) {
+  const details = event?.details || {};
+  const candidates = [
+    details.staffName,
+    details.changedBy,
+    details.actorName,
+    details.userName,
+    event?.staffName,
+    event?.staffId,
+    event?.userId,
+    currentLoggedInStaffName,
+    currentUser?.displayName,
+    currentUser?.email,
+    'system'
+  ];
+
+  const rawValue = candidates.find(value => value !== undefined && value !== null && String(value).trim() !== '');
+  const value = String(rawValue ?? 'system').trim();
+
+  if (!value || value === 'system') return 'System';
+  if (value.includes('@') || value.length >= 24) {
+    const matchedStaff = Array.isArray(staff)
+      ? staff.find(member => {
+          const staffName = String(member?.name || '').trim();
+          const staffEmail = String(member?.email || '').trim();
+          const staffUid = String(member?.uid || '').trim();
+          const staffId = String(member?.id || '').trim();
+          return [staffName, staffEmail, staffUid, staffId].some(candidate => candidate && candidate.toLowerCase() === value.toLowerCase());
+        })
+      : null;
+    if (matchedStaff?.name) return matchedStaff.name;
+  }
+
+  return value;
 }
 
 function getAuditReportRowActionText(event = {}) {
@@ -372,6 +451,20 @@ function renderAuditReportTable() {
   const body = document.getElementById('auditReportTableBody');
   if (!body) return;
 
+  const retentionBadge = document.getElementById('auditRetentionBadge');
+  if (retentionBadge) {
+    retentionBadge.textContent = `Retention: 7 days • ${formatAuditRetentionCountdown()}`;
+  }
+
+  if (!window.__auditRetentionTimer) {
+    window.__auditRetentionTimer = setInterval(() => {
+      const liveBadge = document.getElementById('auditRetentionBadge');
+      if (liveBadge) {
+        liveBadge.textContent = `Retention: 7 days • ${formatAuditRetentionCountdown()}`;
+      }
+    }, 60000);
+  }
+
   const search = (document.getElementById('auditReportSearch')?.value || '').trim().toLowerCase();
   const actionFilter = document.getElementById('auditReportActionFilter')?.value || 'all';
   const staffFilter = document.getElementById('auditReportStaffFilter')?.value || 'all';
@@ -381,7 +474,7 @@ function renderAuditReportTable() {
   const filteredRows = rows.filter(event => {
     const details = event?.details || {};
     const eventName = getAuditReportRowActionText(event).toLowerCase();
-    const staffName = String(details.changedBy || event?.staffId || event?.userId || 'system').trim().toLowerCase();
+    const staffName = String(getAuditReportStaffLabel(event)).trim().toLowerCase();
     const description = getAuditReportRowDescription(event).toLowerCase();
     const dateValue = new Date(event?.timestamp || event?.createdAt || 0);
     const dateKey = Number.isFinite(dateValue.getTime()) ? dateValue.toISOString().slice(0, 10) : '';
@@ -395,7 +488,7 @@ function renderAuditReportTable() {
   });
 
   if (filteredRows.length === 0) {
-    body.innerHTML = '<tr><td colspan="8" class="u-text-center" style="padding: 16px; color: var(--text-muted);">No audit records match the current filters.</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" class="u-text-center" style="padding: 16px; color: var(--text-muted);">No audit records match the current filters.</td></tr>';
     return;
   }
 
@@ -404,9 +497,7 @@ function renderAuditReportTable() {
     const details = event?.details || {};
     const timestamp = new Date(event?.timestamp || event?.createdAt || Date.now());
     const action = getAuditReportRowActionText(event);
-    const description = getAuditReportRowDescription(event);
-    const staffName = details.changedBy || event?.staffId || event?.userId || 'system';
-    const entity = details.entity || event?.entity || '-';
+    const staffName = getAuditReportStaffLabel(event);
     const dateLabel = timestamp.toLocaleDateString();
     const timeLabel = timestamp.toLocaleTimeString([], options);
 
@@ -416,15 +507,6 @@ function renderAuditReportTable() {
         <td>${escapeHtml(timeLabel)}</td>
         <td>${escapeHtml(staffName)}</td>
         <td>${escapeHtml(action)}</td>
-        <td>${escapeHtml(entity)}</td>
-        <td style="max-width: 260px; white-space: normal;">${escapeHtml(description)}</td>
-        <td>${escapeHtml(String(details.result || ''))}</td>
-        <td>
-          <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
-            <button class="btn btn-info u-m-0" style="padding:6px 8px;" onclick="viewAuditRecord('${escapeHtml(getAuditReportIdentifier(event)).replace(/'/g, "\\'")}')">View</button>
-            <button class="btn btn-secondary u-m-0" style="padding:6px 8px;" onclick="copyAuditRecord('${escapeHtml(getAuditReportIdentifier(event)).replace(/'/g, "\\'")}')">Copy</button>
-          </div>
-        </td>
       </tr>
     `;
   }).join('');
@@ -450,16 +532,26 @@ function populateAuditReportFilters() {
 function viewAuditRecord(recordId) {
   const event = (Array.isArray(auditTrail) ? auditTrail : []).find(entry => getAuditReportIdentifier(entry) === recordId);
   if (!event) return;
+
   const details = event?.details || {};
-  const raw = {
-    id: event?.id || recordId,
-    type: event?.type || event?.eventType || 'audit',
-    timestamp: event?.timestamp || event?.createdAt || new Date().toISOString(),
-    staffId: event?.staffId || details.staffId || 'system',
-    userId: event?.userId || details.userId || 'system',
-    details
-  };
-  showAppAlert(`<pre style="white-space: pre-wrap; word-break: break-word; font-size: 0.8em; margin: 0;">${escapeHtml(JSON.stringify(raw, null, 2))}</pre>`, 'Audit Record Details');
+  const timestamp = new Date(event?.timestamp || event?.createdAt || Date.now());
+  const lines = [
+    ['Staff', getAuditReportStaffLabel(event)],
+    ['Action', getAuditReportRowActionText(event)],
+    ['Time', timestamp.toLocaleString()],
+    ['Entity', String(details.entity || event?.entity || '—')],
+    ['Result', String(details.result || '—')],
+    ['Description', getAuditReportRowDescription(event)]
+  ];
+
+  const content = lines.map(([label, value]) => `
+    <div style="display:flex; gap:10px; border-bottom:1px solid rgba(0,0,0,0.08); padding:6px 0;">
+      <div style="width: 110px; font-weight: 600; color: #555;">${escapeHtml(label)}</div>
+      <div style="flex:1; white-space: pre-wrap; word-break: break-word; color: #222;">${escapeHtml(String(value || '—'))}</div>
+    </div>
+  `).join('');
+
+  showAppAlert(`<div style="max-width: 600px; min-width: 320px; font-size: 0.88em;">${content}</div>`, 'Audit Record Summary');
 }
 
 function copyAuditRecord(recordId) {
@@ -517,8 +609,24 @@ async function clearAuditLog() {
   if (!confirmed?.confirmed) return;
 
   auditTrail = [];
+
+  const searchInput = document.getElementById('auditReportSearch');
+  const actionFilter = document.getElementById('auditReportActionFilter');
+  const staffFilter = document.getElementById('auditReportStaffFilter');
+  const dateFilter = document.getElementById('auditReportDateFilter');
+  if (searchInput) searchInput.value = '';
+  if (actionFilter) actionFilter.value = 'all';
+  if (staffFilter) staffFilter.value = 'all';
+  if (dateFilter) dateFilter.value = '';
+
+  const tableBody = document.getElementById('auditReportTableBody');
+  if (tableBody) {
+    tableBody.innerHTML = '<tr><td colspan="5" class="u-text-center" style="padding: 16px; color: var(--text-muted);">No audit records available.</td></tr>';
+  }
+
   try {
     await persistAuditTrail();
+    await saveState('auditTrail', [], { enqueueSync: false }).catch(() => {});
     if (typeof localStorage !== 'undefined') {
       localStorage.removeItem('yoshop_audit_trail_backup');
     }
@@ -526,9 +634,15 @@ async function clearAuditLog() {
     console.warn('Failed to persist cleared audit log:', error);
   }
 
-  if (document.getElementById('auditReportTableBody')) {
+  if (tableBody) {
+    populateAuditReportFilters();
     renderAuditReportTable();
   }
+
+  if (typeof renderAuditTrail === 'function') {
+    renderAuditTrail();
+  }
+
   if (typeof showAppAlert === 'function') {
     await showAppAlert('Audit log cleared successfully.', 'Audit Log Cleared');
   }
@@ -595,6 +709,7 @@ function getButtonActionPermission(button) {
 
 async function persistAuditTrail() {
   try {
+    auditTrail = limitAuditTrail(pruneExpiredAuditEntries(auditTrail, AUDIT_RETENTION_MS), 500);
     await saveState('auditTrail', auditTrail || []);
   } catch (error) {
     console.warn('Audit trail persistence failed:', error);
@@ -3125,7 +3240,10 @@ function initAppAdminDashboardLayout() {
         <h3 class="u-mb-20">📋 Staff Audit Report</h3>
         <div class="form-panel u-mb-20">
           <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
-            <h4 class="u-m-0">Audit Activity Log</h4>
+            <div style="display:flex; flex-direction:column; gap:4px;">
+              <h4 class="u-m-0">Audit Activity Log</h4>
+              <div id="auditRetentionBadge" style="font-size:0.8em; color:var(--text-muted); font-weight:600;">Retention: 7 days • 7d 0h 0m remaining</div>
+            </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
               <button class="btn btn-info u-m-0" onclick="exportAuditReportCsv()">⬇️ Export CSV</button>
               <button class="btn btn-danger u-m-0" onclick="clearAuditLog()">🧹 Clear Audit Log</button>
@@ -3138,21 +3256,17 @@ function initAppAdminDashboardLayout() {
             <input id="auditReportDateFilter" type="date" style="width:100%;" onchange="renderAuditReportTable()">
           </div>
           <div class="u-overflow-x-auto">
-            <table class="u-w-full table-excel" style="min-width: 1000px;">
+            <table class="u-w-full table-excel" style="min-width: 800px;">
               <thead>
                 <tr>
                   <th>Date</th>
                   <th>Time</th>
                   <th>Staff</th>
                   <th>Action</th>
-                  <th>Entity</th>
-                  <th>Description</th>
-                  <th>Result</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody id="auditReportTableBody">
-                <tr><td colspan="8" class="u-text-center" style="padding:16px; color: var(--text-muted);">Loading audit events...</td></tr>
+                <tr><td colspan="4" class="u-text-center" style="padding:16px; color: var(--text-muted);">Loading audit events...</td></tr>
               </tbody>
             </table>
           </div>
@@ -16919,6 +17033,10 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
     ...(localData[13] || {})
   };
   auditTrail = Array.isArray(localData[14]) ? localData[14] : [];
+  auditTrail = pruneExpiredAuditEntries(auditTrail, AUDIT_RETENTION_MS);
+  if (auditTrail.length !== (Array.isArray(localData[14]) ? localData[14].length : 0)) {
+    persistAuditTrail().catch(() => {});
+  }
 
   settings = normalizeSettings(settings, defaultSettings);
   applyTheme();
@@ -17058,7 +17176,7 @@ async function mainInit() {
       ...defaultAppAdminSettings,
       ...(localData[13] || {})
     };
-    auditTrail = Array.isArray(localData[14]) ? localData[14] : [];
+    auditTrail = limitAuditTrail(pruneExpiredAuditEntries(Array.isArray(localData[14]) ? localData[14] : [], AUDIT_RETENTION_MS), 500);
 
     // START UI IMMEDIATELY
     settings = normalizeSettings(settings, defaultSettings);
@@ -19669,7 +19787,7 @@ Object.assign(window, {
   clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage,
   toggleAdminAccessForm, saveAdminAccessEntry, editAdminAccessEntry, deleteAdminAccessEntry, toggleAdminAccessStatus, clearYoShopLocalData, resetLocalDatabase,
   refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, clearBrokenTenantLogo, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus, sendAdminWhatsApp,
-  switchAppAdminView, updateTargetUserStatus, updateTargetSubscription, updateTargetSubscriptionDate, setFreePlan, updateTargetShopSubscriptionState, generateAutoBarcode, toggleReportCategoryDropdown
+  switchAppAdminView, viewAuditRecord, copyAuditRecord, updateTargetUserStatus, updateTargetSubscription, updateTargetSubscriptionDate, setFreePlan, updateTargetShopSubscriptionState, generateAutoBarcode, toggleReportCategoryDropdown
   , toggleReportOptionsDropdown, changeReportZoom,
 
   // PRODUCTION: Monitoring & Debugging (Available in console)
