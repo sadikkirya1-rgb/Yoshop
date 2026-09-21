@@ -8721,10 +8721,6 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   let subtotal = hasStoredSubtotal ? Number(source.subtotal ?? source.subTotal ?? 0) : 0;
   let grandTotal = Number(source.total ?? source.grandTotal ?? source.amount ?? 0);
   let balance = Number(source.balance ?? source.outstandingBalance ?? 0);
-  const MAX_ITEMS_PER_A4_PAGE = 10;
-  const itemPages = rawItems.length > 0
-    ? Array.from({ length: Math.ceil(rawItems.length / MAX_ITEMS_PER_A4_PAGE) }, (_, pageIndex) => rawItems.slice(pageIndex * MAX_ITEMS_PER_A4_PAGE, (pageIndex + 1) * MAX_ITEMS_PER_A4_PAGE))
-    : [[]];
 
   const taxAmount = Number(source.taxAmount ?? source.tax ?? source.vatAmount ?? source.vat ?? 0);
   if (!hasStoredSubtotal && rawItems.length > 0) {
@@ -8755,99 +8751,99 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const transactionId = String(source.id || source.transactionId || source.recordId || source.invoiceNumber || source.date || '').trim();
   const barcodeImgUrl = getBarcodeDataUrl(transactionId || invoiceNumber);
   const barcodeHtml = barcodeImgUrl ? `<div style="text-align:center; margin: 18px 0 8px;"><img src="${barcodeImgUrl}" style="width: 85%; max-height: 60px;"></div>` : '';
+  const invoiceScale = Math.max(0.72, Math.min(1, 1 - Math.max(0, rawItems.length - 10) * 0.04));
 
-  const pagesHtml = itemPages.map((pageItems, pageIndex) => {
-    const isLastPage = pageIndex === itemPages.length - 1;
-    const pageRowsHtml = pageItems.length > 0 ? pageItems.map((item, offset) => {
-      const globalIndex = (pageIndex * MAX_ITEMS_PER_A4_PAGE) + offset + 1;
-      const name = escapeHtml(item?.name || item?.productName || item?.itemName || 'Item');
-      const qty = Number(item?.qty || item?.quantity || 1);
-      const price = Number(item?.price || item?.unitPrice || item?.cost || 0);
-      const total = qty * price;
-      return `
-        <tr>
-          <td>${globalIndex}</td>
-          <td>${name}</td>
-          <td>${qty}</td>
-          <td>${currencySymbol}${formatCurrency(price)}</td>
-          <td>${currencySymbol}${formatCurrency(total)}</td>
-        </tr>`;
-    }).join('') : `
-        <tr>
-          <td colspan="5" style="text-align:center; color:#64748b;">No items available</td>
-        </tr>`;
-
-    const showSummaryOnThisPage = isLastPage || pageIndex === 0;
-    const summaryHtml = showSummaryOnThisPage ? `
-      <div class="summary ${isLastPage ? 'last-page-summary' : ''}">
-        <table>
-          <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
-          <tr><td>Discount</td><td align="right">${discountText}</td></tr>
-          <tr><td>Delivery Fee</td><td align="right">${deliveryFeeText}</td></tr>
-          <tr><td>VAT</td><td align="right">${taxText}</td></tr>
-          ${adjustmentRowsHtml}
-          <tr><td>Amount Paid</td><td align="right">${paidText}</td></tr>
-          <tr><td>Balance</td><td align="right">${balanceText}</td></tr>
-          <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
-        </table>
-      </div>
-    ` : '';
-
+  const pageRowsHtml = rawItems.length > 0 ? rawItems.map((item, offset) => {
+    const name = escapeHtml(item?.name || item?.productName || item?.itemName || 'Item');
+    const qty = Number(item?.qty || item?.quantity || 1);
+    const price = Number(item?.price || item?.unitPrice || item?.cost || 0);
+    const total = qty * price;
     return `
-      <div class="invoice-page">
-        <div class="header">
-          <div class="logo">
-            ${logoHtml}
-            <div>
-              <h1>${storeName.toUpperCase()}</h1>
-              <p>${storeAddress}</p>
-            </div>
-          </div>
-          <div class="invoice-title">
-            <h2>INVOICE</h2>
-            <div><b>${invoiceNumber}</b></div>
-            <div>${invoiceDate}</div>
+      <tr>
+        <td>${offset + 1}</td>
+        <td>${name}</td>
+        <td>${qty}</td>
+        <td>${currencySymbol}${formatCurrency(price)}</td>
+        <td>${currencySymbol}${formatCurrency(total)}</td>
+      </tr>`;
+  }).join('') : `
+      <tr>
+        <td colspan="5" style="text-align:center; color:#64748b;">No items available</td>
+      </tr>`;
+
+  const summaryHtml = `
+    <div class="summary last-page-summary">
+      <table>
+        <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
+        <tr><td>Discount</td><td align="right">${discountText}</td></tr>
+        <tr><td>Delivery Fee</td><td align="right">${deliveryFeeText}</td></tr>
+        <tr><td>VAT</td><td align="right">${taxText}</td></tr>
+        ${adjustmentRowsHtml}
+        <tr><td>Amount Paid</td><td align="right">${paidText}</td></tr>
+        <tr><td>Balance</td><td align="right">${balanceText}</td></tr>
+        <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
+      </table>
+    </div>
+  `;
+
+  const pagesHtml = `
+    <div class="invoice-page">
+      <div class="header">
+        <div class="logo">
+          ${logoHtml}
+          <div>
+            <h1>${storeName.toUpperCase()}</h1>
+            <p>${storeAddress}</p>
           </div>
         </div>
-        <div class="content invoice-page-content">
-          <div class="cards">
-            <div class="card">
-              <h3>Customer</h3>
-              <p>${safeCustomerName}</p>
-              <p>${safeCustomerPhone || '—'}</p>
-              <p>${safeCustomerAddress || '—'}</p>
-            </div>
-            <div class="card">
-              <h3>Payment</h3>
-              <p>Invoice Type: <b>${safeReceiptType}</b></p>
-              <p>Method: <b>${safePaymentMethod}</b></p>
-              <p>Status: <span class="badge">${safePaymentStatus}</span></p>
-              <p>Served By: <b>${safeServedBy}</b></p>
-              ${showServiceModeStatus ? `<p>Order Status: <b>${safeOrderStatus}</b></p>` : ''}
-              ${serviceTypeHtml}
-              <p>Amount Paid: <b>${paidText}</b></p>
-              <p>Balance: <b>${balanceText}</b></p>
-            </div>
-            ${showServiceModeStatus ? `<div class="card"><h3>Service Order</h3>${serviceTypeHtml}${serviceOrder.pickupDate ? `<p>Pickup: <b>${escapeHtml(serviceOrder.pickupDate)}</b></p>` : ''}${serviceOrder.dropoffDate ? `<p>Dropoff: <b>${escapeHtml(serviceOrder.dropoffDate)}</b></p>` : ''}${serviceOrder.duration ? `<p>Duration: <b>${escapeHtml(serviceOrder.duration)}</b></p>` : ''}${serviceOrder.notes ? `<p>Notes: <b>${escapeHtml(serviceOrder.notes)}</b></p>` : ''}</div>` : ''}
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Product</th>
-                <th>Qty</th>
-                <th>Price</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody>${pageRowsHtml}</tbody>
-          </table>
-          ${summaryHtml}
-          ${isLastPage ? `<div class="footer">...` : ''}
+        <div class="invoice-title">
+          <h2>INVOICE</h2>
+          <div><b>${invoiceNumber}</b></div>
+          <div>${invoiceDate}</div>
         </div>
       </div>
-    `;
-  }).join('');
+      <div class="content invoice-page-content">
+        <div class="cards">
+          <div class="card">
+            <h3>Customer</h3>
+            <p>${safeCustomerName}</p>
+            <p>${safeCustomerPhone || '—'}</p>
+            <p>${safeCustomerAddress || '—'}</p>
+          </div>
+          <div class="card">
+            <h3>Payment</h3>
+            <p>Invoice Type: <b>${safeReceiptType}</b></p>
+            <p>Method: <b>${safePaymentMethod}</b></p>
+            <p>Status: <span class="badge">${safePaymentStatus}</span></p>
+            <p>Served By: <b>${safeServedBy}</b></p>
+            ${showServiceModeStatus ? `<p>Order Status: <b>${safeOrderStatus}</b></p>` : ''}
+            ${serviceTypeHtml}
+            <p>Amount Paid: <b>${paidText}</b></p>
+            <p>Balance: <b>${balanceText}</b></p>
+          </div>
+          ${showServiceModeStatus ? `<div class="card"><h3>Service Order</h3>${serviceTypeHtml}${serviceOrder.pickupDate ? `<p>Pickup: <b>${escapeHtml(serviceOrder.pickupDate)}</b></p>` : ''}${serviceOrder.dropoffDate ? `<p>Dropoff: <b>${escapeHtml(serviceOrder.dropoffDate)}</b></p>` : ''}${serviceOrder.duration ? `<p>Duration: <b>${escapeHtml(serviceOrder.duration)}</b></p>` : ''}${serviceOrder.notes ? `<p>Notes: <b>${escapeHtml(serviceOrder.notes)}</b></p>` : ''}</div>` : ''}
+        </div>
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Product</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Total</th>
+            </tr>
+          </thead>
+          <tbody>${pageRowsHtml}</tbody>
+        </table>
+        ${summaryHtml}
+        <div class="footer">
+          <p>${safeNote}</p>
+          ${safePromoMessage ? `<div class="promo">${safePromoMessage}</div>` : ''}
+          ${barcodeHtml}
+        </div>
+      </div>
+    </div>
+  `;
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -8859,9 +8855,8 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     :root { --primary-light: #ff6b35; --primary-hover-light: #ff854f; --bg-light: #f0f2f5; --card-light: #fff; --text-light: #333; --border-light: #eee; --primary-dark: #ff854f; --primary-hover-dark: #ff6b35; --primary: #ff6b35; --primary-hover: #ff854f; --secondary:#10b981; --light:#f8fafc; --border:#dbe4ee; --text:#334155; }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', Arial, sans-serif; }
     body { background:#edf2f7; padding:8px; color:var(--text); }
-    .invoice-page { width:210mm; min-height:297mm; background:white; margin:0 auto 18px; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(0,0,0,.15); page-break-after:always; }
-    .invoice-page:last-child { page-break-after:auto; margin-bottom:0; }
-    .header { background:linear-gradient(135deg,#2563eb,#1d4ed8,#10b981); color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; }
+    .invoice-page { --invoice-scale:${invoiceScale}; width:210mm; min-height:297mm; background:white; margin:0 auto; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(0,0,0,.15); page-break-after:auto; break-after:auto; display:flex; flex-direction:column; transform:scale(var(--invoice-scale)); transform-origin:top center; }
+    .header { background:linear-gradient(135deg,#2563eb,#1d4ed8,#10b981); color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; page-break-inside:avoid; break-inside:avoid; }
     .logo { display:flex; align-items:center; gap:10px; }
     .logo-circle { width:46px; height:46px; background:white; color:#2563eb; border-radius:50%; display:flex; justify-content:center; align-items:center; font-size:24px; font-weight:bold; }
     .logo h1 { font-size:20px; }
@@ -8916,12 +8911,31 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .btn:hover { background: var(--primary-hover); }
     .u-fs-08 { font-size: 0.85rem; }
     @media print {
-      html,body { background:white; padding:0; height:297mm; }
+      html,body { background:white; padding:0 !important; margin:0 !important; width:100%; height:100%; }
       body { margin:0; }
       .actions, .preview-controls { display:none !important; }
-      .invoice { box-shadow:none; border-radius:0; margin:0 auto; page-break-after:avoid; page-break-inside:avoid; }
-      table, thead, tbody, tr, td, th { page-break-inside:avoid; }
-      @page { size:A4; margin:10mm; }
+      #preview-zoom-wrapper { width:100%; display:block; }
+      .preview-inner { width:210mm; height:297mm; overflow:hidden; display:block; }
+      .invoice-page {
+        width:210mm;
+        min-height:297mm;
+        max-height:297mm;
+        height:297mm;
+        margin:0;
+        border-radius:0;
+        box-shadow:none;
+        overflow:hidden;
+        transform:none;
+        page-break-inside:avoid;
+        break-inside:avoid;
+        page-break-after:avoid;
+        break-after:avoid;
+      }
+      .header, .content, .summary, table, thead, tbody, tr, td, th {
+        page-break-inside:avoid;
+        break-inside:avoid;
+      }
+      @page { size:A4; margin:0; }
     }
   </style>
   <script>
