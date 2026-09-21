@@ -8777,8 +8777,9 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
           <td colspan="5" style="text-align:center; color:#64748b;">No items available</td>
         </tr>`;
 
-    const summaryHtml = isLastPage ? `
-      <div class="summary last-page-summary">
+    const showSummaryOnThisPage = isLastPage || pageIndex === 0;
+    const summaryHtml = showSummaryOnThisPage ? `
+      <div class="summary ${isLastPage ? 'last-page-summary' : ''}">
         <table>
           <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
           <tr><td>Discount</td><td align="right">${discountText}</td></tr>
