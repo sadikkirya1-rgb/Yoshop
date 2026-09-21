@@ -187,11 +187,12 @@ let logoutInProgress = false;
 
 function getNormalizedRole(role = currentUserRole) {
   const normalized = String(role || '').trim().toLowerCase();
-  if (normalized === 'appadmin') return 'appAdmin';
-  if (normalized === 'shopadmin') return 'shopAdmin';
-  if (normalized === 'admin') return 'shopAdmin'; // old data fallback
-  if (normalized === 'manager') return 'shopAdmin'; // old data fallback
-  if (normalized === 'staff') return 'staff';
+  const compact = normalized.replace(/\s+/g, '');
+
+  if (compact === 'appadmin' || normalized === 'app admin') return 'appAdmin';
+  if (compact === 'shopadmin' || normalized === 'shop admin') return 'shopAdmin';
+  if (compact === 'admin' || compact === 'manager') return 'shopAdmin'; // legacy fallback
+  if (compact === 'staff') return 'staff';
   return normalized || 'staff';
 }
 
@@ -524,7 +525,7 @@ function renderAuditReportTable() {
       return normalized === 'system' || normalized === 'sadik kirya' || normalized === 'sadikkirya' || normalized === 'sadikkirya@gmail.com' || normalized === MASTER_APP_ADMIN_UID || normalized === (currentUser?.uid || '').toLowerCase();
     })();
 
-    if (isAppAdminAuditRow) {
+    if (!isAppAdminRole() && isAppAdminAuditRow) {
       return false;
     }
 
@@ -560,7 +561,7 @@ function renderAuditReportTable() {
         <td>${escapeHtml(dateLabel)}</td>
         <td>${escapeHtml(timeLabel)}</td>
         <td>${escapeHtml(staffName)}</td>
-        <td>${escapeHtml(action)}</td>
+        <td>${escapeHtml(action || 'Audit entry')}</td>
       </tr>
     `;
   }).join('');
@@ -3306,7 +3307,7 @@ function initAppAdminDashboardLayout() {
             <input id="auditReportDateFilter" type="date" style="width:100%;" onchange="renderAuditReportTable()">
           </div>
           <div class="u-overflow-x-auto">
-            <table class="u-w-full table-excel" style="min-width: 800px;">
+            <table class="u-w-full table-excel audit-report-table" style="min-width: 800px;">
               <thead>
                 <tr>
                   <th>Date</th>
@@ -11986,6 +11987,12 @@ function renderBestSellingItemsChart(sourceTransactions = transactions) {
   const backgroundColors = (labels.length > 0 ? labels : ['No data yet']).map((_, index) =>
     labels.length > 0 ? basePalette[index % basePalette.length] : 'rgba(148, 163, 184, 0.35)'
   );
+  const compactLabel = (value) => {
+    if (!value) return '';
+    const text = String(value).trim();
+    if (text.length <= 2) return text.toUpperCase();
+    return text.slice(0, 2).toUpperCase();
+  };
 
   bestSellingItemsChartInstance = new Chart(ctx, {
     type: 'bar',
@@ -11998,7 +12005,8 @@ function renderBestSellingItemsChart(sourceTransactions = transactions) {
         borderColor: 'rgba(15, 23, 42, 0.06)',
         borderWidth: 1,
         borderRadius: 8,
-        maxBarThickness: 32
+        maxBarThickness: 18,
+        barThickness: 12
       }]
     },
     options: {
@@ -12009,9 +12017,10 @@ function renderBestSellingItemsChart(sourceTransactions = transactions) {
           border: { display: false },
           ticks: {
             color: '#475569',
-            font: { size: 10, weight: '500' },
+            font: { size: 9, weight: '600' },
             maxRotation: 0,
-            autoSkip: true
+            autoSkip: true,
+            callback: (value) => compactLabel(labels[value] || value)
           }
         },
         y: {
@@ -12256,6 +12265,13 @@ function renderDashboardChart() {
     categoryChartInstance.destroy();
   }
 
+  const compactLabel = (value) => {
+    if (!value) return '';
+    const text = String(value).trim();
+    if (text.length <= 2) return text.toUpperCase();
+    return text.slice(0, 2).toUpperCase();
+  };
+
   // Always render chart, even with empty data (shows zero state)
   categoryChartInstance = new Chart(ctx, {
     type: 'bar',
@@ -12269,7 +12285,8 @@ function renderDashboardChart() {
         borderWidth: 1,
         borderRadius: 8,
         borderSkipped: false,
-        barThickness: 18
+        barThickness: 12,
+        maxBarThickness: 18
       }]
     },
     options: {
@@ -12278,7 +12295,11 @@ function renderDashboardChart() {
         x: {
           grid: { display: false, drawBorder: false },
           border: { display: false },
-          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
+          ticks: {
+            color: '#475569',
+            font: { size: 9, weight: '600' },
+            callback: (value) => compactLabel(labels[value] || value)
+          }
         },
         y: {
           beginAtZero: true,

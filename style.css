@@ -1091,6 +1091,11 @@ table {
   background: rgba(255, 107, 53, 0.1);
 }
 
+.audit-report-table th,
+.audit-report-table td {
+  text-align: center;
+}
+
 .admin-subscriptions-table {
   width: max-content;
   min-width: 1400px;
