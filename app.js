@@ -376,7 +376,7 @@ function renderAuditTrail() {
     ? '<p class="u-fs-08 u-text-muted">No audit events yet.</p>'
     : `<table class="table-excel"><thead><tr><th>Date</th><th>Who</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead><tbody>${rows.map(event => {
       const details = event.details || {};
-      const who = details.changedBy || event.staffId || event.userId || 'system';
+      const who = resolveAuditDisplayWho(event);
       return `<tr><td>${escapeHtml(new Date(event.timestamp).toLocaleString())}</td><td>${escapeHtml(who)}</td><td>${escapeHtml(event.type || event.eventType || '')}</td><td>${escapeHtml(details.entity || '')}</td><td>${escapeHtml(JSON.stringify(details))}</td></tr>`;
     }).join('')}</tbody></table>`;
 }
@@ -391,6 +391,8 @@ function getAuditReportStaffLabel(event = {}) {
     event?.staffName,
     event?.staffId,
     event?.userId,
+    details.staffId,
+    details.userId,
     currentLoggedInStaffName,
     currentUser?.displayName,
     currentUser?.email,
@@ -401,21 +403,53 @@ function getAuditReportStaffLabel(event = {}) {
   const value = String(rawValue ?? 'system').trim();
 
   if (!value || value === 'system') return 'System';
-  if (value.includes('@') || value.length >= 24) {
-    const matchedStaff = Array.isArray(staff)
-      ? staff.find(member => {
-          const staffName = String(member?.name || '').trim();
-          const staffEmail = String(member?.email || '').trim();
-          const staffUid = String(member?.uid || '').trim();
-          const staffId = String(member?.id || '').trim();
-          return [staffName, staffEmail, staffUid, staffId].some(candidate => candidate && candidate.toLowerCase() === value.toLowerCase());
-        })
-      : null;
-    if (matchedStaff?.name) return matchedStaff.name;
+
+  const shopOwnerUid = String(getEffectiveUid?.() || currentUser?.uid || '').trim();
+  const adminUidCandidates = new Set([
+    MASTER_APP_ADMIN_UID,
+    shopOwnerUid,
+    String(currentUser?.uid || '').trim(),
+    String(currentUser?.email || '').trim()
+  ].filter(Boolean));
+
+  const matchedStaff = Array.isArray(staff)
+    ? staff.find(member => {
+        const staffName = String(member?.name || '').trim();
+        const staffEmail = String(member?.email || '').trim();
+        const staffUid = String(member?.uid || '').trim();
+        const staffUserId = String(member?.userId || '').trim();
+        const staffId = String(member?.id || member?.recordId || '').trim();
+        const staffIdentifiers = [staffName, staffEmail, staffUid, staffUserId, staffId];
+        return staffIdentifiers.some(candidate => candidate && candidate.toLowerCase() === value.toLowerCase());
+      })
+    : null;
+
+  if (matchedStaff?.name) return matchedStaff.name;
+
+  const legacyOnlyStaff = Array.isArray(staff)
+    ? staff.find(member => {
+        const entryName = String(member?.name || '').trim();
+        const entryEmail = String(member?.email || '').trim();
+        const entryUid = String(member?.uid || '').trim();
+        const entryUserId = String(member?.userId || '').trim();
+        const expectedPatterns = [entryName, entryEmail, entryUid, entryUserId];
+        return expectedPatterns.some(candidate => candidate && value.toLowerCase().includes(candidate.toLowerCase()));
+      })
+    : null;
+
+  if (legacyOnlyStaff?.name) return legacyOnlyStaff.name;
+
+  if (adminUidCandidates.has(value) || (value.length >= 20 && !value.includes('@'))) {
+    return 'Shop Admin';
   }
 
   return value;
 }
+
+function resolveAuditDisplayWho(event = {}) {
+  return getAuditReportStaffLabel(event);
+}
+
 
 function getAuditReportRowActionText(event = {}) {
   const details = event?.details || {};
@@ -518,7 +552,7 @@ function populateAuditReportFilters() {
   const dateInput = document.getElementById('auditReportDateFilter');
   if (!staffSelect || !actionSelect || !dateInput) return;
 
-  const staffNames = Array.from(new Set((Array.isArray(auditTrail) ? auditTrail : []).map(event => String(event?.details?.changedBy || event?.staffId || event?.userId || 'system').trim()).filter(Boolean)));
+  const staffNames = Array.from(new Set((Array.isArray(auditTrail) ? auditTrail : []).map(event => getAuditReportStaffLabel(event)).filter(Boolean)));
   const actions = Array.from(new Set((Array.isArray(auditTrail) ? auditTrail : []).map(event => getAuditReportRowActionText(event)).filter(Boolean)));
 
   staffSelect.innerHTML = '<option value="all">All Staff</option>' + staffNames.map(name => `<option value="${escapeHtml(name.toLowerCase())}">${escapeHtml(name)}</option>`).join('');
@@ -721,7 +755,7 @@ const SHARED_RECORD_LOCK_TTL_MS = 60000;
 let actionPermissionObserver = null;
 
 function getCurrentLockingStaffId() {
-  return currentLoggedInStaffName || currentUser?.uid || 'system';
+  return currentLoggedInStaffName || currentUser?.displayName || currentUser?.email || 'system';
 }
 
 function tryAcquireSharedRecordLock(entityType, recordId, options = {}) {
@@ -759,7 +793,7 @@ function getCurrentDeviceId() {
 }
 
 function getCurrentStaffId() {
-  return currentLoggedInStaffName || currentUser?.uid || 'system';
+  return currentLoggedInStaffName || currentUser?.displayName || currentUser?.email || 'system';
 }
 
 function getSyncMetadataContext() {
