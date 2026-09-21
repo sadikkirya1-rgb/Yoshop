@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from '../invoice-utils.mjs';
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [
@@ -12,6 +12,18 @@ test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   assert.deepEqual(filterInvoiceRowsByStatus(rows, 'pending').map(row => row.balance), [-50, 25]);
   assert.deepEqual(filterInvoiceRowsByStatus(rows, 'paid').map(row => row.balance), [0]);
   assert.deepEqual(filterInvoiceRowsByStatus(rows, 'all').map(row => row.balance), [-50, 0, 25]);
+});
+
+test('filterInvoiceRowsBySalesBy keeps only rows from the selected sales staff', () => {
+  const rows = [
+    { balance: 0, transaction: { servedBy: 'Alice' } },
+    { balance: 0, transaction: { servedBy: 'Bob' } },
+    { balance: 0, transaction: { servedBy: 'Alice' } }
+  ];
+
+  assert.deepEqual(filterInvoiceRowsBySalesBy(rows, 'Alice').map(row => row.transaction.servedBy), ['Alice', 'Alice']);
+  assert.deepEqual(filterInvoiceRowsBySalesBy(rows, 'all').map(row => row.transaction.servedBy), ['Alice', 'Bob', 'Alice']);
+  assert.deepEqual(filterInvoiceRowsBySalesBy(rows, 'Charlie').map(row => row.transaction.servedBy), []);
 });
 
 test('buildInvoiceListItems keeps separate debt transactions for the same customer', () => {

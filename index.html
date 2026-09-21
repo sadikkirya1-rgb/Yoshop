@@ -107,8 +107,8 @@
         <p class="u-fs-08 u-text-muted" style="margin:4px 0 0;">Messages from App Admin, delivered to your shop.</p>
       </div>
       <div style="display:flex; gap:8px; align-items:center;">
-        <button class="btn btn-secondary" onclick="markAllNoticesRead()">Mark All Read</button>
-        <button class="btn" onclick="closeNoticesPage()">Close</button>
+        <button class="btn btn-secondary" onclick="markAllNoticesRead()">✅ Mark All Read</button>
+        <button class="btn" onclick="closeNoticesPage()">✖️ Close</button>
       </div>
     </div>
     <div id="noticesPageList" style="padding:12px;">
@@ -134,10 +134,10 @@
         </div>
       </div>
       <div class="receipt-actions">
-        <button class="btn" onclick="addSplitBill()">+ Add Person</button>
-        <button class="btn" id="processSplitBtn" onclick="processSplitPayments()" class="process-split-btn">Process
+        <button class="btn" onclick="addSplitBill()">➕ Add Person</button>
+        <button class="btn" id="processSplitBtn" onclick="processSplitPayments()" class="process-split-btn">💳 Process
           Payments</button>
-        <button class="btn" onclick="closeSplitBillModal()" class="cancel-btn">Cancel</button>
+        <button class="btn" onclick="closeSplitBillModal()" class="cancel-btn">❌ Cancel</button>
       </div>
     </div>
   </div>
@@ -147,7 +147,7 @@
     <div class="custom-modal-card payment-modal-content transaction-edit-modal-content">
       <h3>Edit Sale</h3>
       <div class="transaction-edit-product-toolbar">
-        <button type="button" class="btn" onclick="toggleTransactionProductForm()">Add Product</button>
+        <button type="button" class="btn" onclick="toggleTransactionProductForm()">➕ Add Product</button>
         <div id="transactionEditProductForm" class="transaction-edit-product-form" hidden>
           <div class="transaction-edit-product-picker">
             <button type="button" id="transactionEditProductSelect" class="transaction-edit-product-select" onclick="toggleTransactionProductDropdown()">Select product</button>
@@ -157,7 +157,7 @@
               <div id="transactionEditProductOptions" class="transaction-edit-product-options"></div>
             </div>
           </div>
-          <button type="button" class="btn btn-success" onclick="addTransactionEditItem()">Add Selected</button>
+          <button type="button" class="btn btn-success" onclick="addTransactionEditItem()">✅ Add Selected</button>
         </div>
       </div>
       <div id="transactionEditItems" class="transaction-edit-items"></div>
@@ -169,8 +169,8 @@
         <div class="transaction-edit-total-cell transaction-edit-total"><span>Total</span><strong id="transactionEditTotal">$0.00</strong></div>
       </div>
       <div class="receipt-actions">
-        <button type="button" class="btn btn-success" onclick="saveTransactionEdit()">Save Changes</button>
-        <button type="button" class="btn cancel-btn" onclick="closeTransactionEditModal()">Cancel</button>
+        <button type="button" class="btn btn-success" onclick="saveTransactionEdit()">💾 Save Changes</button>
+        <button type="button" class="btn cancel-btn" onclick="closeTransactionEditModal()">❌ Cancel</button>
       </div>
     </div>
   </div>
@@ -285,8 +285,8 @@
           <input type="checkbox" id="savePaymentAsDraft" onchange="toggleDraftPaymentFields()">
           Save as Draft
         </label>
-        <button type="button" class="btn confirm-payment-btn" id="confirmPaymentBtn" onclick="handleConfirmPaymentClick()">Confirm Payment</button>
-        <button type="button" class="btn cancel-btn" onclick="document.getElementById('paymentModal').style.display='none'">Cancel</button>
+        <button type="button" class="btn confirm-payment-btn" id="confirmPaymentBtn" onclick="handleConfirmPaymentClick()">✅ Confirm Payment</button>
+        <button type="button" class="btn cancel-btn" onclick="document.getElementById('paymentModal').style.display='none'">❌ Cancel</button>
       </div>
     </div>
   </div>
@@ -297,7 +297,7 @@
       <h3>Scan Barcode</h3>
       <div id="reader"></div>
       <div class="receipt-actions">
-        <button class="btn" onclick="closeCameraScanner()" class="cancel-btn">Close</button>
+        <button class="btn" onclick="closeCameraScanner()" class="cancel-btn">❌ Close</button>
       </div>
     </div>
   </div>
@@ -310,7 +310,7 @@
       <div id="mobileConnectQR" class="mobile-connect-qr"></div>
       <a id="mobileConnectLink" href="#" target="_blank" class="mobile-connect-link">Direct Link</a>
       <div class="receipt-actions">
-        <button class="btn" onclick="closeMobileConnectModal()" class="cancel-btn">Close</button>
+        <button class="btn" onclick="closeMobileConnectModal()" class="cancel-btn">❌ Close</button>
       </div>
     </div>
   </div>
@@ -324,11 +324,11 @@
         <!-- Report content will be cloned here -->
       </div>
       <div class="receipt-actions">
-        <button class="btn btn-primary-blue" onclick="downloadReportPDF('p')">Portrait (A4)</button>
-        <button class="btn btn-primary-blue" onclick="downloadReportPDF('l')">Landscape (A4)</button>
-        <button class="btn btn-info" onclick="exportReportAsImage()">Save as Image</button>
-        <button class="btn btn-success" onclick="exportReportToCSV()">Excel/CSV</button>
-        <button class="btn cancel-btn" onclick="closeReportPreview()">Close</button>
+        <button class="btn btn-primary-blue" onclick="downloadReportPDF('p')">📄 Portrait (A4)</button>
+        <button class="btn btn-primary-blue" onclick="downloadReportPDF('l')">🖼️ Landscape (A4)</button>
+        <button class="btn btn-info" onclick="exportReportAsImage()">💾 Save as Image</button>
+        <button class="btn btn-success" onclick="exportReportToCSV()">📊 Excel/CSV</button>
+        <button class="btn cancel-btn" onclick="closeReportPreview()">❌ Close</button>
       </div>
     </div>
   </div>
@@ -342,17 +342,17 @@
       <div class="input-row" style="align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
         <label for="receiptInvoiceDateTime">Invoice date/time:</label>
         <input type="datetime-local" id="receiptInvoiceDateTime" style="flex:1; min-width:190px;">
-        <button class="btn btn-secondary" type="button" onclick="saveCurrentInvoiceDateTime()">Save Date</button>
+        <button class="btn btn-secondary" type="button" onclick="saveCurrentInvoiceDateTime()">💾 Save Date</button>
       </div>
       <div class="receipt-actions" style="align-items:center; gap:8px; flex-wrap:wrap;">
-        <button class="btn" onclick="downloadCurrentReceiptAsPDF()" class="save-pdf-btn">PDF</button>
-        <button class="btn btn-info" onclick="downloadCurrentReceiptAsJPG()" class="save-jpg-btn">JPG</button>
-        <button class="btn" onclick="shareReceipt()" class="share-btn">Share</button>
-        <button class="btn" onclick="printReceipt()" class="print-btn">Print</button>
-        <button class="btn" onclick="directPrint()" id="directPrintBtn" class="direct-print-btn">Print to
+        <button class="btn" onclick="downloadCurrentReceiptAsPDF()" class="save-pdf-btn">📄 PDF</button>
+        <button class="btn btn-info" onclick="downloadCurrentReceiptAsJPG()" class="save-jpg-btn">🖼️ JPG</button>
+        <button class="btn" onclick="shareReceipt()" class="share-btn">📤 Share</button>
+        <button class="btn" onclick="printReceipt()" class="print-btn">🖨️ Print</button>
+        <button class="btn" onclick="directPrint()" id="directPrintBtn" class="direct-print-btn">🖨️ Print to
           Device</button>
         <button class="btn" onclick="closeReceiptModal()"
-          class="close-modal-btn">Close</button>
+          class="close-modal-btn">❌ Close</button>
       </div>
     </div>
   </div>
@@ -376,7 +376,7 @@
         <button type="button" class="status-btn" data-status="canceled" onclick="handleInvoiceStatusButtonClick('canceled')">Canceled</button>
       </div>
       <div class="receipt-actions app-popup-actions" style="justify-content:flex-end; gap:10px;">
-        <button class="btn cancel-btn" onclick="closeInvoiceStatusModal()">Close</button>
+        <button class="btn cancel-btn" onclick="closeInvoiceStatusModal()">❌ Close</button>
       </div>
     </div>
   </div>
@@ -504,9 +504,9 @@
             <div class="total">Total: <span class="currency-symbol">$</span> <span id="menuTotal">0.00</span></div>
               <div id="menuItemCountLabel" class="menu-item-count" style="font-size:0.95rem; color:#334155; margin-top:4px;">Items: 0</div>
             <div class="action-buttons" style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
-              <button class="btn btn-danger" onclick="clearCurrentOrder()" title="Clear Order" style="margin: 0;">X</button>
-              <button class="btn" onclick="previewOrder()" style="margin: 0;">Preview</button>
-              <button class="btn btn-success" onclick="processBill()" style="margin: 0;">Checkout</button>
+              <button class="btn btn-danger" onclick="clearCurrentOrder()" title="Clear Order" style="margin: 0;">🗑️</button>
+              <button class="btn" onclick="previewOrder()" style="margin: 0;">👁️ Preview</button>
+              <button class="btn btn-success" onclick="processBill()" style="margin: 0;">💳 Checkout</button>
             </div>
           </div>
           <div class="input-row menu-search-row">
@@ -563,7 +563,7 @@
             <div class="barcode-wrapper">
               <input type="text" id="dishBarcode" placeholder="Barcode/SKU">
               <button class="btn generate-barcode-btn" onclick="generateRandomBarcode()"
-                title="Generate Random Barcode">🎲</button>
+                title="Generate Random Barcode">🎲 Barcode</button>
             </div>
             <select id="dishCategory" class="u-flex-grow-1" title="Product Category"></select>
             <select id="dishUnit" class="u-flex-grow-1" title="Product Unit"></select>
@@ -596,7 +596,7 @@
                 class="u-flex-grow-05 u-text-center">
               <input type="number" id="newRecipeItemQty" placeholder="Qty" min="0.01" step="0.01"
                 class="u-flex-grow-05">
-              <button class="btn" onclick="addNewRecipeItemFromForm()">+ Add</button>
+              <button class="btn" onclick="addNewRecipeItemFromForm()">➕ Add</button>
             </div>
           </div>
 
@@ -616,8 +616,8 @@
             <div class="profit-display">Profit: <span class="currency-symbol">$</span><span
                 id="dishProfitValue">0.00</span> | Margin: <span id="dishProfitMargin">0.00</span>%</div>
             <div>
-              <button class="btn" id="saveDishButton" onclick="addDish(this)">Save</button>
-              <button class="btn btn-secondary" onclick="toggleAddDishForm(false)">Cancel</button>
+              <button class="btn" id="saveDishButton" onclick="addDish(this)">💾 Save</button>
+              <button class="btn btn-secondary" onclick="toggleAddDishForm(false)">❌ Cancel</button>
             </div>
           </div>
         </div>
@@ -625,7 +625,7 @@
         <h3>📋 Products List
           <button class="btn add-product-header" onclick="toggleAddDishForm(true)">➕ Add New</button>
           <button class="btn print-barcodes-btn" onclick="generateAndPrintBarcodes()">🖨️ Print</button>
-          <button class="btn btn-danger" id="deleteMarkedProductsBtn" style="display:none; margin-left:8px;" onclick="deleteMarkedProducts()">🗑️ Delete marked</button>
+          <button class="btn btn-danger" id="deleteMarkedProductsBtn" style="display:none; margin-left:8px;" onclick="deleteMarkedProducts()">🗑️ Delete Marked</button>
         </h3>
         <div class="data-table-toolbar" data-table-controls="dishesTableBody" data-filter-options="all:All products|product:Products|service:Services">
           <input type="search" data-table-search placeholder="Search products..." aria-label="Search products">
@@ -659,7 +659,7 @@
         <div class="form-panel">
           <div class="input-row">
             <input type="text" id="categoryNameInput" placeholder="New Category Name">
-            <button class="btn" onclick="addCategory()">Add Category</button>
+            <button class="btn" onclick="addCategory()">➕ Add Category</button>
           </div>
           <div class="data-table-toolbar" data-table-controls="categoryListBody">
             <input type="search" data-table-search placeholder="Search categories..." aria-label="Search categories">
@@ -689,7 +689,7 @@
           <div class="input-row">
             <input type="text" id="unitFullNameInput" placeholder="Full Name (e.g., Kilogram)">
             <input type="text" id="unitNameInput" placeholder="Short Name (e.g., kg)">
-            <button class="btn" onclick="addUnit()">Add Unit</button>
+            <button class="btn" onclick="addUnit()">➕ Add Unit</button>
           </div>
           <div class="data-table-toolbar" data-table-controls="unitListBody">
             <input type="search" data-table-search placeholder="Search units..." aria-label="Search units">
@@ -727,7 +727,7 @@
             <input type="password" id="staffPinInput" placeholder="4-digit PIN" maxlength="4" style="width: 100px;">
             <button type="button" onclick="togglePINVisibility('staffPinInput')" class="btn"
               style="padding: 5px 10px; margin: 0;">👁️</button>
-            <button class="btn" onclick="addStaff()">Add Staff</button>
+            <button class="btn" onclick="addStaff()">➕ Add Staff</button>
           </div>
           <div class="u-mt-10 u-fs-08" id="staffPermissionsContainer"
             style="display: flex; flex-wrap: wrap; gap: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 4px; margin-bottom: 10px;">
@@ -822,8 +822,8 @@
             </div>
             <div class="input-row"><input type="text" id="customerAddressInput" placeholder="Address"></div>
             <div class="input-row" style="justify-content: flex-end;">
-              <button class="btn" id="saveCustomerBtn" onclick="addCustomer()">Save Customer</button>
-              <button class="btn btn-secondary" onclick="toggleAddCustomerForm(false)">Cancel</button>
+              <button class="btn" id="saveCustomerBtn" onclick="addCustomer()">💾 Save Customer</button>
+              <button class="btn btn-secondary" onclick="toggleAddCustomerForm(false)">❌ Cancel</button>
             </div>
           </div>
           <div id="customerListHeader" style="display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap;">
@@ -879,27 +879,23 @@
       <!-- Invoices -->
       <section id="invoicesTab">
         <h3>🧾 Invoices</h3>
-        <div class="input-row u-mb-15" style="gap: 10px; flex-wrap: wrap;">
+        <div class="invoice-toolbar">
           <input type="date" id="invoiceStartDate" onchange="renderInvoices()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
           <input type="date" id="invoiceEndDate" onchange="renderInvoices()" placeholder="dd/mm/yyyy" pattern="\d{2}/\d{2}/\d{4}" title="dd/mm/yyyy">
-        </div>
-        <div class="u-mb-10" style="display:flex; flex-wrap:wrap; gap:8px; align-items:center; justify-content:space-between;">
+          <select id="invoiceSalesByFilter" onchange="renderInvoices()" aria-label="Filter invoices by sales by">
+            <option value="all">Sales By: all</option>
+          </select>
+          <input type="search" id="invoiceSearch" oninput="renderInvoices()" placeholder="Search invoices..." aria-label="Search invoices">
           <div id="invoiceCountInfo">Showing 0 of 0 invoices</div>
           <div class="button-group" style="gap:6px; align-items:center;">
-            <button class="btn btn-secondary" type="button" data-invoice-filter="all" onclick="setInvoiceFilter('all')">All</button>
-            <button class="btn btn-secondary" type="button" data-invoice-filter="pending" onclick="setInvoiceFilter('pending')">Pending</button>
-            <button class="btn btn-secondary" type="button" data-invoice-filter="paid" onclick="setInvoiceFilter('paid')">Paid</button>
-            <button class="btn btn-warning" type="button" onclick="clearAllAdjustments()" title="Clear all invoice and customer adjustments">Clear Adjustments</button>
-            <button class="btn btn-primary invoice-status-update-btn" type="button" id="invoiceStatusUpdateBtn" onclick="openInvoiceStatusModal()">Update Status</button>
+            <button class="btn btn-secondary" type="button" data-invoice-filter="all" onclick="setInvoiceFilter('all')">📋 All</button>
+            <button class="btn btn-secondary" type="button" data-invoice-filter="pending" onclick="setInvoiceFilter('pending')">⏳ Pending</button>
+            <button class="btn btn-secondary" type="button" data-invoice-filter="paid" onclick="setInvoiceFilter('paid')">✅ Paid</button>
+            <button class="btn btn-warning" type="button" onclick="clearAllAdjustments()" title="Clear all invoice and customer adjustments">🧹 Clear Adjustments</button>
+            <button class="btn btn-primary invoice-status-update-btn" type="button" id="invoiceStatusUpdateBtn" onclick="openInvoiceStatusModal()">🔄 Update Status</button>
           </div>
         </div>
-        <div class="data-table-toolbar" data-table-controls="invoiceListBody" data-filter-options="all:All invoices|pending:Pending|paid:Paid">
-          <input type="search" data-table-search placeholder="Search invoices..." aria-label="Search invoices">
-          <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
-          <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
-          <div class="data-table-filter-panel" data-table-filter-panel></div>
-        </div>
-        <div class="u-overflow-x-auto">
+        <div class="invoice-table-scroll">
           <table class="u-mt-15 table-excel">
             <thead>
               <tr>
@@ -1086,18 +1082,23 @@
             class="u-flex-grow-0 u-flex-basis-100">
           <button class="btn" onclick="saveSettings()">Save</button>
         </div>
-        <h5 class="u-mt-20">Low Stock Report</h5>
-        <table class="u-mt-10 table-excel">
-          <thead>
-            <tr>
-              <th>Item Name</th>
-              <th>Category</th>
-              <th class="u-text-right">Low Stock Level</th>
-              <th class="u-text-right">Current Stock</th>
-            </tr>
-          </thead>
-          <tbody id="lowStockReportBody"></tbody>
-        </table>
+        <div class="section-heading-row u-mt-20 u-mb-10">
+          <h5 class="u-m-0">Low Stock Report</h5>
+          <button class="btn btn-secondary" type="button" id="toggleLowStockReportBtn" onclick="toggleLowStockReportSection()">📦 Hide Low Stock Report (0)</button>
+        </div>
+        <div id="lowStockReportTableContainer">
+          <table class="u-mt-10 table-excel">
+            <thead>
+              <tr>
+                <th>Item Name</th>
+                <th>Category</th>
+                <th class="u-text-right">Low Stock Level</th>
+                <th class="u-text-right">Current Stock</th>
+              </tr>
+            </thead>
+            <tbody id="lowStockReportBody"></tbody>
+          </table>
+        </div>
         <div id="stockAdjustmentFormContainer" class="form-panel u-mt-20" style="display: none;">
           <input type="hidden" id="stockItemIndex">
           <h5 id="stockAdjustItemName" class="u-m-0">Adjust Stock for...</h5>

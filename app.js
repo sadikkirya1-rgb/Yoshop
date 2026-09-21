@@ -20,7 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -2786,19 +2786,19 @@ function initAppAdminDashboardLayout() {
           </div>
           <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="btn btn-info u-m-0" onclick="setSubscriptionsFilter('all')">All</button>
-              <button class="btn btn-success u-m-0" onclick="setSubscriptionsFilter('active')">Active</button>
-              <button class="btn btn-danger u-m-0" onclick="setSubscriptionsFilter('expired')">Expired</button>
-              <button class="btn btn-warning u-m-0" onclick="setSubscriptionsFilter('expiring-soon')">Expiring Soon</button>
-              <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('pending')">Pending</button>
-              <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('suspended')">Suspended</button>
+              <button class="btn btn-info u-m-0" onclick="setSubscriptionsFilter('all')">📋 All</button>
+              <button class="btn btn-success u-m-0" onclick="setSubscriptionsFilter('active')">✅ Active</button>
+              <button class="btn btn-danger u-m-0" onclick="setSubscriptionsFilter('expired')">⚠️ Expired</button>
+              <button class="btn btn-warning u-m-0" onclick="setSubscriptionsFilter('expiring-soon')">⏰ Expiring Soon</button>
+              <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('pending')">⏳ Pending</button>
+              <button class="btn btn-secondary u-m-0" onclick="setSubscriptionsFilter('suspended')">⛔ Suspended</button>
             </div>
             <div style="display:flex; gap:6px; flex-wrap:wrap;">
-              <button class="btn btn-info u-m-0" onclick="toggleSelectAllSubscriptionRows()">Select All Visible</button>
-              <button class="btn btn-success u-m-0" onclick="runBulkSubscriptionAction('activate')">Activate</button>
-              <button class="btn btn-warning u-m-0" onclick="runBulkSubscriptionAction('suspend')">Suspend</button>
-              <button class="btn btn-danger u-m-0" onclick="runBulkSubscriptionAction('deactivate')">Deactivate</button>
-              <button class="btn btn-purple u-m-0" onclick="runBulkSubscriptionAction('notice')">Send Notice</button>
+              <button class="btn btn-info u-m-0" onclick="toggleSelectAllSubscriptionRows()">☑️ Select All Visible</button>
+              <button class="btn btn-success u-m-0" onclick="runBulkSubscriptionAction('activate')">✅ Activate</button>
+              <button class="btn btn-warning u-m-0" onclick="runBulkSubscriptionAction('suspend')">⏸️ Suspend</button>
+              <button class="btn btn-danger u-m-0" onclick="runBulkSubscriptionAction('deactivate')">🚫 Deactivate</button>
+              <button class="btn btn-purple u-m-0" onclick="runBulkSubscriptionAction('notice')">📣 Send Notice</button>
             </div>
           </div>
           <div class="u-overflow-x-auto admin-subscriptions-scroll">
@@ -2885,9 +2885,9 @@ function initAppAdminDashboardLayout() {
               Status: <strong id="currentShopStatusDisplay" style="color: var(--primary);">Active</strong>
             </div>
             <div style="display: flex; gap: 5px;">
-              <button class="btn btn-success u-flex-1 u-m-0" onclick="updateShopStatus('active')">Activate</button>
-              <button class="btn btn-warning u-flex-1 u-m-0" onclick="updateShopStatus('suspended')">Suspend</button>
-              <button class="btn btn-danger u-flex-1 u-m-0" onclick="updateShopStatus('deactivated')">Deactivate</button>
+              <button class="btn btn-success u-flex-1 u-m-0" onclick="updateShopStatus('active')">✅ Activate</button>
+              <button class="btn btn-warning u-flex-1 u-m-0" onclick="updateShopStatus('suspended')">⏸️ Suspend</button>
+              <button class="btn btn-danger u-flex-1 u-m-0" onclick="updateShopStatus('deactivated')">🚫 Deactivate</button>
             </div>
           </div>
 
@@ -2901,11 +2901,11 @@ function initAppAdminDashboardLayout() {
                 <input type="password" id="appAdminPasswordInput" placeholder="Password">
               </div>
               <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                <button class="btn btn-success u-m-0" onclick="saveAdminAccessEntry()">Save</button>
-                <button class="btn btn-secondary u-m-0" onclick="toggleAdminAccessForm(false)">Cancel</button>
+                <button class="btn btn-success u-m-0" onclick="saveAdminAccessEntry()">💾 Save</button>
+                <button class="btn btn-secondary u-m-0" onclick="toggleAdminAccessForm(false)">❌ Cancel</button>
               </div>
             </div>
-            <button class="btn btn-info u-w-full u-m-0" onclick="toggleAdminAccessForm(true)">Add / Link Admin Access</button>
+            <button class="btn btn-info u-w-full u-m-0" onclick="toggleAdminAccessForm(true)">🔗 Add / Link Admin Access</button>
             <div class="u-mt-15">
               <div class="u-fs-08 u-text-muted u-mb-8">Current App Admin Access</div>
               <div class="u-overflow-x-auto">
@@ -13337,6 +13337,32 @@ function setInvoiceFilter(filter = 'all') {
   renderInvoices();
 }
 
+function populateInvoiceSalesByFilter(rows = []) {
+  const select = document.getElementById('invoiceSalesByFilter');
+  if (!select) return;
+
+  const currentValue = String(select.value || 'all');
+  const staffNames = Array.from(new Set(
+    (Array.isArray(rows) ? rows : [])
+      .map(row => String(
+        row?.transaction?.servedBy ||
+        row?.transaction?.staffName ||
+        row?.transaction?.cashier ||
+        row?.transaction?.createdByName ||
+        ''
+      ).trim())
+      .filter(Boolean)
+  )).sort((a, b) => a.localeCompare(b));
+
+  const options = ['<option value="all">Sales By: all</option>'];
+  staffNames.forEach(name => {
+    options.push(`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`);
+  });
+
+  select.innerHTML = options.join('');
+  select.value = staffNames.includes(currentValue) ? currentValue : 'all';
+}
+
 window.setInvoiceFilter = setInvoiceFilter;
 
 function normalizeInvoiceValue(value) {
@@ -13447,10 +13473,13 @@ async function handleInvoiceStatusButtonClick(status) {
 function renderInvoices() {
   const startDate = document.getElementById('invoiceStartDate')?.value;
   const endDate = document.getElementById('invoiceEndDate')?.value;
+  const salesByValue = String(document.getElementById('invoiceSalesByFilter')?.value || 'all');
+  const invoiceSearchValue = String(document.getElementById('invoiceSearch')?.value || '').trim().toLowerCase();
   const invoiceRows = buildInvoiceListItems({
     customers: Array.isArray(customers) ? customers : [],
     transactions: Array.isArray(transactions) ? transactions : []
   });
+  populateInvoiceSalesByFilter(invoiceRows);
   let repairedInvoiceData = false;
   invoiceRows.forEach(row => {
     const transaction = row?.transaction;
@@ -13474,7 +13503,16 @@ function renderInvoices() {
     return true;
   });
 
-  const filteredRows = filterInvoiceRowsByStatus(dateFilteredRows, currentInvoiceFilter);
+  const salesFilteredRows = filterInvoiceRowsBySalesBy(dateFilteredRows, salesByValue);
+  const searchFilteredRows = invoiceSearchValue
+    ? salesFilteredRows.filter(row => {
+        const customer = String(row?.customer?.name || row?.customerName || '').toLowerCase();
+        const invoiceNumber = String(row?.invoiceNumber || '').toLowerCase();
+        const salesBy = String(getTransactionStaffName(row?.transaction || '') || '').toLowerCase();
+        return customer.includes(invoiceSearchValue) || invoiceNumber.includes(invoiceSearchValue) || salesBy.includes(invoiceSearchValue);
+      })
+    : salesFilteredRows;
+  const filteredRows = filterInvoiceRowsByStatus(searchFilteredRows, currentInvoiceFilter);
   currentInvoiceTableRows = filteredRows;
 
   const currencySymbol = getCurrencySymbol();
@@ -13528,7 +13566,7 @@ function renderInvoices() {
         const adjustButton = document.createElement('button');
         adjustButton.className = 'btn invoice-action-btn';
         adjustButton.type = 'button';
-        adjustButton.textContent = 'Adjust';
+        adjustButton.textContent = '🛠️ Adjust';
         adjustButton.disabled = adjustDisabled || !transactionActionsAllowed;
         adjustButton.style.cssText = adjustButton.disabled ? 'opacity:0.45; pointer-events:none;' : '';
         adjustButton.addEventListener('click', event => {
@@ -13583,7 +13621,7 @@ function renderInvoices() {
         const editButton = document.createElement('button');
         editButton.className = 'btn invoice-action-btn';
         editButton.type = 'button';
-        editButton.textContent = 'Edit';
+        editButton.textContent = '✏️ Edit';
         editButton.disabled = !transactionActionsAllowed;
         editButton.title = transactionActionsAllowed ? 'Edit invoice' : getTransactionActionLockTitle(row.transaction);
         editButton.addEventListener('click', event => {
@@ -13594,7 +13632,7 @@ function renderInvoices() {
         const deleteInvoiceButton = document.createElement('button');
         deleteInvoiceButton.className = 'btn invoice-action-btn invoice-delete-action-btn';
         deleteInvoiceButton.type = 'button';
-        deleteInvoiceButton.textContent = 'Delete';
+        deleteInvoiceButton.textContent = '🗑️ Delete';
         deleteInvoiceButton.title = 'Delete invoice';
         deleteInvoiceButton.disabled = !transactionActionsAllowed;
         if (deleteInvoiceButton.disabled) deleteInvoiceButton.style.cssText = 'opacity:0.45; pointer-events:none;';
@@ -14222,9 +14260,23 @@ function setupSettingsAccordion() {
 }
 
 // ===== Inventory Management (Settings Tab) =====
+function toggleLowStockReportSection(forceState) {
+  const button = document.getElementById('toggleLowStockReportBtn');
+  const tableContainer = document.getElementById('lowStockReportTableContainer');
+  if (!button || !tableContainer) return;
+
+  const shouldHide = typeof forceState === 'boolean' ? forceState : button.dataset.hidden !== 'true';
+  button.dataset.hidden = String(shouldHide);
+  tableContainer.style.display = shouldHide ? 'none' : '';
+  const count = Number(button.dataset.lowStockCount || 0);
+  button.textContent = `${shouldHide ? 'Show' : 'Hide'} Low Stock Report (${count})`;
+  button.setAttribute('aria-expanded', String(!shouldHide));
+}
+
 function renderInventoryReport() {
   const tbody = document.getElementById('lowStockReportBody');
   const dashboardTbody = document.getElementById('dashboardLowStockBody');
+  const toggleButton = document.getElementById('toggleLowStockReportBtn');
   if (!tbody) return;
   tbody.innerHTML = '';
   const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
@@ -14232,9 +14284,17 @@ function renderInventoryReport() {
   // Only check primary ingredients (items with a stock property) for the low stock report.
   const lowStockItems = menu.filter(item => item.stock !== undefined && calculateDishStock(item, true) <= getLowStockThreshold(item));
 
+  if (toggleButton) {
+    toggleButton.dataset.lowStockCount = String(lowStockItems.length);
+    const shouldHide = toggleButton.dataset.hidden === 'true';
+    toggleButton.textContent = `${shouldHide ? 'Show' : 'Hide'} Low Stock Report (${lowStockItems.length})`;
+    toggleButton.setAttribute('aria-expanded', String(!shouldHide));
+  }
+
   if (lowStockItems.length === 0) {
     tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 15px;">No items are currently low on stock.</td></tr>`;
     if (dashboardTbody) dashboardTbody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 12px;">No items are currently low on stock.</td></tr>`;
+    if (toggleButton) toggleButton.textContent = `${toggleButton.dataset.hidden === 'true' ? 'Show' : 'Hide'} Low Stock Report (0)`;
     return;
   }
   // Populate full low stock table
@@ -14266,6 +14326,8 @@ function renderInventoryReport() {
     });
   }
 }
+
+window.toggleLowStockReportSection = toggleLowStockReportSection;
 
 function setStockTableFilter(filterName = 'all') {
   stockTableFilter = filterName || 'all';

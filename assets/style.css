@@ -621,6 +621,86 @@
   /* OLD INVOICE-TABLE CSS - REPLACED WITH TABLE-EXCEL STYLING */
   /* The invoice table now uses the table-excel class for consistent styling across all data tables */
   /* See table-excel CSS rules and invoice-status-column styling above */
+  .invoice-toolbar {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
+  }
+  .invoice-toolbar::-webkit-scrollbar {
+    height: 8px;
+  }
+  .invoice-toolbar::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.7);
+    border-radius: 999px;
+  }
+  .invoice-toolbar input,
+  .invoice-toolbar select {
+    min-width: 120px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    background: var(--card);
+    color: var(--text);
+    flex-shrink: 0;
+  }
+  .invoice-toolbar input[type="search"] {
+    min-width: 180px;
+    flex: 1 1 180px;
+  }
+  #invoiceCountInfo {
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .invoice-toolbar .button-group {
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  .invoice-toolbar .btn {
+    margin: 0;
+    white-space: nowrap;
+  }
+  .invoice-table-scroll {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.45);
+    position: relative;
+  }
+  .invoice-table-scroll::after {
+    content: "";
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 1px;
+    background: linear-gradient(90deg, rgba(59,130,246,0.35), rgba(59,130,246,0.05), rgba(59,130,246,0.35));
+    pointer-events: none;
+  }
+  .invoice-table-scroll table {
+    min-width: 980px;
+    margin-bottom: 0;
+  }
+  .section-heading-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .section-heading-row h5 {
+    margin: 0;
+  }
+  .section-heading-row .btn {
+    margin: 0;
+  }
   .input-row {
     display: flex;
     flex-wrap: wrap;

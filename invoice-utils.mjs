@@ -233,6 +233,21 @@ export function filterInvoiceRowsByStatus(rows = [], status = 'all') {
   return invoiceRows;
 }
 
+export function filterInvoiceRowsBySalesBy(rows = [], salesBy = 'all') {
+  const invoiceRows = Array.isArray(rows) ? rows : [];
+  const normalizedSalesBy = String(salesBy || 'all').trim();
+  if (!normalizedSalesBy || normalizedSalesBy.toLowerCase() === 'all') return invoiceRows;
+
+  const normalizedTarget = normalizedSalesBy.toLowerCase();
+  return invoiceRows.filter(row => {
+    const transaction = row?.transaction || {};
+    const salesByName = String(
+      transaction.servedBy || transaction.staffName || transaction.cashier || transaction.createdByName || ''
+    ).trim().toLowerCase();
+    return salesByName === normalizedTarget;
+  });
+}
+
 export function buildInvoiceListItems({ customers = [], transactions = [] } = {}) {
   const customerList = Array.isArray(customers) ? customers : [];
   const txList = Array.isArray(transactions) ? transactions : [];
