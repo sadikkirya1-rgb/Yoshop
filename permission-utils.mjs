@@ -9,6 +9,7 @@ const DEFAULT_PERMISSION_TOKENS = [
   'stockTab',
   'transactionsTab',
   'reportsTab',
+  'auditReportTab',
   'settingsTab',
   'lockPin',
   'logoutAccount',
@@ -32,6 +33,7 @@ const ACTION_PERMISSION_TOKENS = [
   'reports.read', 'reports.write',
   'settings.read', 'settings.write',
   'invoices.read', 'invoices.write',
+  'audit.report.read', 'audit.report.write', 'audit.report.export',
   'products.create', 'products.edit', 'products.delete',
   'categories.create', 'categories.edit', 'categories.delete',
   'units.create', 'units.edit', 'units.delete',
@@ -53,6 +55,8 @@ const FEATURE_ALIASES = {
   stock: 'stockTab',
   sales: 'transactionsTab',
   reports: 'reportsTab',
+  audit: 'auditReportTab',
+  auditreport: 'auditReportTab',
   settings: 'settingsTab',
   pin: 'lockPin',
   lock: 'lockPin',
@@ -107,11 +111,20 @@ function hasPermission(role, permissions = [], feature = '') {
 
   const featureParts = featureKey.toLowerCase().split('.');
   const section = featureParts[0];
-  const requestedAction = featureParts[1] || '';
+  const permissionPath = featureParts.slice(0, -1).join('.') || section;
+  const requestedAction = featureParts[featureParts.length - 1] || '';
   if (!section) return false;
+
   if (requestedAction === 'read' || requestedAction === 'create' || requestedAction === 'edit' || requestedAction === 'delete' || requestedAction === 'permissions') {
-    return normalizedPermissions.includes(`${section}.write`);
+    if (normalizedPermissions.includes(`${permissionPath}.write`)) return true;
+    if (requestedAction === 'read' && normalizedPermissions.includes(`${permissionPath}.read`)) return true;
+    return false;
   }
+
+  if (featureParts.length > 2 && normalizedPermissions.includes(`${permissionPath}.write`)) {
+    return true;
+  }
+
   return false;
 }
 
@@ -129,7 +142,8 @@ function getFirstAllowedTab(role, permissions = [], fallback = 'menuTab') {
   const sectionTabs = {
     dashboard: 'dashboardTab', sales: 'menuTab', products: 'addDishTab', categories: 'categoryTab',
     units: 'unitTab', staff: 'staffTab', customers: 'customerTab', inventory: 'stockTab',
-    reports: 'reportsTab', settings: 'settingsTab', invoices: 'invoicesTab'
+    reports: 'reportsTab', audit: 'auditReportTab', auditreport: 'auditReportTab',
+    settings: 'settingsTab', invoices: 'invoicesTab'
   };
   const directTab = normalizedPermissions.find(permission => permission.endsWith('Tab'));
   if (directTab) return directTab;

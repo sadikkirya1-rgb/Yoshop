@@ -338,6 +338,202 @@ function renderAuditTrail() {
     }).join('')}</tbody></table>`;
 }
 
+function getAuditReportRowActionText(event = {}) {
+  const details = event?.details || {};
+  return details.action || event?.type || event?.eventType || 'audit';
+}
+
+function getAuditReportRowDescription(event = {}) {
+  const details = event?.details || {};
+  const candidates = [
+    details.message,
+    details.description,
+    details.reason,
+    details.note,
+    details.action,
+    details.entity,
+    details.changedBy,
+    details.staffName
+  ];
+  const text = candidates.filter(value => value !== undefined && value !== null && value !== '').map(String).join(' • ');
+  if (text) return text;
+  try {
+    return JSON.stringify(details);
+  } catch (error) {
+    return 'Audit entry';
+  }
+}
+
+function getAuditReportIdentifier(event = {}) {
+  return event?.id || event?.recordId || event?.entityId || 'audit-entry';
+}
+
+function renderAuditReportTable() {
+  const body = document.getElementById('auditReportTableBody');
+  if (!body) return;
+
+  const search = (document.getElementById('auditReportSearch')?.value || '').trim().toLowerCase();
+  const actionFilter = document.getElementById('auditReportActionFilter')?.value || 'all';
+  const staffFilter = document.getElementById('auditReportStaffFilter')?.value || 'all';
+  const dateFilter = document.getElementById('auditReportDateFilter')?.value || 'all';
+
+  const rows = Array.isArray(auditTrail) ? [...auditTrail].sort((a, b) => new Date(b.timestamp || b.createdAt || 0) - new Date(a.timestamp || a.createdAt || 0)) : [];
+  const filteredRows = rows.filter(event => {
+    const details = event?.details || {};
+    const eventName = getAuditReportRowActionText(event).toLowerCase();
+    const staffName = String(details.changedBy || event?.staffId || event?.userId || 'system').trim().toLowerCase();
+    const description = getAuditReportRowDescription(event).toLowerCase();
+    const dateValue = new Date(event?.timestamp || event?.createdAt || 0);
+    const dateKey = Number.isFinite(dateValue.getTime()) ? dateValue.toISOString().slice(0, 10) : '';
+
+    const matchesSearch = !search || eventName.includes(search) || description.includes(search) || staffName.includes(search) || String(details.entity || '').toLowerCase().includes(search);
+    const matchesAction = actionFilter === 'all' || actionFilter === eventName;
+    const matchesStaff = staffFilter === 'all' || staffFilter === staffName;
+    const matchesDate = dateFilter === 'all' || dateKey === dateFilter;
+
+    return matchesSearch && matchesAction && matchesStaff && matchesDate;
+  });
+
+  if (filteredRows.length === 0) {
+    body.innerHTML = '<tr><td colspan="8" class="u-text-center" style="padding: 16px; color: var(--text-muted);">No audit records match the current filters.</td></tr>';
+    return;
+  }
+
+  const options = { hour: '2-digit', minute: '2-digit', second: '2-digit' };
+  body.innerHTML = filteredRows.map((event) => {
+    const details = event?.details || {};
+    const timestamp = new Date(event?.timestamp || event?.createdAt || Date.now());
+    const action = getAuditReportRowActionText(event);
+    const description = getAuditReportRowDescription(event);
+    const staffName = details.changedBy || event?.staffId || event?.userId || 'system';
+    const entity = details.entity || event?.entity || '-';
+    const dateLabel = timestamp.toLocaleDateString();
+    const timeLabel = timestamp.toLocaleTimeString([], options);
+
+    return `
+      <tr>
+        <td>${escapeHtml(dateLabel)}</td>
+        <td>${escapeHtml(timeLabel)}</td>
+        <td>${escapeHtml(staffName)}</td>
+        <td>${escapeHtml(action)}</td>
+        <td>${escapeHtml(entity)}</td>
+        <td style="max-width: 260px; white-space: normal;">${escapeHtml(description)}</td>
+        <td>${escapeHtml(String(details.result || ''))}</td>
+        <td>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
+            <button class="btn btn-info u-m-0" style="padding:6px 8px;" onclick="viewAuditRecord('${escapeHtml(getAuditReportIdentifier(event)).replace(/'/g, "\\'")}')">View</button>
+            <button class="btn btn-secondary u-m-0" style="padding:6px 8px;" onclick="copyAuditRecord('${escapeHtml(getAuditReportIdentifier(event)).replace(/'/g, "\\'")}')">Copy</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function populateAuditReportFilters() {
+  const staffSelect = document.getElementById('auditReportStaffFilter');
+  const actionSelect = document.getElementById('auditReportActionFilter');
+  const dateInput = document.getElementById('auditReportDateFilter');
+  if (!staffSelect || !actionSelect || !dateInput) return;
+
+  const staffNames = Array.from(new Set((Array.isArray(auditTrail) ? auditTrail : []).map(event => String(event?.details?.changedBy || event?.staffId || event?.userId || 'system').trim()).filter(Boolean)));
+  const actions = Array.from(new Set((Array.isArray(auditTrail) ? auditTrail : []).map(event => getAuditReportRowActionText(event)).filter(Boolean)));
+
+  staffSelect.innerHTML = '<option value="all">All Staff</option>' + staffNames.map(name => `<option value="${escapeHtml(name.toLowerCase())}">${escapeHtml(name)}</option>`).join('');
+  actionSelect.innerHTML = '<option value="all">All Actions</option>' + actions.map(action => `<option value="${escapeHtml(action.toLowerCase())}">${escapeHtml(action)}</option>`).join('');
+  dateInput.value = '';
+  const searchInput = document.getElementById('auditReportSearch');
+  if (searchInput) searchInput.value = '';
+  renderAuditReportTable();
+}
+
+function viewAuditRecord(recordId) {
+  const event = (Array.isArray(auditTrail) ? auditTrail : []).find(entry => getAuditReportIdentifier(entry) === recordId);
+  if (!event) return;
+  const details = event?.details || {};
+  const raw = {
+    id: event?.id || recordId,
+    type: event?.type || event?.eventType || 'audit',
+    timestamp: event?.timestamp || event?.createdAt || new Date().toISOString(),
+    staffId: event?.staffId || details.staffId || 'system',
+    userId: event?.userId || details.userId || 'system',
+    details
+  };
+  showAppAlert(`<pre style="white-space: pre-wrap; word-break: break-word; font-size: 0.8em; margin: 0;">${escapeHtml(JSON.stringify(raw, null, 2))}</pre>`, 'Audit Record Details');
+}
+
+function copyAuditRecord(recordId) {
+  const event = (Array.isArray(auditTrail) ? auditTrail : []).find(entry => getAuditReportIdentifier(entry) === recordId);
+  if (!event) return;
+  const text = JSON.stringify(event, null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => {
+      showAppAlert('Audit record copied to clipboard.', 'Copied');
+    }).catch(() => {
+      showAppAlert('Unable to copy automatically. Please select the data manually.', 'Copy Failed');
+    });
+    return;
+  }
+  showAppAlert('Clipboard API is not available in this browser.', 'Copy Failed');
+}
+
+function exportAuditReportCsv() {
+  const rows = Array.isArray(auditTrail) ? [...auditTrail].sort((a, b) => new Date(b.timestamp || b.createdAt || 0) - new Date(a.timestamp || a.createdAt || 0)) : [];
+  const csvRows = [
+    ['Date', 'Time', 'Staff', 'Action', 'Entity', 'Description', 'Result'],
+    ...rows.map(event => {
+      const details = event?.details || {};
+      const ts = new Date(event?.timestamp || event?.createdAt || Date.now());
+      const description = String(getAuditReportRowDescription(event) || '').replace(/\r?\n/g, ' ');
+      return [
+        ts.toLocaleDateString(),
+        ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
+        String(details.changedBy || event?.staffId || event?.userId || 'system'),
+        String(getAuditReportRowActionText(event)),
+        String(details.entity || event?.entity || ''),
+        description,
+        String(details.result || '')
+      ];
+    })
+  ];
+
+  const csv = csvRows.map(row => row.map(value => `"${String(value).replace(/"/g, '""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `audit-report-${new Date().toISOString().slice(0, 10)}.csv`;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+async function clearAuditLog() {
+  if (!isAppAdminRole()) {
+    await showAppAlert('Only app administrators can clear the audit log.', 'Access Denied');
+    return;
+  }
+
+  const confirmed = await showAppConfirm('This will permanently remove all audit records from this device and cloud sync state for this shop. Continue?', 'Clear Audit Log', 'Clear Log', 'Cancel');
+  if (!confirmed?.confirmed) return;
+
+  auditTrail = [];
+  try {
+    await persistAuditTrail();
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem('yoshop_audit_trail_backup');
+    }
+  } catch (error) {
+    console.warn('Failed to persist cleared audit log:', error);
+  }
+
+  if (document.getElementById('auditReportTableBody')) {
+    renderAuditReportTable();
+  }
+  if (typeof showAppAlert === 'function') {
+    await showAppAlert('Audit log cleared successfully.', 'Audit Log Cleared');
+  }
+}
+
 function auditMutation(action, entity, details = {}) {
   appendAuditEvent('mutation', {
     action,
@@ -346,6 +542,18 @@ function auditMutation(action, entity, details = {}) {
     ...details
   });
   persistAuditTrail().catch(() => {});
+}
+
+function canAccessAuditReportUI() {
+  const allowedRoles = ['shopAdmin', 'appAdmin'];
+  if (allowedRoles.includes(getNormalizedRole(currentUserRole))) return true;
+  const permissionTokens = [
+    'auditReportTab',
+    'audit.report.read',
+    'audit.report.write',
+    'audit.report.export'
+  ];
+  return permissionTokens.some(token => currentUserPermissions.includes(token) || hasPermission(currentUserRole, currentUserPermissions, token));
 }
 
 function canPerformAction(permission = '') {
@@ -2912,6 +3120,45 @@ function initAppAdminDashboardLayout() {
           </div>
       </div>
 
+      <!-- Audit Report View -->
+      <div id="admin-audit-report-view" style="display:none;">
+        <h3 class="u-mb-20">📋 Staff Audit Report</h3>
+        <div class="form-panel u-mb-20">
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:12px;">
+            <h4 class="u-m-0">Audit Activity Log</h4>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <button class="btn btn-info u-m-0" onclick="exportAuditReportCsv()">⬇️ Export CSV</button>
+              <button class="btn btn-danger u-m-0" onclick="clearAuditLog()">🧹 Clear Audit Log</button>
+            </div>
+          </div>
+          <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-bottom:12px;">
+            <input id="auditReportSearch" type="search" placeholder="Search action, staff, description..." style="width:100%;" oninput="renderAuditReportTable()">
+            <select id="auditReportActionFilter" style="width:100%;" onchange="renderAuditReportTable()"><option value="all">All Actions</option></select>
+            <select id="auditReportStaffFilter" style="width:100%;" onchange="renderAuditReportTable()"><option value="all">All Staff</option></select>
+            <input id="auditReportDateFilter" type="date" style="width:100%;" onchange="renderAuditReportTable()">
+          </div>
+          <div class="u-overflow-x-auto">
+            <table class="u-w-full table-excel" style="min-width: 1000px;">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Time</th>
+                  <th>Staff</th>
+                  <th>Action</th>
+                  <th>Entity</th>
+                  <th>Description</th>
+                  <th>Result</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="auditReportTableBody">
+                <tr><td colspan="8" class="u-text-center" style="padding:16px; color: var(--text-muted);">Loading audit events...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
       <!-- Settings View -->
       <div id="admin-settings-view" style="display:none;">
         <h3 class="u-mb-20">⚙️ App Admin Settings</h3>
@@ -2975,19 +3222,33 @@ function initAppAdminDashboardLayout() {
  * Switches between sub-views in the App Admin panel
  */
 function switchAppAdminView(view) {
-  // Toggle view visibility
-  document.getElementById('admin-dashboard-view').style.display = (view === 'dashboard' || view === 'subscriptions') ? 'block' : 'none';
-  document.getElementById('admin-shops-view').style.display = view === 'shops' ? 'block' : 'none';
-  document.getElementById('admin-shops-list-view').style.display = view === 'shops-table' ? 'block' : 'none';
-  document.getElementById('admin-settings-view').style.display = view === 'settings' ? 'block' : 'none';
+  if (view === 'audit-report' && !canAccessAuditReportUI()) {
+    showAppAlert('You do not have permission to access the audit report.', 'Access Denied');
+    return;
+  }
 
-  // Conditional data fetching based on active sub-view
+  const dashboardView = document.getElementById('admin-dashboard-view');
+  const shopsView = document.getElementById('admin-shops-view');
+  const shopsListView = document.getElementById('admin-shops-list-view');
+  const auditReportView = document.getElementById('admin-audit-report-view');
+  const settingsView = document.getElementById('admin-settings-view');
+
+  if (dashboardView) dashboardView.style.display = (view === 'dashboard' || view === 'subscriptions') ? 'block' : 'none';
+  if (shopsView) shopsView.style.display = view === 'shops' ? 'block' : 'none';
+  if (shopsListView) shopsListView.style.display = view === 'shops-table' ? 'block' : 'none';
+  if (auditReportView) auditReportView.style.display = view === 'audit-report' ? 'block' : 'none';
+  if (settingsView) settingsView.style.display = view === 'settings' ? 'block' : 'none';
+
   if (view === 'dashboard' || view === 'subscriptions') {
     fetchGlobalAnalytics();
     refreshAppAdminSubscriptions();
   }
   if (view === 'shops') refreshAppAdminShops();
   if (view === 'shops-table') refreshAppAdminShopsTable();
+  if (view === 'audit-report') {
+    populateAuditReportFilters();
+    renderAuditReportTable();
+  }
   if (view === 'settings') {
     const statusDisplay = document.getElementById('currentShopStatusDisplay');
     if (statusDisplay) statusDisplay.textContent = appAdminSettings.shopStatus.charAt(0).toUpperCase() + appAdminSettings.shopStatus.slice(1);
@@ -4864,17 +5125,38 @@ function updateAuthUI(user) {
     const nav = document.querySelector('nav');
 
     // App admin navigation is handled inside the app admin section itself.
-    if (isAppAdminRole() && nav && !document.getElementById('nav-admin-settings')) {
-      const settingsBtn = document.createElement('button');
-      settingsBtn.id = 'nav-admin-settings';
-      settingsBtn.onclick = () => { showTab('appAdminTab', settingsBtn); switchAppAdminView('settings'); };
-      settingsBtn.innerHTML = `<span>⚙️</span><span>Admin Settings</span>`;
+    if (nav) {
+      const isAdminUser = isAppAdminRole() || isShopAdminRole();
+      const canSeeAuditReport = isAdminUser || canAccessAuditReportUI();
+      if (canSeeAuditReport && !document.getElementById('nav-admin-audit-report')) {
+        const auditReportBtn = document.createElement('button');
+        auditReportBtn.id = 'nav-admin-audit-report';
+        auditReportBtn.onclick = () => { showTab('appAdminTab', auditReportBtn); switchAppAdminView('audit-report'); };
+        auditReportBtn.innerHTML = `<span>📊</span><span>Audit Report</span>`;
 
-      const logoutBtn = document.getElementById('nav-logout-btn');
-      if (logoutBtn) {
-        nav.insertBefore(settingsBtn, logoutBtn);
-      } else {
-        nav.appendChild(settingsBtn);
+        const settingsBtn = document.getElementById('nav-admin-settings');
+        const logoutBtn = document.getElementById('nav-logout-btn');
+        if (settingsBtn) {
+          nav.insertBefore(auditReportBtn, settingsBtn);
+        } else if (logoutBtn) {
+          nav.insertBefore(auditReportBtn, logoutBtn);
+        } else {
+          nav.appendChild(auditReportBtn);
+        }
+      }
+
+      if (canSeeAuditReport && !document.getElementById('nav-admin-settings')) {
+        const settingsBtn = document.createElement('button');
+        settingsBtn.id = 'nav-admin-settings';
+        settingsBtn.onclick = () => { showTab('appAdminTab', settingsBtn); switchAppAdminView('settings'); };
+        settingsBtn.innerHTML = `<span>⚙️</span><span>Admin Settings</span>`;
+
+        const logoutBtn = document.getElementById('nav-logout-btn');
+        if (logoutBtn) {
+          nav.insertBefore(settingsBtn, logoutBtn);
+        } else {
+          nav.appendChild(settingsBtn);
+        }
       }
     }
 
@@ -5660,6 +5942,7 @@ window.promptAndUpdateOrderStatus = promptAndUpdateOrderStatus;
 window.updateReceiptOrderStatus = updateReceiptOrderStatus;
 window.updateTransactionStatusByIndex = updateTransactionStatusByIndex;
 window.renderAuditTrail = renderAuditTrail;
+window.clearAuditLog = clearAuditLog;
 window.openInvoiceStatusModal = openInvoiceStatusModal;
 window.closeInvoiceStatusModal = closeInvoiceStatusModal;
 window.handleInvoiceStatusButtonClick = handleInvoiceStatusButtonClick;
@@ -5868,6 +6151,7 @@ function showTab(tabId, btn) {
       if (activeBtn && activeBtn.id === 'nav-admin-shops') switchAppAdminView('shops');
       else if (activeBtn && activeBtn.id === 'nav-admin-subscriptions') switchAppAdminView('subscriptions');
       else if (activeBtn && activeBtn.id === 'nav-admin-shops-list') switchAppAdminView('shops-table');
+      else if (activeBtn && activeBtn.id === 'nav-admin-audit-report') switchAppAdminView('audit-report');
       else if (activeBtn && activeBtn.id === 'nav-admin-settings') switchAppAdminView('settings');
       else switchAppAdminView('dashboard');
       break;
@@ -8491,6 +8775,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     previewWindow.document.write(html);
     previewWindow.document.close();
     previewWindow.focus();
+    return previewWindow;
   } catch (error) {
     console.error('Failed to open A4 invoice preview:', error);
     return (typeof showAppAlert === 'function') ? showAppAlert('Could not open the A4 preview. Please allow pop-ups and try again.') : alert('Could not open the A4 preview. Please allow pop-ups and try again.');
@@ -8911,7 +9196,6 @@ async function printReceipt() {
   }
 
   const receiptModal = document.getElementById('receiptModal');
-  const receiptContentEl = document.getElementById('receiptContent');
   let printTransaction = receiptModal && receiptModal._transactionData ? receiptModal._transactionData : null;
 
   if (!printTransaction) {
@@ -8932,6 +9216,23 @@ async function printReceipt() {
   }
 
   printTransaction = normalizeInvoicePrintData(printTransaction);
+
+  if (typeof window.openA4InvoicePreview === 'function') {
+    const previewWindow = window.openA4InvoicePreview(printTransaction);
+    if (previewWindow) {
+      setTimeout(() => {
+        try {
+          previewWindow.focus();
+          previewWindow.print();
+        } catch (error) {
+          console.warn('Failed to print A4 invoice preview window:', error);
+        }
+      }, 350);
+    }
+    return;
+  }
+
+  const receiptContentEl = document.getElementById('receiptContent');
   if (!receiptContentEl || !receiptContentEl.innerHTML.trim()) {
     populateReceiptContent(printTransaction);
   }
@@ -12669,6 +12970,7 @@ function openStaffPermissionsModal(index) {
     { id: 'stockTab', label: 'Stock' },
     { id: 'transactionsTab', label: 'Sales' },
     { id: 'reportsTab', label: 'Reports' },
+    { id: 'auditReportTab', label: 'Audit Report' },
     { id: 'settingsTab', label: 'Settings' }
   ];
 
@@ -12681,7 +12983,7 @@ function openStaffPermissionsModal(index) {
     ['dashboard', 'Dashboard'], ['sales', 'Sales / Shop'], ['products', 'Products'],
     ['categories', 'Categories'], ['units', 'Units'], ['staff', 'Staff'],
     ['customers', 'Customers'], ['inventory', 'Inventory'], ['reports', 'Reports'],
-    ['settings', 'Settings'], ['invoices', 'Invoices']
+    ['audit', 'Audit Report'], ['settings', 'Settings'], ['invoices', 'Invoices']
   ];
 
   container.innerHTML = `<strong style="grid-column:1/-1;">Sections</strong>${tabs.map(tab => `
@@ -17427,7 +17729,18 @@ function applyRolePermissions() {
   const isInAdminTab = activeTab && activeTab.id === 'appAdminTab';
 
   nav.querySelectorAll('button').forEach(btn => {
-    const isAdminSpecific = btn.id === 'nav-app-admin-btn' || btn.id === 'nav-admin-shops' || btn.id === 'nav-admin-subscriptions' || btn.id === 'nav-admin-shops-list' || btn.id === 'nav-admin-settings';
+    const isAdminSpecific = btn.id === 'nav-app-admin-btn' || btn.id === 'nav-admin-shops' || btn.id === 'nav-admin-subscriptions' || btn.id === 'nav-admin-shops-list' || btn.id === 'nav-admin-audit-report' || btn.id === 'nav-admin-settings';
+    if (!isAppAdmin && isAdminSpecific && btn.id !== 'nav-admin-audit-report') {
+      btn.style.display = 'none';
+      return;
+    }
+
+    if (btn.id === 'nav-admin-audit-report') {
+      const canSeeAuditReport = isAppAdminRole() || isShopAdminRole() || canAccessAuditReportUI();
+      btn.style.display = canSeeAuditReport ? 'flex' : 'none';
+      return;
+    }
+
     if (!isAppAdmin && isAdminSpecific) {
       btn.style.display = 'none';
       return;

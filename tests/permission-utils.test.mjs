@@ -41,3 +41,9 @@ test('section read and write permissions are distinct and write implies actions'
   assert.equal(hasPermission('staff', ['products.write'], 'products.read'), true);
   assert.equal(hasPermission('staff', ['products.write'], 'products.edit'), true);
 });
+
+test('audit-only permissions resolve to the audit report tab and stay visible to permitted staff', () => {
+  assert.equal(hasPermission('staff', ['audit.report.read'], 'audit.report.read'), true);
+  assert.equal(getFirstAllowedTab('staff', ['audit.report.read'], 'menuTab'), 'auditReportTab');
+  assert.equal(getFirstAllowedTab('staff', ['auditReportTab'], 'menuTab'), 'auditReportTab');
+});
