@@ -419,10 +419,6 @@ function getAuditReportStaffLabel(event = {}) {
     String(currentUser?.email || '').trim()
   ].filter(Boolean));
 
-  if (adminUidCandidates.has(value) || appAdminInputNames.has(value.toLowerCase())) {
-    return 'System';
-  }
-
   const matchedStaff = Array.isArray(staff)
     ? staff.find(member => {
         const staffName = String(member?.name || '').trim();
@@ -450,7 +446,12 @@ function getAuditReportStaffLabel(event = {}) {
 
   if (legacyOnlyStaff?.name) return legacyOnlyStaff.name;
 
-  if (value.length >= 20 && !value.includes('@')) {
+  if (adminUidCandidates.has(value) || appAdminInputNames.has(value.toLowerCase())) {
+    return 'System';
+  }
+
+  const likelyRawUid = /^[A-Za-z0-9_-]{20,}$/.test(value);
+  if (likelyRawUid) {
     return 'System';
   }
 
@@ -511,13 +512,22 @@ function renderAuditReportTable() {
   }
 
   const search = (document.getElementById('auditReportSearch')?.value || '').trim().toLowerCase();
-  const actionFilter = document.getElementById('auditReportActionFilter')?.value || 'all';
   const staffFilter = document.getElementById('auditReportStaffFilter')?.value || 'all';
   const dateFilter = document.getElementById('auditReportDateFilter')?.value || 'all';
 
   const rows = Array.isArray(auditTrail) ? [...auditTrail].sort((a, b) => new Date(b.timestamp || b.createdAt || 0) - new Date(a.timestamp || a.createdAt || 0)) : [];
   const filteredRows = rows.filter(event => {
     const details = event?.details || {};
+    const isAppAdminAuditRow = (() => {
+      const rawActor = String(details.changedBy || event?.staffName || event?.staffId || event?.userId || '').trim();
+      const normalized = rawActor.toLowerCase();
+      return normalized === 'system' || normalized === 'sadik kirya' || normalized === 'sadikkirya' || normalized === 'sadikkirya@gmail.com' || normalized === MASTER_APP_ADMIN_UID || normalized === (currentUser?.uid || '').toLowerCase();
+    })();
+
+    if (isAppAdminAuditRow) {
+      return false;
+    }
+
     const eventName = getAuditReportRowActionText(event).toLowerCase();
     const staffName = String(getAuditReportStaffLabel(event)).trim().toLowerCase();
     const description = getAuditReportRowDescription(event).toLowerCase();
@@ -525,11 +535,10 @@ function renderAuditReportTable() {
     const dateKey = Number.isFinite(dateValue.getTime()) ? dateValue.toISOString().slice(0, 10) : '';
 
     const matchesSearch = !search || eventName.includes(search) || description.includes(search) || staffName.includes(search) || String(details.entity || '').toLowerCase().includes(search);
-    const matchesAction = actionFilter === 'all' || actionFilter === eventName;
     const matchesStaff = staffFilter === 'all' || staffFilter === staffName;
     const matchesDate = dateFilter === 'all' || dateKey === dateFilter;
 
-    return matchesSearch && matchesAction && matchesStaff && matchesDate;
+    return matchesSearch && matchesStaff && matchesDate;
   });
 
   if (filteredRows.length === 0) {
@@ -559,15 +568,12 @@ function renderAuditReportTable() {
 
 function populateAuditReportFilters() {
   const staffSelect = document.getElementById('auditReportStaffFilter');
-  const actionSelect = document.getElementById('auditReportActionFilter');
   const dateInput = document.getElementById('auditReportDateFilter');
-  if (!staffSelect || !actionSelect || !dateInput) return;
+  if (!staffSelect || !dateInput) return;
 
   const staffNames = Array.from(new Set((Array.isArray(auditTrail) ? auditTrail : []).map(event => getAuditReportStaffLabel(event)).filter(Boolean)));
-  const actions = Array.from(new Set((Array.isArray(auditTrail) ? auditTrail : []).map(event => getAuditReportRowActionText(event)).filter(Boolean)));
 
   staffSelect.innerHTML = '<option value="all">All Staff</option>' + staffNames.map(name => `<option value="${escapeHtml(name.toLowerCase())}">${escapeHtml(name)}</option>`).join('');
-  actionSelect.innerHTML = '<option value="all">All Actions</option>' + actions.map(action => `<option value="${escapeHtml(action.toLowerCase())}">${escapeHtml(action)}</option>`).join('');
   dateInput.value = '';
   const searchInput = document.getElementById('auditReportSearch');
   if (searchInput) searchInput.value = '';
@@ -3296,7 +3302,6 @@ function initAppAdminDashboardLayout() {
           </div>
           <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:10px; margin-bottom:12px;">
             <input id="auditReportSearch" type="search" placeholder="Search action, staff, description..." style="width:100%;" oninput="renderAuditReportTable()">
-            <select id="auditReportActionFilter" style="width:100%;" onchange="renderAuditReportTable()"><option value="all">All Actions</option></select>
             <select id="auditReportStaffFilter" style="width:100%;" onchange="renderAuditReportTable()"><option value="all">All Staff</option></select>
             <input id="auditReportDateFilter" type="date" style="width:100%;" onchange="renderAuditReportTable()">
           </div>
