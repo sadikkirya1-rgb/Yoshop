@@ -1,3 +1,10 @@
+const LOCAL_ONLY_STATE_KEYS = new Set([
+  'activeOrders',
+  'dashboardCache',
+  'appState',
+  'productImages'
+]);
+
 const DEFAULT_ENTITY_MAPPINGS = {
   menu: { entityType: 'products', id: 'menu' },
   products: { entityType: 'products', id: 'products' },
@@ -67,6 +74,9 @@ export function createRepositoryService(options = {}) {
     async saveState(key, value, options = {}) {
       const mapping = DEFAULT_ENTITY_MAPPINGS[key];
       if (mapping) {
+        const isLocalOnlyState = LOCAL_ONLY_STATE_KEYS.has(key) || LOCAL_ONLY_STATE_KEYS.has(mapping.entityType);
+        const enqueueSync = isLocalOnlyState ? false : options.enqueueSync !== false;
+
         const normalized = {
           id: mapping.id,
           value,
@@ -81,7 +91,7 @@ export function createRepositoryService(options = {}) {
             : []
         };
 
-        await repository.saveEntity(mapping.entityType, normalized, { enqueueSync: options.enqueueSync !== false });
+        await repository.saveEntity(mapping.entityType, normalized, { enqueueSync });
         return value;
       }
 

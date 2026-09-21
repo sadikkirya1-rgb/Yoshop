@@ -170,6 +170,36 @@ export function findMatchingProductEntry(records = [], name = '', barcode = '') 
   return null;
 }
 
+export function shouldPreferIncomingRecord(localRecord = {}, incomingRecord = {}) {
+  const localVersion = Number(localRecord?.version || 0);
+  const incomingVersion = Number(incomingRecord?.version || 0);
+
+  if (incomingVersion > localVersion) return true;
+  if (incomingVersion < localVersion) return false;
+
+  const localTime = new Date(localRecord?.updatedAt || localRecord?.lastSyncAt || localRecord?.lastSyncedAt || localRecord?.createdAt || localRecord?.date || 0).getTime();
+  const incomingTime = new Date(incomingRecord?.updatedAt || incomingRecord?.lastSyncAt || incomingRecord?.lastSyncedAt || incomingRecord?.createdAt || incomingRecord?.date || 0).getTime();
+
+  if (incomingTime > localTime) return true;
+  if (incomingTime < localTime) return false;
+
+  const localActor = String(localRecord?.updatedBy || localRecord?.staffId || localRecord?.userId || localRecord?.deviceId || localRecord?.id || '').trim().toLowerCase();
+  const incomingActor = String(incomingRecord?.updatedBy || incomingRecord?.staffId || incomingRecord?.userId || incomingRecord?.deviceId || incomingRecord?.id || '').trim().toLowerCase();
+
+  if (incomingActor && localActor && incomingActor !== localActor) {
+    return incomingActor > localActor;
+  }
+
+  const localIdentity = String(localRecord?.recordId || localRecord?.id || '').trim().toLowerCase();
+  const incomingIdentity = String(incomingRecord?.recordId || incomingRecord?.id || '').trim().toLowerCase();
+
+  if (incomingIdentity && localIdentity && incomingIdentity !== localIdentity) {
+    return incomingIdentity > localIdentity;
+  }
+
+  return true;
+}
+
 export function getCanonicalProductCatalog(records = [], options = {}) {
   const includeOnlySellable = options.includeOnlySellable !== undefined ? options.includeOnlySellable : true;
   const deduped = deduplicateRecords(Array.isArray(records) ? records : [], 'products');

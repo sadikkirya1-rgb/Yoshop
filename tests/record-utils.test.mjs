@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getCanonicalProductCatalog, findMatchingProductEntry } from '../record-utils.mjs';
+import { getCanonicalProductCatalog, findMatchingProductEntry, shouldPreferIncomingRecord } from '../record-utils.mjs';
 
 test('getCanonicalProductCatalog keeps only sellable products and removes duplicates', () => {
   const products = [
@@ -42,4 +42,25 @@ test('findMatchingProductEntry detects an existing product before auto-creating 
   assert.ok(match);
   assert.equal(match.index, 0);
   assert.equal(match.record.name, 'Tomato');
+});
+
+test('shouldPreferIncomingRecord resolves same-version same-time edits deterministically by staff identity', () => {
+  const localRecord = {
+    name: 'Tea',
+    price: 10,
+    version: 3,
+    updatedAt: '2026-09-21T10:00:00.000Z',
+    updatedBy: 'staff-a'
+  };
+
+  const incomingRecord = {
+    name: 'Tea',
+    price: 12,
+    version: 3,
+    updatedAt: '2026-09-21T10:00:00.000Z',
+    updatedBy: 'staff-z'
+  };
+
+  assert.equal(shouldPreferIncomingRecord(localRecord, incomingRecord), true);
+  assert.equal(shouldPreferIncomingRecord(incomingRecord, localRecord), false);
 });

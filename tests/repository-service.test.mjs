@@ -15,16 +15,16 @@ function createFakeRepository(initialState = {}) {
     async loadState(key) {
       return stores.get(key);
     },
-    async saveEntity(entityType, entity) {
+    async saveEntity(entityType, entity, options = {}) {
       const storeName = entityType;
-      stores.set(`${storeName}:${entity.id}`, entity);
+      stores.set(`${storeName}:${entity.id}`, { ...entity, __options: options });
       return entity;
     },
     async getEntity(entityType, id) {
       return stores.get(`${entityType}:${id}`) || null;
     },
     async enqueueSyncAction(action) {
-      const envelope = { id: action.id || 'sync-1', entityType: action.entityType, payload: action.payload };
+      const envelope = { id: action.id || 'sync-1', entityType: action.entityType, payload: action.payload, tenantScope: action.tenantScope };
       syncQueue.push(envelope);
       return envelope;
     },
@@ -91,4 +91,24 @@ test('createRepositoryService keeps transient sync errors pending so they can re
   assert.equal(results[0].status, 'pending');
   assert.equal(queued.length, 1);
   assert.equal(queued[0].id, 'sync-999');
+});
+
+test('createRepositoryService excludes local-only cart and UI state from cloud sync while keeping true business state synced', async () => {
+  const fakeRepository = createFakeRepository();
+  const service = createRepositoryService({
+    repository: fakeRepository,
+    userId: 'user-1',
+    deviceId: 'device-1'
+  });
+
+  await service.initialize();
+
+  await service.saveState('activeOrders', { cartId: { items: [{ id: 'p-1' }] } });
+  await service.saveState('settings', { theme: 'dark' });
+
+  const activeOrdersEntity = await fakeRepository.getEntity('dashboardCache', 'activeOrders');
+  const settingsEntity = await fakeRepository.getEntity('settings', 'settings');
+
+  assert.equal(activeOrdersEntity.__options.enqueueSync, false);
+  assert.equal(settingsEntity.__options.enqueueSync, true);
 });

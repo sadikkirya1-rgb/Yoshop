@@ -9,7 +9,7 @@ import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstat
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-functions.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
-import { createAuditEvent, limitAuditTrail } from './audit-utils.mjs';
+import { createAuditEvent, limitAuditTrail, acquireRecordLock, releaseRecordLock } from './audit-utils.mjs';
 import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity } from './admin-utils.mjs';
 import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField } from './sync-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
@@ -17,7 +17,7 @@ import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
 import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from './permission-utils.mjs';
-import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry } from './record-utils.mjs';
+import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from './invoice-utils.mjs';
@@ -393,7 +393,44 @@ async function persistAuditTrail() {
   }
 }
 let currentLoggedInStaffName = sessionStorage.getItem('currentLoggedInStaffName') || localStorage.getItem('currentLoggedInStaffName') || '';
+const sharedRecordLocks = new Map();
+const SHARED_RECORD_LOCK_TTL_MS = 60000;
 let actionPermissionObserver = null;
+
+function getCurrentLockingStaffId() {
+  return currentLoggedInStaffName || currentUser?.uid || 'system';
+}
+
+function tryAcquireSharedRecordLock(entityType, recordId, options = {}) {
+  if (!entityType || !recordId) {
+    return { acquired: true, lock: null, key: '', reason: 'no_record_id' };
+  }
+
+  const requester = options.staffId || getCurrentLockingStaffId();
+  const result = acquireRecordLock(sharedRecordLocks, entityType, recordId, requester, {
+    ttlMs: options.ttlMs || SHARED_RECORD_LOCK_TTL_MS,
+    now: options.now || Date.now()
+  });
+
+  if (!result.acquired) {
+    appendAuditEvent('record_lock_rejected', {
+      entityType,
+      recordId,
+      requestedBy: requester,
+      lockedBy: result.lock?.staffId || 'another_staff',
+      reason: result.reason
+    });
+    persistAuditTrail().catch(() => {});
+  }
+
+  return result;
+}
+
+function releaseSharedRecordLock(entityType, recordId, staffId = getCurrentLockingStaffId()) {
+  if (!entityType || !recordId) return false;
+  return releaseRecordLock(sharedRecordLocks, entityType, recordId, staffId);
+}
+
 function getCurrentDeviceId() {
   return new URLSearchParams(window.location.search).get('device') || 'browser';
 }
@@ -1747,12 +1784,14 @@ function getCloudPayloadForSyncAction(action) {
         ? { wastageLossHistory: Array.isArray(value) ? value : [] }
         : { expenses: Array.isArray(value) ? value : [] };
     case 'inventoryHistory': return { restockHistory: Array.isArray(value) ? value : [] };
-    case 'dashboardCache': return { activeOrders: value || {} };
+    case 'dashboardCache':
+    case 'appState':
+    case 'productImages':
+      return null;
     case 'settings': return { settings: value || {} };
     case 'appAdminSettings': return { appAdminSettings: value || {} };
     case 'subscription': return { subscription: value || {} };
     case 'businessProfile': return { businessProfile: value || {} };
-    // NOTE: productImages is intentionally excluded — image cache is local-only
     default: return null;
   }
 }
@@ -9404,6 +9443,14 @@ function removeTransactionEditItem(index) {
 }
 
 function closeTransactionEditModal() {
+  const activeRecord = transactionEditState?.transaction;
+  if (activeRecord) {
+    const recordId = String(activeRecord.recordId || activeRecord.id || activeRecord.date || '');
+    if (recordId) {
+      releaseSharedRecordLock('sales', recordId, getCurrentLockingStaffId());
+    }
+  }
+
   const modal = document.getElementById('transactionEditModal');
   if (modal) modal.style.display = 'none';
   resetTransactionProductForm();
@@ -9483,6 +9530,15 @@ function editTransaction(index, permission = 'sales.edit') {
   if (!canModifyTransaction(source)) {
     return showAppAlert(getTransactionActionLockTitle(source), 'Transaction Locked');
   }
+
+  const recordId = String(source.recordId || source.id || source.date || '');
+  if (recordId) {
+    const lockResult = tryAcquireSharedRecordLock('sales', recordId, { staffId: getCurrentLockingStaffId() });
+    if (!lockResult.acquired) {
+      return showAppAlert('This sale is currently being edited by another staff member. Please retry in a moment.', 'Sale Locked');
+    }
+  }
+
   resetTransactionProductForm();
   transactionEditState = {
     index,
@@ -14709,6 +14765,15 @@ async function saveStockAdjustment() {
     return showAppAlert("Please enter a valid, non-negative number for the stock.", 'Invalid Stock');
   }
 
+  const lockTarget = menu[index];
+  const lockKey = String(lockTarget?.recordId || lockTarget?.id || lockTarget?.name || '');
+  if (lockKey) {
+    const lockResult = tryAcquireSharedRecordLock('inventory', lockKey, { staffId: getCurrentLockingStaffId() });
+    if (!lockResult.acquired) {
+      return showAppAlert('This stock item is currently being updated by another staff member. Please retry in a moment.', 'Inventory Locked');
+    }
+  }
+
   // Warning for zero stock if the item is used in popular products
   if (newStock === 0) {
     const itemName = menu[index].name;
@@ -14761,6 +14826,9 @@ async function saveStockAdjustment() {
 
   // Re-render all relevant views
   toggleStockAdjustmentForm(false); // Hide form
+  if (lockKey) {
+    releaseSharedRecordLock('inventory', lockKey, getCurrentLockingStaffId());
+  }
   renderStockListTable();
   renderInventoryReport();
   renderDishesTable();
@@ -15945,13 +16013,7 @@ function getRecordTimestamp(record = {}) {
 }
 
 function shouldAcceptIncomingRecord(localRecord = {}, incomingRecord = {}) {
-  const localVersion = Number(localRecord.version || 0);
-  const incomingVersion = Number(incomingRecord.version || 0);
-
-  if (incomingVersion > localVersion) return true;
-  if (incomingVersion < localVersion) return false;
-
-  return getRecordTimestamp(incomingRecord) >= getRecordTimestamp(localRecord);
+  return shouldPreferIncomingRecord(localRecord, incomingRecord);
 }
 const loggedSyncConflicts = new Set();
 
