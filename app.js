@@ -405,12 +405,23 @@ function getAuditReportStaffLabel(event = {}) {
   if (!value || value === 'system') return 'System';
 
   const shopOwnerUid = String(getEffectiveUid?.() || currentUser?.uid || '').trim();
+  const appAdminInputNames = new Set([
+    'sadik kirya',
+    'sadikkirya',
+    'sadikkirya@gmail.com',
+    'app admin',
+    'shop admin'
+  ].map(item => item.toLowerCase()));
   const adminUidCandidates = new Set([
     MASTER_APP_ADMIN_UID,
     shopOwnerUid,
     String(currentUser?.uid || '').trim(),
     String(currentUser?.email || '').trim()
   ].filter(Boolean));
+
+  if (adminUidCandidates.has(value) || appAdminInputNames.has(value.toLowerCase())) {
+    return 'System';
+  }
 
   const matchedStaff = Array.isArray(staff)
     ? staff.find(member => {
@@ -439,8 +450,8 @@ function getAuditReportStaffLabel(event = {}) {
 
   if (legacyOnlyStaff?.name) return legacyOnlyStaff.name;
 
-  if (adminUidCandidates.has(value) || (value.length >= 20 && !value.includes('@'))) {
-    return 'Shop Admin';
+  if (value.length >= 20 && !value.includes('@')) {
+    return 'System';
   }
 
   return value;
