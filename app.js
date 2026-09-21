@@ -8882,10 +8882,12 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     th:first-child, td:first-child { text-align:center; }
     th:nth-child(2), td:nth-child(2) { text-align:left; }
     th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { text-align:center; }
-    .summary { margin-top:12px; width:290px; margin-left:auto; background:#f8fafc; border:1px solid #dbe4ee; border-radius:14px; padding:6px; box-shadow:0 8px 18px rgba(15,23,42,0.05); }
-    .last-page-summary { margin-top:auto; }
-    .summary table { margin-top:0; border:none; }
-    .summary td { padding:6px 8px; border:none; font-size:0.72rem; }
+    .summary { margin-top:6px; width:100%; max-width:none; margin-left:0; margin-right:0; background:#f8fafc; border:1px solid #dbe4ee; border-radius:12px; padding:4px; box-shadow:0 6px 14px rgba(15,23,42,0.04); }
+    .last-page-summary { margin-top:auto; align-self:stretch; width:100%; }
+    .summary table { margin-top:0; border:none; width:100%; }
+    .summary td { padding:4px 6px; border:none; font-size:0.72rem; }
+    .summary td:first-child { text-align:left; }
+    .summary td:last-child { text-align:right; }
     .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:15px; font-weight:bold; border-radius:10px; }
     .footer { margin-top:12px; text-align:center; }
     .footer p { font-size:0.82rem; }
