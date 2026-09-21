@@ -6203,8 +6203,81 @@ async function logout() {
     console.warn('Firebase sign out warning:', error);
   }
 
+  sessionStorage.removeItem('loginSubStage');
+  setAppShellLocked(true);
+  showLoginOverlay('login');
   showLoggedOutScreen();
   logoutInProgress = false;
+}
+
+async function logoutToEmailLogin() {
+  if (logoutInProgress) return;
+  logoutInProgress = true;
+  isLoggingOut = true;
+  isInitialLoadComplete = false;
+
+  try {
+    appendAuditEvent('logout', { message: 'User logged out from PIN form' });
+    await persistAuditTrail();
+    await saveData(false, { skipEnterpriseMirror: true });
+  } catch (error) {
+    console.warn('PIN logout save warning:', error);
+  }
+
+  sessionStorage.removeItem('currentUserRole');
+  sessionStorage.removeItem('currentUserPermissions');
+  sessionStorage.removeItem('isPinVerified');
+  sessionStorage.removeItem('currentLoggedInStaffName');
+  sessionStorage.removeItem('currentUserUid');
+  sessionStorage.removeItem('loginSubStage');
+  clearPinSession();
+
+  currentUser = null;
+  userMetadata = null;
+  currentUserRole = null;
+  currentUserPermissions = [];
+  isPinVerified = false;
+  currentLoggedInStaffName = '';
+  menu = [];
+  activeOrders = {};
+  transactions = [];
+  staff = [];
+  dishCategories = [];
+  customers = [];
+  units = [];
+  restockHistory = [];
+  settings = { ...defaultSettings };
+  auditTrail = [];
+
+  try {
+    if (unsubscribeSync) unsubscribeSync();
+    if (unsubscribeTransactionsSync) unsubscribeTransactionsSync();
+    if (localRepository) {
+      await localRepository.close();
+      localRepository = null;
+    }
+    repositoryService = null;
+    cloudRepositoryService = null;
+    localRepositoryReady = false;
+    if (db) {
+      db.close();
+      db = null;
+    }
+  } catch (error) {
+    console.warn('PIN logout cleanup warning:', error);
+  }
+
+  try {
+    if (auth?.currentUser) await signOut(auth);
+  } catch (error) {
+    console.warn('PIN logout sign out warning:', error);
+  }
+
+  setAppShellLocked(true);
+  updateAuthUI(null);
+  showLoginOverlay('login');
+  logoutInProgress = false;
+  isLoggingOut = false;
 }
 
 function updateItemUnit(itemIndex, newUnit) {
@@ -17773,7 +17846,7 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
             <div style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
               <button onclick="prepareLogin('admin')" class="btn" style="background: rgba(255,255,255,0.15); border: 1px solid white; color: white; padding: 15px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 10px;">🛡️ Login as Admin</button>
               <button onclick="prepareLogin('staff')" class="btn" style="background: rgba(255,255,255,0.15); border: 1px solid white; color: white; padding: 15px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 10px;">👥 Login as Staff</button>
-              <button onclick="logout()" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 12px; font-weight: bold; width: 100%; border-radius: 8px; margin: 10px 0 0 0; display: flex; align-items: center; justify-content: center; gap: 10px;">
+              <button type="button" onclick="event.preventDefault(); logoutToEmailLogin();" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 12px; font-weight: bold; width: 100%; border-radius: 8px; margin: 10px 0 0 0; display: flex; align-items: center; justify-content: center; gap: 10px;">
                 <span aria-hidden="true" style="font-size:1.1em;">↪</span>
                 Logout Account
               </button>
@@ -17805,10 +17878,10 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
             <div id="pin-actions-container" style="display: flex; flex-direction: column; gap: 12px; width: 100%;">
               <button onclick="loginWithPIN()" class="btn" style="background: #28a745; color: white; padding: 10px; font-weight: bold; width: 100%; margin: 0; border-radius: 8px; font-size: 1em;">Unlock System</button>
               <button onclick="resetLoginStage()" class="btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 12px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">🔙 Switch Account Type</button>
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; width: 100%; gap: 10px;">
-                  <a href="#" onclick="forgotPIN()" style="color: white; font-size: 0.85em; text-decoration: underline; opacity: 0.8;">Forgot PIN?</a>
-                  <button onclick="logout()" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 5px 12px; font-size: 0.8em; margin: 0; cursor: pointer; border-radius: 8px; display: flex; align-items: center; gap: 8px;">
-                    <span aria-hidden="true" style="font-size:1.1em;">↪</span>
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; width: 100%; gap: 8px; flex-wrap: nowrap; min-width: 0;">
+                  <a href="#" onclick="event.preventDefault(); forgotPIN();" style="color: white; font-size: 0.72em; text-decoration: underline; opacity: 0.8; white-space: nowrap; flex-shrink: 0;">Forgot PIN?</a>
+                  <button type="button" onclick="event.preventDefault(); logoutToEmailLogin();" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 4px 10px; font-size: 0.72em; margin: 0; cursor: pointer; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; flex-shrink: 0; min-height: 28px; line-height: 1.2;">
+                    <span aria-hidden="true" style="font-size:1em; line-height:1;">↪</span>
                     Logout Account
                   </button>
               </div>
@@ -18074,6 +18147,7 @@ try {
   window.togglePINVisibility = togglePINVisibility;
   window.showLoginOverlay = showLoginOverlay;
   window.loginWithPIN = loginWithPIN;
+  window.logoutToEmailLogin = logoutToEmailLogin;
 } catch (e) { /* ignore */ }
 
 /**
