@@ -512,13 +512,21 @@ section>h3 {
 
 .chart-wrapper {
   flex: 1 1 300px;
-  /* Allow chart to grow and shrink, with a base width of 300px */
   min-width: 280px;
-  /* Prevent charts from becoming too small */
-  background: var(--card);
-  padding: 15px;
-  border-radius: 10px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+  min-height: 260px;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.96));
+  padding: 16px 16px 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.05), 0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+.chart-wrapper canvas {
+  display: block;
+  width: 100% !important;
+  height: 240px !important;
+  border-radius: 12px;
+  background: linear-gradient(180deg, rgba(248, 250, 252, 0.4), rgba(255, 255, 255, 0.2));
 }
 
 .dashboard-controls {
@@ -3748,6 +3756,55 @@ table:not(.payment-modal-content table) td.u-text-break {
 .login-center-card > * {
   position: relative;
   z-index: 1;
+}
+
+#login-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#login-overlay .login-side {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#pin-entry-stage,
+#pin-actions-container,
+#staff-name-container {
+  display: flex;
+  width: 100%;
+  margin: 0 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+#pin-entry-stage {
+  max-width: 320px;
+  gap: 12px;
+}
+
+#pin-actions-container {
+  gap: 12px;
+}
+
+#staff-name-container input,
+#loginPIN {
+  width: 100%;
+  max-width: 260px;
+  margin: 0 auto;
+  display: block;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+#pin-actions-container .btn,
+#pin-entry-stage .btn {
+  width: 100%;
+  max-width: 260px;
+  margin: 0 auto;
 }
 
 @media (max-width: 768px) {

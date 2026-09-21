@@ -11332,6 +11332,98 @@ window.updateDashboard = updateDashboard;
 window.clearAllAdjustments = clearAllAdjustments;
 window.setDashboardFilter = setDashboardFilter;
 window.applyDashboardDateFilter = applyDashboardDateFilter;
+
+function getModernDashboardChartOptions({ title = '', legend = false, indexAxis = 'x' } = {}) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: {
+      duration: 650,
+      easing: 'easeOutCubic'
+    },
+    interaction: {
+      mode: 'nearest',
+      intersect: false
+    },
+    layout: {
+      padding: { top: 8, right: 8, bottom: 0, left: 0 }
+    },
+    indexAxis,
+    elements: {
+      line: {
+        tension: 0.38,
+        borderWidth: 3
+      },
+      point: {
+        radius: 3,
+        hoverRadius: 5,
+        hitRadius: 10
+      },
+      bar: {
+        borderRadius: 10,
+        borderSkipped: false
+      }
+    },
+    scales: {
+      x: {
+        grid: { display: false, drawBorder: false },
+        border: { display: false },
+        ticks: {
+          color: '#475569',
+          font: { size: 10, weight: '500' },
+          maxRotation: 0,
+          autoSkip: true
+        }
+      },
+      y: {
+        beginAtZero: true,
+        grid: {
+          color: 'rgba(148, 163, 184, 0.14)',
+          drawBorder: false,
+          lineWidth: 1
+        },
+        border: { display: false },
+        ticks: {
+          color: '#475569',
+          font: { size: 10, weight: '500' }
+        }
+      }
+    },
+    plugins: {
+      legend: {
+        display: legend,
+        position: 'top',
+        align: 'start',
+        labels: {
+          usePointStyle: true,
+          boxWidth: 10,
+          boxHeight: 10,
+          color: '#334155',
+          padding: 14,
+          font: { size: 11, weight: '600' }
+        }
+      },
+      title: title ? {
+        display: true,
+        text: title,
+        color: '#0f172a',
+        font: { size: 12, weight: '700' },
+        padding: { bottom: 10 }
+      } : { display: false },
+      tooltip: {
+        backgroundColor: '#0f172a',
+        titleColor: '#f8fafc',
+        bodyColor: '#e2e8f0',
+        borderColor: 'rgba(148, 163, 184, 0.2)',
+        borderWidth: 1,
+        cornerRadius: 8,
+        padding: 10,
+        displayColors: false
+      }
+    }
+  };
+}
+
 window.savePurchaseEntry = savePurchaseEntry;
 window.clearPurchaseForm = clearPurchaseForm;
 window.renderPurchaseHistory = renderPurchaseHistory;
@@ -11354,7 +11446,6 @@ function renderBestSellingItemsChart(sourceTransactions = transactions) {
   if (typeof Chart === 'undefined') return;
   const ctx = document.getElementById('bestSellingItemsChart').getContext('2d');
 
-  // Safely handle empty transactions
   const itemSales = (sourceTransactions && sourceTransactions.length > 0)
     ? sourceTransactions.flatMap(t => t.items || []).reduce((acc, item) => {
       acc[item.name] = (acc[item.name] || 0) + (item.qty || 0);
@@ -11370,7 +11461,11 @@ function renderBestSellingItemsChart(sourceTransactions = transactions) {
     bestSellingItemsChartInstance.destroy();
   }
 
-  // Always render chart, even with empty data (shows zero state)
+  const basePalette = ['#2563eb', '#4f46e5', '#0ea5e9', '#14b8a6', '#f59e0b'];
+  const backgroundColors = (labels.length > 0 ? labels : ['No data yet']).map((_, index) =>
+    labels.length > 0 ? basePalette[index % basePalette.length] : 'rgba(148, 163, 184, 0.35)'
+  );
+
   bestSellingItemsChartInstance = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -11378,21 +11473,36 @@ function renderBestSellingItemsChart(sourceTransactions = transactions) {
       datasets: [{
         label: 'Top 5 Best-Selling Items',
         data: data.length > 0 ? data : [0],
-        backgroundColor: '#3d5a80',
+        backgroundColor: backgroundColors,
+        borderColor: 'rgba(15, 23, 42, 0.06)',
+        borderWidth: 1,
+        borderRadius: 8,
+        maxBarThickness: 32
       }]
     },
     options: {
-      indexAxis: 'y',
-      scales: { x: { beginAtZero: true } },
-      plugins: {
-        legend: { display: false },
-        title: {
-          display: true,
-          text: 'Top 5 Best-Selling Items'
+      ...getModernDashboardChartOptions({ title: 'Top 5 Best-Selling Items', indexAxis: 'x', legend: false }),
+      scales: {
+        x: {
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: {
+            color: '#475569',
+            font: { size: 10, weight: '500' },
+            maxRotation: 0,
+            autoSkip: true
+          }
         },
-        tooltip: {
-          enabled: data.length > 0
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(148, 163, 184, 0.14)', drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
         }
+      },
+      plugins: {
+        ...getModernDashboardChartOptions({ title: 'Top 5 Best-Selling Items', indexAxis: 'x', legend: false }).plugins,
+        tooltip: { enabled: data.length > 0, ...getModernDashboardChartOptions({ title: 'Top 5 Best-Selling Items', indexAxis: 'x', legend: false }).plugins.tooltip }
       }
     }
   });
@@ -11419,17 +11529,28 @@ function renderStaffRevenueChart(data) {
       datasets: [{
         label: 'Revenue',
         data: values,
-        backgroundColor: '#3d5a80',
-        borderRadius: 4
+        backgroundColor: ['#2563eb', '#4f46e5', '#0ea5e9', '#14b8a6', '#f59e0b', '#8b5cf6'],
+        borderColor: 'rgba(15, 23, 42, 0.04)',
+        borderWidth: 1,
+        borderRadius: 8,
+        borderSkipped: false,
+        barThickness: 12
       }]
     },
     options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        title: { display: true, text: 'Revenue Comparison by Staff Member' }
+      ...getModernDashboardChartOptions({ title: 'Revenue Comparison by Staff Member', indexAxis: 'y', legend: false }),
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
+        },
+        y: {
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
+        }
       }
     }
   });
@@ -11452,24 +11573,33 @@ function renderReportProfitChart(data) {
       datasets: [{
         label: 'Profit Margin %',
         data: data.map(d => d.margin),
-        backgroundColor: '#6f42c1',
-        borderRadius: 4
+        backgroundColor: ['#8b5cf6', '#7c3aed', '#a78bfa', '#c4b5fd', '#ddd6fe'],
+        borderColor: 'rgba(15, 23, 42, 0.04)',
+        borderWidth: 1,
+        borderRadius: 8,
+        borderSkipped: false,
+        barThickness: 12
       }]
     },
     options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
+      ...getModernDashboardChartOptions({ title: 'Top 10 Product Profit Margins (%)', indexAxis: 'y', legend: false }),
       scales: {
         x: {
           beginAtZero: true,
           max: 100,
-          ticks: { callback: (value) => value + '%' }
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: {
+            callback: (value) => value + '%',
+            color: '#475569',
+            font: { size: 10, weight: '500' }
+          }
+        },
+        y: {
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
         }
-      },
-      plugins: {
-        legend: { display: false },
-        title: { display: true, text: 'Top 10 Product Profit Margins (%)' }
       }
     }
   });
@@ -11495,20 +11625,32 @@ function renderMonthlyRevenueChart(data) {
       datasets: [{
         label: 'Revenue',
         data: values,
-        borderColor: '#ff6b35',
-        backgroundColor: 'rgba(255, 107, 53, 0.1)',
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37, 99, 235, 0.12)',
         fill: true,
-        tension: 0.3
+        tension: 0.38,
+        borderWidth: 3,
+        pointRadius: 3,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#2563eb',
+        pointBorderWidth: 0
       }]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        title: { display: true, text: 'Monthly Revenue Trend' }
-      },
-      scales: { y: { beginAtZero: true } }
+      ...getModernDashboardChartOptions({ title: 'Monthly Revenue Trend', legend: false }),
+      scales: {
+        x: {
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(148, 163, 184, 0.14)', drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
+        }
+      }
     }
   });
 }
@@ -11538,19 +11680,35 @@ function renderDailySalesChart(sourceTransactions = transactions) {
     type: 'bar',
     data: {
       labels: labels.length > 0 ? labels : ['No data yet'],
-      datasets: [{ label: 'Daily Sales', data: data.length > 0 ? data : [0], backgroundColor: '#ff6b35' }]
+      datasets: [{
+        label: 'Daily Sales',
+        data: data.length > 0 ? data : [0],
+        backgroundColor: data.length > 0 ? Array.from({ length: data.length }, (_, i) => i % 2 === 0 ? '#2563eb' : '#3b82f6') : 'rgba(148, 163, 184, 0.35)',
+        borderColor: 'rgba(15, 23, 42, 0.04)',
+        borderWidth: 1,
+        borderRadius: 8,
+        borderSkipped: false,
+        barThickness: 18
+      }]
     },
     options: {
-      scales: { y: { beginAtZero: true } },
-      plugins: {
-        legend: { display: false },
-        title: {
-          display: true,
-          text: 'Daily Sales'
+      ...getModernDashboardChartOptions({ title: 'Daily Sales', legend: false }),
+      scales: {
+        x: {
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
         },
-        tooltip: {
-          enabled: data.length > 0
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(148, 163, 184, 0.14)', drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
         }
+      },
+      plugins: {
+        ...getModernDashboardChartOptions({ title: 'Daily Sales', legend: false }).plugins,
+        tooltip: { enabled: data.length > 0, ...getModernDashboardChartOptions({ title: 'Daily Sales', legend: false }).plugins.tooltip }
       }
     }
   });
@@ -11585,26 +11743,32 @@ function renderDashboardChart() {
       datasets: [{
         label: 'Products by Category',
         data: data.length > 0 ? data : [0],
-        backgroundColor: ['#ff6b35', '#f7c59f', '#7dcdb8', '#3d5a80', '#98c1d9'],
+        backgroundColor: ['#2563eb', '#3b82f6', '#0ea5e9', '#14b8a6', '#8b5cf6'],
+        borderColor: 'rgba(15, 23, 42, 0.04)',
+        borderWidth: 1,
+        borderRadius: 8,
+        borderSkipped: false,
+        barThickness: 18
       }]
     },
     options: {
+      ...getModernDashboardChartOptions({ title: 'Products by Category', legend: false }),
       scales: {
+        x: {
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
+        },
         y: {
-          beginAtZero: true
+          beginAtZero: true,
+          grid: { color: 'rgba(148, 163, 184, 0.14)', drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 10, weight: '500' } }
         }
       },
       plugins: {
-        legend: {
-          display: false
-        },
-        title: {
-          display: true,
-          text: 'Products by Category'
-        },
-        tooltip: {
-          enabled: data.length > 0
-        }
+        ...getModernDashboardChartOptions({ title: 'Products by Category', legend: false }).plugins,
+        tooltip: { enabled: data.length > 0, ...getModernDashboardChartOptions({ title: 'Products by Category', legend: false }).plugins.tooltip }
       }
     }
   });
@@ -11628,20 +11792,30 @@ function renderAdminGlobalRevenueChart(revenuePerDay) {
       datasets: [{
         label: 'Global Daily Revenue',
         data: data,
-        borderColor: '#ff6b35',
-        backgroundColor: 'rgba(255, 107, 53, 0.1)',
-        tension: 0.1,
-        fill: true
+        borderColor: '#2563eb',
+        backgroundColor: 'rgba(37, 99, 235, 0.12)',
+        tension: 0.35,
+        fill: true,
+        borderWidth: 3,
+        pointRadius: 4,
+        pointHoverRadius: 5,
+        pointBackgroundColor: '#2563eb'
       }]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: { y: { beginAtZero: true } },
-      plugins: {
-        title: { display: true, text: 'Global Daily Revenue', font: { size: 14 } },
-        legend: { display: false },
-        tooltip: { mode: 'index', intersect: false }
+      ...getModernDashboardChartOptions({ title: 'Global Daily Revenue' }),
+      scales: {
+        x: {
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 11 } }
+        },
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(148, 163, 184, 0.15)', drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 11 } }
+        }
       }
     }
   });
@@ -11663,14 +11837,30 @@ function renderAdminShopsComparisonChart(revenuePerShop) {
     type: 'bar',
     data: {
       labels: labels,
-      datasets: [{ label: 'Revenue per Shop', data: data, backgroundColor: '#3d5a80' }]
+      datasets: [{
+        label: 'Revenue per Shop',
+        data: data,
+        backgroundColor: ['#2563eb', '#4f46e5', '#0ea5e9', '#14b8a6', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444', '#f97316', '#84cc16'],
+        borderRadius: 8,
+        borderSkipped: false,
+        barThickness: 12
+      }]
     },
     options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: { x: { beginAtZero: true } },
-      plugins: { title: { display: true, text: 'Top 10 Shops by Revenue', font: { size: 13 } }, legend: { display: false } }
+      ...getModernDashboardChartOptions({ title: 'Top 10 Shops by Revenue', indexAxis: 'y' }),
+      scales: {
+        x: {
+          beginAtZero: true,
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 11 } }
+        },
+        y: {
+          grid: { display: false, drawBorder: false },
+          border: { display: false },
+          ticks: { color: '#475569', font: { size: 11 } }
+        }
+      }
     }
   });
 }
