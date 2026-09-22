@@ -4,6 +4,19 @@ function normalizeInvoiceNumber(invoiceNumber) {
   return trimmed || null;
 }
 
+export const INVOICE_ROWS_PER_PAGE = 10;
+
+export function paginateInvoiceItems(items = [], rowsPerPage = INVOICE_ROWS_PER_PAGE) {
+  const source = Array.isArray(items) ? items : [];
+  const pageSize = Math.max(1, Number(rowsPerPage) || INVOICE_ROWS_PER_PAGE);
+  if (source.length === 0) return [[]];
+
+  return Array.from(
+    { length: Math.ceil(source.length / pageSize) },
+    (_, pageIndex) => source.slice(pageIndex * pageSize, (pageIndex + 1) * pageSize)
+  );
+}
+
 function findMatchingCustomer(customer, transaction) {
   if (!customer || !transaction) return null;
   if (transaction?.customerId) {

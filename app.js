@@ -20,7 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -8751,15 +8751,12 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const transactionId = String(source.id || source.transactionId || source.recordId || source.invoiceNumber || source.date || '').trim();
   const barcodeImgUrl = getBarcodeDataUrl(transactionId || invoiceNumber);
   const barcodeHtml = barcodeImgUrl ? `<div style="text-align:center; margin: 18px 0 8px;"><img src="${barcodeImgUrl}" style="width: 85%; max-height: 60px;"></div>` : '';
-  const MAX_ITEMS_PER_A4_PAGE = 10;
-  const itemPages = rawItems.length > MAX_ITEMS_PER_A4_PAGE
-    ? Array.from({ length: Math.ceil(rawItems.length / MAX_ITEMS_PER_A4_PAGE) }, (_, pageIndex) => rawItems.slice(pageIndex * MAX_ITEMS_PER_A4_PAGE, (pageIndex + 1) * MAX_ITEMS_PER_A4_PAGE))
-    : [rawItems];
+  const itemPages = paginateInvoiceItems(rawItems, INVOICE_ROWS_PER_PAGE);
 
   const pagesHtml = itemPages.map((pageItems, pageIndex) => {
     const isLastPage = pageIndex === itemPages.length - 1;
     const pageRowsHtml = pageItems.length > 0 ? pageItems.map((item, offset) => {
-      const globalIndex = (pageIndex * MAX_ITEMS_PER_A4_PAGE) + offset + 1;
+      const globalIndex = (pageIndex * INVOICE_ROWS_PER_PAGE) + offset + 1;
       const name = escapeHtml(item?.name || item?.productName || item?.itemName || 'Item');
       const qty = Number(item?.qty || item?.quantity || 1);
       const price = Number(item?.price || item?.unitPrice || item?.cost || 0);
@@ -8777,7 +8774,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
           <td colspan="5" style="text-align:center; color:#64748b;">No items available</td>
         </tr>`;
 
-    const showSummaryOnThisPage = isLastPage || pageIndex === 0;
+    const showSummaryOnThisPage = isLastPage;
     const summaryHtml = showSummaryOnThisPage ? `
       <div class="summary ${isLastPage ? 'last-page-summary' : ''}">
         <table>
@@ -8859,7 +8856,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     :root { --primary-light: #ff6b35; --primary-hover-light: #ff854f; --bg-light: #f0f2f5; --card-light: #fff; --text-light: #333; --border-light: #eee; --primary-dark: #ff854f; --primary-hover-dark: #ff6b35; --primary: #ff6b35; --primary-hover: #ff854f; --secondary:#10b981; --light:#f8fafc; --border:#dbe4ee; --text:#334155; }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', Arial, sans-serif; }
     body { background:#edf2f7; padding:8px; color:var(--text); }
-    .invoice-page { width:210mm; min-height:297mm; background:white; margin:0 auto 18px; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(0,0,0,.15); page-break-after:auto; break-after:auto; display:flex; flex-direction:column; }
+    .invoice-page { width:210mm; height:297mm; min-height:297mm; max-height:297mm; background:white; margin:0 auto 18px; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(0,0,0,.15); page-break-after:page; break-after:page; display:flex; flex-direction:column; }
     .invoice-page:last-child { page-break-after:auto; break-after:auto; margin-bottom:0; }
     .invoice-page:not(:last-child) { page-break-after:page; break-after:page; }
     .header { background:linear-gradient(135deg,#2563eb,#1d4ed8,#10b981); color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; page-break-inside:avoid; break-inside:avoid; }
@@ -8869,8 +8866,8 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .logo p { opacity:.9; font-size:0.76rem; }
     .invoice-title { text-align:right; }
     .invoice-title h2 { font-size:24px; }
-    .content { padding:12px 16px 10px; display:flex; flex-direction:column; min-height:calc(297mm - 118px); }
-    .invoice-page-content { min-height:calc(297mm - 120px); }
+    .content { padding:12px 16px 10px; display:flex; flex-direction:column; height:calc(297mm - 86px); min-height:0; }
+    .invoice-page-content { height:calc(297mm - 86px); }
     .cards { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
     .card { background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%); border:1px solid #dbe4ee; border-left:5px solid var(--primary); padding:8px 10px; border-radius:12px; box-shadow:0 6px 16px rgba(15,23,42,0.04); }
     .card h3 { color:var(--primary); margin-bottom:6px; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.05em; }
@@ -8920,24 +8917,26 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
       html,body { background:white; padding:0; margin:0; }
       body { margin:0; }
       .actions, .preview-controls { display:none !important; }
+      #preview-zoom-wrapper { transform:none !important; margin:0 !important; }
       .invoice-page {
-        width:100%;
-        min-height:0;
-        margin:0 0 8mm;
+        width:210mm;
+        height:297mm;
+        min-height:297mm;
+        max-height:297mm;
+        margin:0;
         border-radius:0;
         box-shadow:none;
         page-break-inside:avoid;
         break-inside:avoid;
-        page-break-after:auto;
-        break-after:auto;
+        page-break-after:page;
+        break-after:page;
       }
-      .invoice-page:last-child { page-break-after:auto; break-after:auto; margin-bottom:0; }
-      .invoice-page:not(:last-child) { page-break-after:page; break-after:page; }
+      .invoice-page:last-child { page-break-after:auto; break-after:auto; }
       .header, .content, .summary, table, thead, tbody, tr, td, th {
         page-break-inside:avoid;
         break-inside:avoid;
       }
-      @page { size:A4; margin:0; }
+      @page { size:A4 portrait; margin:0; }
     }
   </style>
   <script>
@@ -9040,10 +9039,8 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     </div>
   </div>
   <div id="preview-zoom-wrapper">
-    <div class="preview-inner">
       <div class="preview-inner">
         ${pagesHtml}
-      </div>
     </div>
   </div>
 </body>

@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from '../invoice-utils.mjs';
+
+test('paginateInvoiceItems uses one shared ten-row A4 page limit', () => {
+  const items = Array.from({ length: 21 }, (_, index) => ({ id: index + 1 }));
+
+  assert.equal(INVOICE_ROWS_PER_PAGE, 10);
+  assert.deepEqual(paginateInvoiceItems(items).map(page => page.length), [10, 10, 1]);
+  assert.deepEqual(paginateInvoiceItems(items.slice(0, 10)).map(page => page.length), [10]);
+  assert.deepEqual(paginateInvoiceItems([]), [[]]);
+});
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [
