@@ -8878,9 +8878,9 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .badge { display:inline-block; padding:4px 8px; background:#10b981; color:white; border-radius:30px; font-size:10px; font-weight:bold; }
     table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #d8e1ea; border-radius:12px; overflow:hidden; }
     thead { background:linear-gradient(135deg,#ff7b42,#ff6b35); color:white; }
-    tbody tr { height:30px; }
-    th { padding:6px 6px; height:30px; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; text-align:center; border-bottom:1px solid rgba(100, 116, 139, 0.75); }
-    td { padding:4px 8px; height:30px; border-bottom:1px solid rgba(148, 163, 184, 0.7); font-size:0.72rem; text-align:center; }
+    tbody tr { height:26px; }
+    th { padding:5px 6px; height:26px; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.03em; text-align:center; border-bottom:1px solid rgba(100, 116, 139, 0.75); }
+    td { padding:3px 8px; height:26px; line-height:1.1; border-bottom:1px solid rgba(148, 163, 184, 0.7); font-size:0.70rem; text-align:center; }
     tbody tr:nth-child(even) { background:#f8fafc; }
     tbody tr:last-child td { border-bottom:none; }
     th:first-child, td:first-child { text-align:center; }
