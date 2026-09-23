@@ -7443,11 +7443,14 @@ async function processSplitPayments() {
         subtotal: Number(billTotals.subtotal || 0),
         tax: Number(billTotals.tax || 0),
         deliveryFee: deliveryFee,
-        paymentMethod: paymentMethod
+        paymentMethod: paymentMethod,
+        orderType: settings.serviceMode ? 'service' : 'product'
       };
       totalProcessed += transaction.total;
       await recordTransaction(transaction); // Use individual record helper
-      bill.items.forEach(item => deductStock(item.name, item.qty));
+      if (isStockTrackingEnabled() && transaction.orderType !== 'service') {
+        bill.items.forEach(item => deductStock(item.name, item.qty));
+      }
       document.getElementById('paymentModal').style.display = 'none';
     } else {
       await showAppAlert("Payment cancelled. Remaining split bills will not be processed.", "Payment Cancelled");
