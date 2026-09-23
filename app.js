@@ -8778,18 +8778,33 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
         </tr>`;
 
     const showSummaryOnThisPage = isLastPage;
+    const stampStatus = (safePaymentStatus || 'Approved').toUpperCase();
     const summaryHtml = showSummaryOnThisPage ? `
       <div class="summary ${isLastPage ? 'last-page-summary' : ''}">
-        <table>
-          <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
-          <tr><td>Discount</td><td align="right">${discountText}</td></tr>
-          <tr><td>Delivery Fee</td><td align="right">${deliveryFeeText}</td></tr>
-          <tr><td>VAT</td><td align="right">${taxText}</td></tr>
-          ${adjustmentRowsHtml}
-          <tr><td>Amount Paid</td><td align="right">${paidText}</td></tr>
-          <tr><td>Balance</td><td align="right">${balanceText}</td></tr>
-          <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
-        </table>
+        <div class="summary-inner">
+          <table>
+            <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
+            <tr><td>Discount</td><td align="right">${discountText}</td></tr>
+            <tr><td>Delivery Fee</td><td align="right">${deliveryFeeText}</td></tr>
+            <tr><td>VAT</td><td align="right">${taxText}</td></tr>
+            ${adjustmentRowsHtml}
+            <tr><td>Amount Paid</td><td align="right">${paidText}</td></tr>
+            <tr><td>Balance</td><td align="right">${balanceText}</td></tr>
+            <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
+          </table>
+          <div class="digital-stamp-wrap">
+            <div class="digital-stamp" aria-label="Digital stamp">
+              <div class="stamp-watermark">${escapeHtml(stampStatus)}</div>
+              <div class="stamp-rubric"></div>
+              <div class="stamp-signature-wrap">
+                <div class="stamp-status">${escapeHtml(stampStatus)}</div>
+                <div class="stamp-date">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+                <div class="stamp-signature">${safeServedBy || 'Authorized Signatory'}</div>
+                <div class="stamp-line"></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     ` : '';
 
@@ -8889,11 +8904,23 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { text-align:center; }
     .summary { margin-top:6px; width:100%; max-width:none; margin-left:0; margin-right:0; background:#f8fafc; border:1.5px solid #dbe4ee; border-radius:12px; padding:4px; box-shadow:0 6px 14px rgba(15,23,42,0.04); }
     .last-page-summary { margin-top:auto; align-self:stretch; width:100%; }
+    .summary-inner { display:flex; align-items:center; justify-content:center; gap:12px; position:relative; }
     .summary table { margin-top:0; border:none; width:100%; }
     .summary td { padding:4px 6px; border:none; font-size:0.72rem; }
     .summary td:first-child { text-align:left; }
     .summary td:last-child { text-align:right; }
     .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:15px; font-weight:bold; border-radius:10px; }
+    .digital-stamp-wrap { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); z-index:2; pointer-events:none; }
+    .digital-stamp { position:relative; width:136px; height:136px; border:3px solid rgba(37, 99, 235, 0.78); border-radius:20px; background:rgba(239,246,255,0.26); display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 2px rgba(37,99,235,0.12), inset 0 0 18px rgba(30,64,175,0.16), inset 0 2px 2px rgba(255,255,255,0.78), 0 0 0 1px rgba(37,99,235,0.16), 0 2px 0 rgba(255,255,255,0.7), 2px 4px 0 rgba(30,64,175,0.22); backdrop-filter:blur(0.3px); }
+    .digital-stamp::before { content:''; position:absolute; inset:5px; border:2px solid rgba(37,99,235,0.34); border-radius:15px; transform:rotate(-1deg); box-shadow:inset 0 1px 1px rgba(255,255,255,0.65), 0 1px 1px rgba(30,64,175,0.16); }
+    .digital-stamp::after { content:''; position:absolute; inset:0; border-radius:20px; box-shadow:inset 0 0 0 1px rgba(15,23,42,0.04), inset 0 -2px 2px rgba(30,64,175,0.1); }
+    .stamp-watermark { position:absolute; inset:10px 8px; display:flex; align-items:center; justify-content:center; font-size:0.52rem; letter-spacing:0.18em; font-weight:900; color:rgba(37,99,235,0.13); transform:rotate(-18deg); text-transform:uppercase; }
+    .stamp-rubric { position:absolute; inset:11px; border:1.5px dashed rgba(37,99,235,0.7); border-radius:13px; }
+    .stamp-status { position:relative; z-index:2; width:max-content; max-width:100%; margin:0 auto -1px; padding:0 6px; background:rgba(239,246,255,0.86); text-align:center; font-size:0.52rem; letter-spacing:0.16em; font-weight:800; color:rgba(30,64,175,0.9); text-transform:uppercase; }
+    .stamp-signature-wrap { position:relative; z-index:1; text-align:center; margin-top:13px; }
+    .stamp-date { margin:0 auto 6px; font-size:0.5rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:rgba(30,64,175,0.88); border-top:1px solid rgba(30,64,175,0.45); padding-top:3px; }
+    .stamp-signature { max-width:118px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:1.18rem; font-weight:500; font-style:italic; color:rgba(25,70,178,0.92); letter-spacing:0.01em; text-shadow:0.5px 0 rgba(30,64,175,0.2), 0 1px 0 rgba(255,255,255,0.72); line-height:1; transform:skewX(-10deg) rotate(-6deg); font-family:'Segoe Print','Bradley Hand','Lucida Handwriting',cursive; }
+    .stamp-line { width:92px; height:15px; margin:3px auto 0; border-bottom:1.5px solid rgba(30,64,175,0.72); border-radius:50%; transform:skewY(-8deg) rotate(-2deg); box-shadow:0 1px 0 rgba(255,255,255,0.55); }
     .footer { margin-top:12px; text-align:center; }
     .footer p { font-size:0.82rem; }
     .promo { display:inline-block; margin-top:8px; padding:6px 10px; border:1px dashed #94a3b8; color:#475569; font-size:0.76rem; font-weight:700; }
@@ -14401,6 +14428,7 @@ function renderInvoices() {
         const lastDate = row.date ? new Date(row.date).toLocaleString() : new Date().toLocaleString();
         const transactionIndex = Array.isArray(transactions) ? transactions.indexOf(row.transaction) : -1;
         const salesBy = getTransactionStaffName(row.transaction || {});
+        const invoicePreviewData = { ...previewData, servedBy: salesBy };
         const transactionActionsAllowed = canModifyTransaction(row.transaction || {});
         const isDraft = String(row.transaction?.orderStatus || row.transaction?.status || '').toLowerCase() === 'draft';
         const allAdjustments = Array.isArray(previewData?.adjustments) ? previewData.adjustments : [];
@@ -14429,7 +14457,7 @@ function renderInvoices() {
         bcButton.textContent = 'BC🖨️';
         bcButton.addEventListener('click', event => {
           event.stopPropagation();
-          previewOrder(previewData);
+          previewOrder(invoicePreviewData);
         });
 
         const a4Button = document.createElement('button');
@@ -14439,7 +14467,7 @@ function renderInvoices() {
         a4Button.textContent = 'A4🖨️';
         a4Button.addEventListener('click', event => {
           event.stopPropagation();
-          openA4InvoicePreview(previewData);
+          openA4InvoicePreview(invoicePreviewData);
         });
 
         const statusBadge = document.createElement('span');
