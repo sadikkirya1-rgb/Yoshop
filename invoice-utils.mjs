@@ -4,7 +4,7 @@ function normalizeInvoiceNumber(invoiceNumber) {
   return trimmed || null;
 }
 
-export const INVOICE_ROWS_PER_PAGE = 10;
+export const INVOICE_ROWS_PER_PAGE = 30;
 
 export function paginateInvoiceItems(items = [], rowsPerPage = INVOICE_ROWS_PER_PAGE) {
   const source = Array.isArray(items) ? items : [];
