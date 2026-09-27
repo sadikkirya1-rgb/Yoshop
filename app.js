@@ -239,8 +239,10 @@ function formatPresenceValue(lastSeenValue) {
 }
 
 function getPresenceStatus(userData = {}) {
-  const isOnline = userData.isOnline === true;
   const lastSeen = userData.lastSeen || userData.lastLogin;
+  const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : NaN;
+  const presenceIsFresh = Number.isFinite(lastSeenTime) && (Date.now() - lastSeenTime) <= 10 * 60 * 1000;
+  const isOnline = userData.isOnline === true && presenceIsFresh;
   const detail = isOnline ? 'Online now' : `Last seen ${formatPresenceValue(lastSeen)}`;
 
   return {
@@ -251,12 +253,13 @@ function getPresenceStatus(userData = {}) {
   };
 }
 
-async function syncUserPresence(online = true) {
-  if (!dbFirestore || !auth?.currentUser?.uid) return;
+async function syncUserPresence(online = true, userId = '') {
+  const uid = userId || auth?.currentUser?.uid;
+  if (!dbFirestore || !uid) return;
 
   try {
     const now = new Date().toISOString();
-    await setDoc(doc(dbFirestore, 'users', auth.currentUser.uid), {
+    await setDoc(doc(dbFirestore, 'users', uid), {
       isOnline: online,
       lastSeen: now,
       ...(online ? { lastLogin: now } : {})
@@ -2770,7 +2773,13 @@ async function syncCloudAction(action) {
       const shopDocRef = doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile');
       const safeCloudPayload = await protectCloudPayloadFromEmptyOverwrite(shopDocRef, cloudPayload, action);
       if (safeCloudPayload) {
-        await setDoc(shopDocRef, sanitizeForFirestore(safeCloudPayload), { merge: true });
+        const syncTimestamp = new Date().toISOString();
+        await setDoc(shopDocRef, sanitizeForFirestore({
+          ...safeCloudPayload,
+          lastSyncAt: syncTimestamp,
+          lastSyncedAt: syncTimestamp,
+          lastUpdated: syncTimestamp
+        }), { merge: true });
       }
       return;
     }
@@ -3751,6 +3760,42 @@ function compareBusinessIds(leftValue, rightValue) {
   return leftNumber - rightNumber;
 }
 
+function getShopLastSyncValue(shopData = {}) {
+  const candidates = [
+    shopData.lastSyncedAt,
+    shopData.lastSyncAt,
+    shopData.lastUpdated,
+    shopData.sync?.lastSyncedAt,
+    shopData.sync?.lastSyncAt
+  ];
+  ['menu', 'staff', 'customers', 'units', 'dishCategories', 'restockHistory'].forEach(collectionName => {
+    const records = Array.isArray(shopData[collectionName]) ? shopData[collectionName] : [];
+    records.forEach(record => {
+      candidates.push(record?.lastSyncedAt, record?.lastSyncAt, record?.updatedAt);
+    });
+  });
+  const validDates = candidates
+    .filter(Boolean)
+    .map(value => new Date(value))
+    .filter(date => !Number.isNaN(date.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime());
+  return validDates.length ? validDates[0].toLocaleString() : 'Never';
+}
+
+function getAdminShopStatus(userStatus, shopStatus) {
+  const normalizedUserStatus = String(userStatus || 'active').trim().toLowerCase();
+  const normalizedShopStatus = String(shopStatus || 'active').trim().toLowerCase();
+  if (normalizedUserStatus === 'pending') return { label: 'Pending', className: 'suspended' };
+  if (['deactivated', 'disabled', 'inactive'].includes(normalizedUserStatus)
+    || ['deactivated', 'disabled', 'inactive'].includes(normalizedShopStatus)) {
+    return { label: 'Deactivated', className: 'deactivated' };
+  }
+  if (normalizedUserStatus === 'suspended' || normalizedShopStatus === 'suspended') {
+    return { label: 'Suspended', className: 'suspended' };
+  }
+  return { label: 'Active', className: 'active' };
+}
+
 async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.filter) {
   if (currentUserRole !== 'appAdmin') return;
 
@@ -3783,7 +3828,7 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
       const subscriptionExpires = userData.subscriptionExpires || null;
       const meta = getSubscriptionMeta({ userStatus, shopStatus, subscriptionExpires, now: today });
-      const lastSync = shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never';
+      const lastSync = getShopLastSyncValue(shopData);
       const presence = getPresenceStatus(userData);
 
       // compute plan details and recent sales
@@ -4103,13 +4148,9 @@ async function refreshAppAdminShops() {
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
 
       // Priority: Global User Status (Pending/Active) then Shop-specific status
-      let statusLabel = userStatus.charAt(0).toUpperCase() + userStatus.slice(1);
-      let statusClass = userStatus === 'active' ? 'active' : (userStatus === 'pending' ? 'suspended' : 'deactivated');
-
-      if (userStatus === 'active' && shopStatus !== 'active') {
-        statusLabel = shopStatus.charAt(0).toUpperCase() + shopStatus.slice(1);
-        statusClass = 'suspended';
-      }
+      const adminShopStatus = getAdminShopStatus(userStatus, shopStatus);
+      const statusLabel = adminShopStatus.label;
+      const statusClass = adminShopStatus.className;
 
       let subStatusHtml = '';
       if (subExpires) {
@@ -4141,7 +4182,7 @@ async function refreshAppAdminShops() {
             <p class="u-fs-08"><strong>WhatsApp:</strong> ${whatsappNum}</p>
             ${adminContactHtml}
             <p class="u-fs-08"><strong>Last Active:</strong> ${lastActive}</p>
-            <p class="u-fs-08"><strong>Last Sync:</strong> ${shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never'}</p>
+            <p class="u-fs-08"><strong>Last Sync:</strong> ${getShopLastSyncValue(shopData)}</p>
             ${subStatusHtml}
           </div>
           <div style="display:flex; gap:5px; margin-top:auto; padding-top:10px; border-top: 1px solid var(--border-color); flex-wrap: wrap;">
@@ -4262,12 +4303,9 @@ async function refreshAppAdminShopsTable() {
       const userStatus = userData.status || 'active';
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
 
-      let statusLabel = userStatus.charAt(0).toUpperCase() + userStatus.slice(1);
-      let statusClass = userStatus === 'active' ? 'active' : (userStatus === 'pending' ? 'suspended' : 'deactivated');
-      if (userStatus === 'active' && shopStatus !== 'active') {
-        statusLabel = shopStatus.charAt(0).toUpperCase() + shopStatus.slice(1);
-        statusClass = 'suspended';
-      }
+      const adminShopStatus = getAdminShopStatus(userStatus, shopStatus);
+      const statusLabel = adminShopStatus.label;
+      const statusClass = adminShopStatus.className;
 
       const subExpires = userData.subscriptionExpires ? new Date(userData.subscriptionExpires) : null;
       let subText = 'PROMO PLAN';
@@ -4291,7 +4329,7 @@ async function refreshAppAdminShopsTable() {
           <td class="u-fs-08">${whatsappNum}</td>
           <td class="u-text-center"><span class="shop-card-status ${statusClass}" style="padding: 2px 6px; font-size: 0.7em;">${statusLabel}</span></td>
           <td class="u-fs-08" style="${subStyle}">${subText}</td>
-          <td class="u-fs-08">${shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never'}</td>
+          <td class="u-fs-08">${getShopLastSyncValue(shopData)}</td>
           <td class="u-text-right">
             <div style="display:flex; gap:4px; justify-content:flex-end;">
               <button class="btn btn-info u-fs-08" style="padding:4px 8px; margin:0;" onclick="monitorShop('${uid}', '${(shopSettings.name || 'Unnamed Shop').replace(/'/g, "\\'")}')">Monitor</button>
@@ -11650,6 +11688,7 @@ let reportProfitChartInstance;
 let monthlyRevenueChartInstance;
 
 let dashboardDateFilterMode = 'today';
+let presenceHeartbeat = null;
 
 function updateQuickFilterButtons(selected) {
   document.querySelectorAll('.dashboard-filter-buttons button').forEach(btn => {
@@ -11969,7 +12008,7 @@ function updateDashboard() {
   const totalBills = filteredTransactions.length;
   const debtSummary = summarizeDebtInvoices({
     customers: Array.isArray(customers) ? customers : [],
-    transactions: Array.isArray(transactions) ? transactions : []
+    transactions: filteredTransactions
   });
   const outstandingDebt = debtSummary.outstandingDebt;
   const pendingInvoices = debtSummary.pendingInvoices;
@@ -13745,7 +13784,7 @@ function renderCustomerList() {
       : `<span style="${outstandingBalance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${outstandingBalance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(outstandingBalance))}</span>`;
 
     const whatsappCell = customer.whatsapp ? `<a href="https://wa.me/${encodeURIComponent(customer.whatsapp.replace(/\s+/g, ''))}" target="_blank" rel="noreferrer" style="color:#25D366; text-decoration:none; font-weight:600;">${escapeHtml(customer.whatsapp)}</a>` : '<span style="color:#888;">N/A</span>';
-    const emailCell = customer.email ? `<a href="mailto:${encodeURIComponent(customer.email)}" style="color:#0d6efd; text-decoration:none; font-weight:600;">${escapeHtml(customer.email)}</a>` : '<span style="color:#888;">N/A</span>';
+    const emailCell = customer.email ? `<span style="color:#0d6efd; font-weight:600;">${escapeHtml(customer.email)}</span>` : '<span style="color:#888;">N/A</span>';
     const whatsappAction = '';
     const sendStatusAction = '';
     const tr = document.createElement('tr');
@@ -13863,21 +13902,13 @@ async function sendCustomerEmailViaBackend(customer, template = '', customMessag
   } catch (error) {
     console.error('sendCustomerEmailViaBackend failed:', error);
     const message = error?.message || 'Could not send email automatically.';
-    await showAppAlert(`${message} Please check your email configuration or use the mail app fallback.`, 'Email Send Failed');
+    await showAppAlert(`${message} Please check the Firebase email configuration and try again.`, 'Email Send Failed');
     return false;
   }
 }
 
 function openCustomerEmailComposer(customer, template = '', customMessage = '') {
-  const email = getCustomerEmailAddress(customer);
-  if (!email) {
-    return showAppAlert('This customer does not have an email address.', 'Missing Email');
-  }
-
-  const subject = `${settings?.name || 'YoShop'} update`;
-  const body = buildCustomerStatusMessage(customer, template, customMessage);
-  const mailtoUrl = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.location.href = mailtoUrl;
+  return sendCustomerEmailViaBackend(customer, template, customMessage);
 }
 
 function sendCustomerStatusNotification(index) {
@@ -16550,7 +16581,80 @@ function applyDataTableControls(toolbar) {
     const matchesFilter = filterValue === 'all'
       || (filterValue === 'product' && !isService)
       || rowText.includes(filterValue);
-    row.hidden = !(matchesFilter && (!searchValue || rowText.includes(searchValue)));
+    const filterHidden = !(matchesFilter && (!searchValue || rowText.includes(searchValue)));
+    row.dataset.dataTableFilterHidden = String(filterHidden);
+    row.hidden = filterHidden;
+  });
+  applyDataTablePagination(body);
+}
+
+const dataTablePageSizes = new Map();
+
+function applyDataTablePagination(body) {
+  if (!body) return;
+  const controls = document.querySelector(`[data-row-controls="${body.id}"]`);
+  if (!controls) return;
+
+  const pageSize = dataTablePageSizes.get(body.id) || 5;
+  const rows = Array.from(body.querySelectorAll(':scope > tr'));
+  rows.forEach(row => {
+    if (row.dataset.dataTablePageHidden === 'true') {
+      row.hidden = row.dataset.dataTableFilterHidden === 'true';
+      delete row.dataset.dataTablePageHidden;
+    }
+  });
+  const visibleRows = rows.filter(row => !row.hidden);
+  visibleRows.forEach((row, index) => {
+    if (pageSize !== 'all' && index >= pageSize) {
+      row.hidden = true;
+      row.dataset.dataTablePageHidden = 'true';
+    }
+  });
+
+  controls.querySelectorAll('[data-row-page-size]').forEach(button => {
+    button.classList.toggle('active', Number(button.dataset.rowPageSize) === pageSize);
+  });
+  const allButton = controls.querySelector('[data-row-page-size="all"]');
+  if (allButton) allButton.classList.toggle('active', pageSize === 'all');
+  const status = controls.querySelector('[data-row-status]');
+  if (status) {
+    status.textContent = `${visibleRows.length} item${visibleRows.length === 1 ? '' : 's'}`;
+  }
+}
+
+function initializeDataTablePagination() {
+  const excludedBodies = new Set(['orderList', 'dashboardLowStockBody', 'lowStockReportBody', 'stockListBody']);
+  document.querySelectorAll('tbody[id]').forEach(body => {
+    if (excludedBodies.has(body.id) || document.querySelector(`[data-row-controls="${body.id}"]`)) return;
+
+    const controls = document.createElement('div');
+    controls.dataset.rowControls = body.id;
+    controls.style.cssText = 'display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0 0;';
+    controls.innerHTML = `
+      <span>Show rows:</span>
+      <button type="button" class="btn btn-secondary active" data-row-page-size="5">5</button>
+      <button type="button" class="btn btn-secondary" data-row-page-size="10">10</button>
+      <button type="button" class="btn btn-secondary" data-row-page-size="50">50</button>
+      <button type="button" class="btn btn-secondary" data-row-page-size="100">100</button>
+      <button type="button" class="btn btn-secondary" data-row-page-size="all">All</button>
+      <span data-row-status aria-live="polite"></span>`;
+
+    const table = body.closest('table');
+    const tableWrapper = table?.parentElement?.classList.contains('u-overflow-x-auto')
+      ? table.parentElement
+      : table;
+    if (!tableWrapper) return;
+    tableWrapper.insertAdjacentElement('afterend', controls);
+
+    controls.querySelectorAll('[data-row-page-size]').forEach(button => {
+      button.addEventListener('click', () => {
+        dataTablePageSizes.set(body.id, button.dataset.rowPageSize === 'all' ? 'all' : Number(button.dataset.rowPageSize));
+        applyDataTablePagination(body);
+      });
+    });
+
+    new MutationObserver(() => applyDataTablePagination(body)).observe(body, { childList: true });
+    applyDataTablePagination(body);
   });
 }
 
@@ -16597,6 +16701,7 @@ function clearTableFilters() {
 }
 
 initializeDataTableControls();
+initializeDataTablePagination();
 
 function previewPurchaseEntry(id) {
   const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(record => record.id === id);
@@ -17541,7 +17646,13 @@ async function mainInit() {
 
     // Background Cloud Sync
     onAuthStateChanged(auth, async (user) => {
+      const previousUser = currentUser;
       currentUser = user;
+
+      if (presenceHeartbeat) {
+        window.clearInterval(presenceHeartbeat);
+        presenceHeartbeat = null;
+      }
 
       if (user && registrationInProgress) return;
 
@@ -17592,6 +17703,9 @@ async function mainInit() {
 
         console.log("Logged in, syncing cloud data in background...");
         syncUserPresence(true).catch(() => {});
+        presenceHeartbeat = window.setInterval(() => {
+          if (auth.currentUser?.uid === user.uid) syncUserPresence(true, user.uid).catch(() => {});
+        }, 2 * 60 * 1000);
 
         // Initialize root user document with PENDING status for new users
         try {
@@ -17706,7 +17820,7 @@ async function mainInit() {
           console.warn('Admin notice check failed on startup:', noticeError);
         }
       } else {
-        syncUserPresence(false).catch(() => {});
+        syncUserPresence(false, previousUser?.uid).catch(() => {});
 
         // User signed out: fully flush session-local state to prevent cross-contamination
         try {
