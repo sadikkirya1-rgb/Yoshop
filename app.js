@@ -748,7 +748,7 @@ function getButtonActionPermission(button) {
     customerTab: 'customers', transactionsTab: 'sales', invoicesTab: 'invoices', stockTab: 'inventory',
     settingsTab: 'settings', reportsTab: 'reports', menuTab: 'sales'
   }[section];
-  if (/editTransaction\(|reopenTransaction\(|sendOrderStatusNotification\(/.test(onclick)) return 'sales.edit';
+  if (/editTransaction\(|reopenTransaction\(|sendOrderStatusNotification\(|sendOrderStatusEmail\(/.test(onclick)) return 'sales.edit';
   if (/deleteTransaction\(/.test(onclick)) return 'sales.delete';
   if (/openStaffPermissionsModal\(/.test(onclick)) return 'staff.permissions';
   if (/deleteItem\(|deleteMarkedProducts\(/.test(onclick)) return 'products.delete';
@@ -2947,6 +2947,7 @@ const defaultSettings = {
   name: "My Business",
   address: "123 Business Avenue, Suite 100",
   contact: "555-123-4567",
+  customerEmailSender: "",
   currency: "$",
   theme: "light",
   defaultMarkup: 200, // Default 200% markup
@@ -6144,6 +6145,7 @@ window.closeReceiptModal = closeReceiptModal;
 window.sendCustomerStatusNotification = sendCustomerStatusNotification;
 window.sendSelectedCustomersStatusNotification = sendSelectedCustomersStatusNotification;
 window.sendOrderStatusNotification = sendOrderStatusNotification;
+window.sendOrderStatusEmail = sendOrderStatusEmail;
 window.promptAndUpdateOrderStatus = promptAndUpdateOrderStatus;
 window.updateReceiptOrderStatus = updateReceiptOrderStatus;
 window.updateTransactionStatusByIndex = updateTransactionStatusByIndex;
@@ -10452,6 +10454,7 @@ function renderTransactions() {
           </button>
           <button class="icon-btn" title="Edit Sale" onclick="editTransaction(${txIndex})" ${canModifyTransaction(t) ? '' : 'disabled'}>✎</button>
           <button class="icon-btn" title="Send Order Status" onclick="sendOrderStatusNotification(${txIndex})" style="margin-right:4px;" ${canModifyTransaction(t) ? '' : 'disabled'}>📩</button>
+          <button class="icon-btn" title="Email Order Status" aria-label="Email order status" onclick="sendOrderStatusEmail(${txIndex})" style="margin-right:4px;" ${canModifyTransaction(t) ? '' : 'disabled'}>✉</button>
           <button class="icon-btn" title="Re-Open Bill" onclick="reopenTransaction(${txIndex})" ${canModifyTransaction(t) ? '' : 'disabled'}>${iconReopen}</button>
           <button class="icon-btn" title="Download PDF" onclick="downloadBillAsPDF(${txIndex})">${iconDownload}</button>
           <button class="icon-btn" title="Delete Bill" onclick="deleteTransaction(${txIndex})" ${canModifyTransaction(t) ? '' : 'disabled'}>${iconDelete}</button>
@@ -12645,6 +12648,11 @@ async function saveSettings() {
   settings.name = document.getElementById('companyName').value;
   settings.address = document.getElementById('companyAddress').value;
   settings.contact = document.getElementById('companyContact').value;
+  const senderEmailInput = document.getElementById('customerEmailSender');
+  if (senderEmailInput && !senderEmailInput.checkValidity()) {
+    return alert('Enter a valid customer email sender address.');
+  }
+  settings.customerEmailSender = senderEmailInput?.value.trim() || '';
   settings.currency = document.getElementById('currency').value;
   const lowStockThresholdVal = parseInt(document.getElementById('lowStockThreshold').value, 10);
   settings.lowStockThreshold = isNaN(lowStockThresholdVal) ? 10 : lowStockThresholdVal;
@@ -12894,6 +12902,7 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('companyName', settings.name || '');
   setVal('companyAddress', settings.address || '');
   setVal('companyContact', settings.contact || '');
+  setVal('customerEmailSender', settings.customerEmailSender || '');
   setVal('currency', settings.currency || '$');
   setVal('lowStockThreshold', (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10);
   setVal('expiryWarningDays', settings.expiryWarningDays ?? 5);
@@ -13875,40 +13884,68 @@ function getCustomerEmailAddress(customer) {
   return String(email || '').trim();
 }
 
-async function sendCustomerEmailViaBackend(customer, template = '', customMessage = '') {
+function openGmailCompose({to = '', bcc = [], subject = '', message = ''} = {}) {
+  const gmailUrl = new URL('https://mail.google.com/mail/');
+  gmailUrl.searchParams.set('view', 'cm');
+  gmailUrl.searchParams.set('fs', '1');
+  if (to) gmailUrl.searchParams.set('to', to);
+  if (bcc.length) gmailUrl.searchParams.set('bcc', bcc.join(','));
+  gmailUrl.searchParams.set('su', subject);
+  gmailUrl.searchParams.set('body', message);
+
+  const composeWindow = window.open(gmailUrl.toString(), '_blank');
+  if (composeWindow) {
+    composeWindow.opener = null;
+    return true;
+  }
+
+  window.location.assign(gmailUrl.toString());
+  return false;
+}
+
+function openCustomerEmailInBrowser(customer, template = '', customMessage = '') {
   const email = getCustomerEmailAddress(customer);
   if (!email) {
     return showAppAlert('This customer does not have an email address.', 'Missing Email');
   }
 
-  try {
-    const sendCustomerNotification = httpsCallable(functions, 'sendCustomerNotificationEmail');
-    const subject = `${settings?.name || 'YoShop'} update`;
-    const message = buildCustomerStatusMessage(customer, template, customMessage);
-    const result = await sendCustomerNotification({
-      to: email,
-      subject,
-      message,
-      customerName: customer.name || 'Customer'
-    });
+  return openGmailCompose({
+    to: email,
+    subject: `${settings?.name || 'YoShop'} update`,
+    message: buildCustomerStatusMessage(customer, template, customMessage)
+  });
+}
 
-    const delivered = result?.data?.success;
-    if (delivered) {
-      await showAppAlert(`Email sent successfully to ${email}.`, 'Email Sent');
-      return true;
-    }
+function getBulkCustomerEmailMessage(template = '', customMessage = '') {
+  const storeName = settings?.name || 'YoShop';
+  const body = customMessage || (template === 'balance_due'
+    ? 'This is a friendly reminder that your account has an outstanding balance. Please contact us for details.'
+    : getCustomerQuickMessageText({}, template)) || 'Thank you for choosing us.';
 
-    throw new Error(result?.data?.message || 'Email delivery failed.');
-  } catch (error) {
-    console.error('sendCustomerEmailViaBackend failed:', error);
-    const message = error?.message || 'Could not send email automatically.';
-    await showAppAlert(`${message} Please check the Firebase email configuration and try again.`, 'Email Send Failed');
-    return false;
+  return `Hello,\n\n${body}\n\nThank you for choosing ${storeName}.\n\nIf you have any questions, reply to this message and we will be happy to help.`;
+}
+
+function openBulkCustomerEmailInBrowser(customerList, template = '', customMessage = '') {
+  const recipients = [...new Set((Array.isArray(customerList) ? customerList : [])
+    .map(getCustomerEmailAddress)
+    .filter(Boolean)
+    .map(email => email.toLowerCase()))];
+  if (!recipients.length) {
+    return showAppAlert('No customers with email addresses were found.', 'Bulk Email');
   }
+
+  const ownerEmail = String(currentUser?.email || '').trim();
+  const bcc = recipients.filter(email => email !== ownerEmail.toLowerCase());
+  return openGmailCompose({
+    to: ownerEmail,
+    bcc,
+    subject: `${settings?.name || 'YoShop'} update`,
+    message: getBulkCustomerEmailMessage(template, customMessage)
+  });
 }
 
 function openCustomerEmailComposer(customer, template = '', customMessage = '') {
-  return sendCustomerEmailViaBackend(customer, template, customMessage);
+  return openCustomerEmailInBrowser(customer, template, customMessage);
 }
 
 function sendCustomerStatusNotification(index) {
@@ -13985,7 +14022,7 @@ async function sendCustomerStatusNotificationByEmail(index) {
   const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
 
-  await sendCustomerEmailViaBackend(customer, template, customMessage);
+  openCustomerEmailInBrowser(customer, template, customMessage);
 }
 
 async function sendSelectedCustomersStatusNotificationByEmail() {
@@ -13994,15 +14031,12 @@ async function sendSelectedCustomersStatusNotificationByEmail() {
     return showAppAlert('Select at least one customer to send the email notification.', 'No Customer Selected');
   }
 
+  const selectedCustomers = selectedRows
+    .map(checkbox => customers[parseInt(checkbox.value, 10)])
+    .filter(Boolean);
   const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
-
-  for (const checkbox of selectedRows) {
-    const index = parseInt(checkbox.value, 10);
-    const customer = customers[index];
-    if (!customer) continue;
-    await sendCustomerEmailViaBackend(customer, template, customMessage);
-  }
+  openBulkCustomerEmailInBrowser(selectedCustomers, template, customMessage);
 }
 
 async function sendAllCustomersStatusNotificationByEmail() {
@@ -14025,9 +14059,7 @@ async function sendAllCustomersStatusNotificationByEmail() {
   const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
 
-  for (const customer of customersWithEmail) {
-    await sendCustomerEmailViaBackend(customer, template, customMessage);
-  }
+  openBulkCustomerEmailInBrowser(customersWithEmail, template, customMessage);
 }
 
 window.applyCustomerQuickMessage = applyCustomerQuickMessage;
@@ -14050,6 +14082,17 @@ function getTransactionWhatsAppNumber(transaction) {
   }
 
   return String(phone).replace(/\D/g, '');
+}
+
+function getTransactionEmailAddress(transaction) {
+  if (!transaction || typeof transaction !== 'object') return '';
+  const linkedCustomer = transaction.customerId
+    ? customers.find(customer => customer && String(customer.id) === String(transaction.customerId))
+    : null;
+  const candidates = linkedCustomer
+    ? [linkedCustomer.email, linkedCustomer.customerEmail, linkedCustomer.mainEmail]
+    : [transaction.customerEmail, transaction.email, transaction.customer?.email];
+  return String(candidates.find(value => String(value || '').trim()) || '').trim();
 }
 
 async function updateTransactionStatusByIndex(transactionIndex, status) {
@@ -14217,6 +14260,28 @@ function sendOrderStatusNotification(index, overrideStatus) {
   const text = buildOrderStatusMessage(tx, status, customMessage);
   const shareUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
   window.open(shareUrl, '_blank', 'noopener,noreferrer');
+}
+
+function sendOrderStatusEmail(index) {
+  const transaction = Array.isArray(transactions) ? transactions[index] : null;
+  if (!transaction) return showAppAlert('Order not found.', 'Email Order Status');
+  if (!requireActionPermission('sales.edit', 'sending an order status email')) return;
+  if (!canModifyTransaction(transaction)) {
+    return showAppAlert(getTransactionActionLockTitle(transaction), 'Transaction Locked');
+  }
+
+  const email = getTransactionEmailAddress(transaction);
+  if (!email) {
+    return showAppAlert('No email address is available for this order.', 'Missing Email');
+  }
+
+  const status = String(transaction.orderStatus || transaction.status || 'pending').trim().toLowerCase();
+  const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
+  return openGmailCompose({
+    to: email,
+    subject: `${settings?.name || 'YoShop'} order status: ${getOrderStatusLabel(status)}`,
+    message: buildOrderStatusMessage(transaction, status, customMessage)
+  });
 }
 
 function createCustomerDebtInvoice(customer) {

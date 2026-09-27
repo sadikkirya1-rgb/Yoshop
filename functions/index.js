@@ -9,6 +9,7 @@
 
 const {setGlobalOptions} = require("firebase-functions");
 const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {defineSecret} = require("firebase-functions/params");
 const functionsV1 = require("firebase-functions/v1");
 const admin = require("firebase-admin");
 const {getFirestore} = require("firebase-admin/firestore");
@@ -21,6 +22,7 @@ const bucket = admin.storage().bucket();
 
 const MASTER_ADMIN_UID = "Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2";
 const MASTER_ADMIN_EMAIL = "sadikkirya@gmail.com";
+const SENDGRID_API_KEY = defineSecret("SENDGRID_API_KEY");
 const callableOptions = {
 	region: "us-central1",
 	// Callable handlers still enforce Firebase Auth and operation-level permissions.
@@ -112,7 +114,10 @@ exports.deleteAccountCompletely = onCall(callableOptions, async (request) => {
 	return {deleted: true, uid, businessId: businessId || null};
 });
 
-exports.sendCustomerNotificationEmail = onCall(callableOptions, async (request) => {
+exports.sendCustomerNotificationEmail = onCall({
+	...callableOptions,
+	secrets: [SENDGRID_API_KEY]
+}, async (request) => {
 	if (!request.auth) {
 		throw new HttpsError("unauthenticated", "You must be signed in to send customer emails.");
 	}
@@ -129,14 +134,23 @@ exports.sendCustomerNotificationEmail = onCall(callableOptions, async (request) 
 		throw new HttpsError("invalid-argument", "A message body is required.");
 	}
 
-	const sendgridApiKey = process.env.SENDGRID_API_KEY;
-	const fromEmail = String(process.env.EMAIL_FROM || "").trim();
+	const sendgridApiKey = SENDGRID_API_KEY.value();
+	const fromEmail = String(request.data?.fromEmail || process.env.EMAIL_FROM || "").trim();
 
-	if (!sendgridApiKey || !fromEmail) {
+	if (!sendgridApiKey) {
 		throw new HttpsError(
 			"failed-precondition",
-			"Email delivery is not configured yet. Set SENDGRID_API_KEY and EMAIL_FROM in the Firebase Functions environment before using automated customer emails."
+			"Email delivery is not configured yet. Set the SENDGRID_API_KEY Firebase Functions secret before using automated customer emails."
 		);
+	}
+	if (!fromEmail) {
+		throw new HttpsError(
+			"failed-precondition",
+			"Add a customer email sender in Settings, or configure EMAIL_FROM in the Firebase Functions environment."
+		);
+	}
+	if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromEmail)) {
+		throw new HttpsError("invalid-argument", "A valid sender email address is required.");
 	}
 
 	try {
