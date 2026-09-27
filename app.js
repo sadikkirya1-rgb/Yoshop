@@ -16623,7 +16623,7 @@ function applyDataTablePagination(body) {
 }
 
 function initializeDataTablePagination() {
-  const excludedBodies = new Set(['orderList', 'dashboardLowStockBody', 'lowStockReportBody', 'stockListBody']);
+  const excludedBodies = new Set(['orderList', 'dashboardLowStockBody', 'stockListBody']);
   document.querySelectorAll('tbody[id]').forEach(body => {
     if (excludedBodies.has(body.id) || document.querySelector(`[data-row-controls="${body.id}"]`)) return;
 
