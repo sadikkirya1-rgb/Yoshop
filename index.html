@@ -1079,19 +1079,12 @@
       <!-- Stock -->
       <section id="stockTab">
         <h3>📦 Stock Management</h3>
-        <div class="input-row u-mb-20 u-flex-nowrap settings-group">
-          <label for="lowStockThreshold">Default low-stock level:</label>
-          <input type="number" id="lowStockThreshold" placeholder="e.g., 10" min="0"
-            class="u-flex-grow-0 u-flex-basis-100">
-          <button class="btn" onclick="saveSettings()">Save</button>
-        </div>
-        <div class="input-row u-mb-20 u-flex-nowrap settings-group">
-          <label for="expiryWarningDays">Expiry warning days:</label>
+        <div class="stock-inline-controls settings-group" style="display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:0 0 20px;">
+          <label for="lowStockThreshold" style="margin:0; white-space:nowrap;">Low stock level:</label>
+          <input type="number" id="lowStockThreshold" placeholder="e.g., 10" min="0" class="u-flex-grow-0 u-flex-basis-100">
+          <label for="expiryWarningDays" style="margin:0; white-space:nowrap;">Expiry alert days:</label>
           <input type="number" id="expiryWarningDays" placeholder="5" min="0" step="1" class="u-flex-grow-0 u-flex-basis-100">
-          <span>Warn when an item expires within this many days.</span>
-        </div>
-        <div class="section-heading-row u-mt-20 u-mb-10">
-          <h5 class="u-m-0">Low Stock Report</h5>
+          <button class="btn" onclick="saveSettings()">Save</button>
           <button class="btn btn-secondary" type="button" id="toggleLowStockReportBtn" data-hidden="true" aria-expanded="false" onclick="toggleLowStockReportSection()">📦 Show Low Stock Report (0)</button>
         </div>
         <div id="lowStockReportTableContainer" style="display: none;">
