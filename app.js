@@ -2919,6 +2919,8 @@ const PLACEHOLDER_IMAGE = '/assets/icons/android192x192.png';
 let defaultMenu = [];
 let menu = [];
 let stockTableFilter = 'all';
+let stockTablePageSize = 5;
+let stockTablePage = 1;
 let activeOrders = {};
 let transactions = [];
 let staff = [];
@@ -2940,6 +2942,7 @@ const defaultSettings = {
   theme: "light",
   defaultMarkup: 200, // Default 200% markup
   lowStockThreshold: 10,
+  expiryWarningDays: 5,
   taxRate: 0,
   ShopAdminPIN: "1234", // Default ShopAdmin PIN
   transactionEditWindowMinutes: 30,
@@ -6362,10 +6365,12 @@ function showTab(tabId, btn) {
       renderSyncHealthPanel().catch(console.warn);
       break;
     case 'stockTab':
+      toggleLowStockReportSection(true);
       renderInventoryReport(); // For the low stock report
       renderStockListTable(); // For the main stock table
       renderUnitList();
       renderRestockHistoryTable(); // For the main stock table
+      if (activeSection) activeSection.scrollIntoView({ behavior: 'auto', block: 'start' });
       break;
     case 'purchaseTab':
       populatePurchaseFormOptions();
@@ -6815,6 +6820,40 @@ function getLowStockThreshold(item) {
   if (Number.isFinite(productThreshold) && productThreshold >= 0) return productThreshold;
   const defaultThreshold = Number(settings?.lowStockThreshold);
   return Number.isFinite(defaultThreshold) && defaultThreshold >= 0 ? defaultThreshold : 10;
+}
+
+function getExpiryDaysRemaining(expiryDate, today = new Date()) {
+  if (!expiryDate) return null;
+  const expiry = new Date(`${expiryDate}T00:00:00`);
+  if (Number.isNaN(expiry.getTime())) return null;
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.ceil((expiry - current) / 86400000);
+}
+
+function formatStockDate(date) {
+  return date || '-';
+}
+
+function formatExpiryCountdown(item) {
+  const days = getExpiryDaysRemaining(item?.expiryDate);
+  if (days === null) return '-';
+  if (days < 0) return `Expired (${Math.abs(days)}d)`;
+  return `${days}d`;
+}
+
+function formatExpiryAlert(item) {
+  const days = getExpiryDaysRemaining(item?.expiryDate);
+  const countdown = formatExpiryCountdown(item);
+  const warningDays = Number(settings?.expiryWarningDays ?? 5);
+  return days !== null && days <= warningDays ? `${countdown} alert` : countdown;
+}
+
+function getExpiryWarningStyle(item) {
+  const days = getExpiryDaysRemaining(item?.expiryDate);
+  const warningDays = Number(settings?.expiryWarningDays ?? 5);
+  return days !== null && days <= warningDays
+    ? 'color: #dc3545; font-weight: bold;'
+    : '';
 }
 
 async function addDish(buttonElement) {
@@ -12570,6 +12609,8 @@ async function saveSettings() {
   settings.currency = document.getElementById('currency').value;
   const lowStockThresholdVal = parseInt(document.getElementById('lowStockThreshold').value, 10);
   settings.lowStockThreshold = isNaN(lowStockThresholdVal) ? 10 : lowStockThresholdVal;
+  const expiryWarningDaysVal = parseInt(document.getElementById('expiryWarningDays')?.value, 10);
+  settings.expiryWarningDays = Number.isFinite(expiryWarningDaysVal) && expiryWarningDaysVal >= 0 ? expiryWarningDaysVal : 5;
   settings.defaultMarkup = parseFloat(document.getElementById('defaultMarkup').value) || 200;
   settings.taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
   settings.invoiceDateFormat = document.getElementById('invoiceDateFormat')?.value || 'locale';
@@ -12816,6 +12857,7 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('companyContact', settings.contact || '');
   setVal('currency', settings.currency || '$');
   setVal('lowStockThreshold', (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10);
+  setVal('expiryWarningDays', settings.expiryWarningDays ?? 5);
   setVal('taxRate', settings.taxRate || 0);
   setVal('promoMessage', settings.promoMessage || '');
   setVal('invoiceDateFormat', settings.invoiceDateFormat || 'locale');
@@ -15155,10 +15197,9 @@ function renderInventoryReport() {
   const toggleButton = document.getElementById('toggleLowStockReportBtn');
   if (!tbody) return;
   tbody.innerHTML = '';
-  const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
-
   // Only check primary ingredients (items with a stock property) for the low stock report.
   const lowStockItems = menu.filter(item => item.stock !== undefined && calculateDishStock(item, true) <= getLowStockThreshold(item));
+  notifyExpiringStockItems(menu.filter(item => item.stock !== undefined));
 
   if (toggleButton) {
     toggleButton.dataset.lowStockCount = String(lowStockItems.length);
@@ -15168,8 +15209,8 @@ function renderInventoryReport() {
   }
 
   if (lowStockItems.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 15px;">No items are currently low on stock.</td></tr>`;
-    if (dashboardTbody) dashboardTbody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 12px;">No items are currently low on stock.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 15px;">No items are currently low on stock.</td></tr>`;
+    if (dashboardTbody) dashboardTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 12px;">No items are currently low on stock.</td></tr>`;
     if (toggleButton) toggleButton.textContent = `${toggleButton.dataset.hidden === 'true' ? 'Show' : 'Hide'} Low Stock Report (0)`;
     return;
   }
@@ -15182,6 +15223,9 @@ function renderInventoryReport() {
         <td>${item.category}</td>
         <td style="text-align: right;">${getLowStockThreshold(item)}</td>
         <td style="text-align: right; color: #dc3545; font-weight: bold;">${Number(stock).toFixed(1)}</td>
+        <td>${formatStockDate(item.manufactureDate)}</td>
+        <td>${formatStockDate(item.expiryDate)}</td>
+        <td style="text-align: right; ${getExpiryWarningStyle(item)}">${formatExpiryAlert(item)}</td>
       `;
     tbody.appendChild(tr);
   });
@@ -15197,6 +15241,9 @@ function renderInventoryReport() {
           <td>${item.category}</td>
           <td style="text-align: right;">${getLowStockThreshold(item)}</td>
           <td style="text-align: right; color: #dc3545; font-weight: bold;">${Number(stock).toFixed(1)}</td>
+          <td>${formatStockDate(item.manufactureDate)}</td>
+          <td>${formatStockDate(item.expiryDate)}</td>
+          <td style="text-align: right; ${getExpiryWarningStyle(item)}">${formatExpiryAlert(item)}</td>
         `;
       dashboardTbody.appendChild(tr);
     });
@@ -15207,6 +15254,7 @@ window.toggleLowStockReportSection = toggleLowStockReportSection;
 
 function setStockTableFilter(filterName = 'all') {
   stockTableFilter = filterName || 'all';
+  stockTablePage = 1;
   const buttons = document.querySelectorAll('.stock-filter-btn');
   buttons.forEach(button => {
     const isActive = button.dataset.stockFilter === stockTableFilter;
@@ -15215,7 +15263,19 @@ function setStockTableFilter(filterName = 'all') {
   renderStockListTable();
 }
 
+function setStockTablePageSize(pageSize = 5) {
+  stockTablePageSize = pageSize === 'all' ? 'all' : Number(pageSize) || 5;
+  stockTablePage = 1;
+  document.querySelectorAll('.stock-page-size-btn').forEach(button => {
+    button.classList.toggle('active', String(button.dataset.pageSize) === String(stockTablePageSize));
+  });
+  renderStockListTable();
+}
+
+window.setStockTablePageSize = setStockTablePageSize;
+
 function renderStockListTable() {
+  stockTablePage = 1;
   const searchTerm = document.getElementById('stockSearchInput')?.value.toLowerCase() || '';
   const tbody = document.getElementById('stockListBody');
   if (!tbody) return;
@@ -15235,7 +15295,14 @@ function renderStockListTable() {
     return true;
   });
 
-  stockItems.forEach((item, rowIndex) => {
+  const pageSize = stockTablePageSize === 'all' ? stockItems.length || 1 : stockTablePageSize;
+  const totalPages = Math.max(1, Math.ceil(stockItems.length / pageSize));
+  stockTablePage = Math.min(stockTablePage, totalPages);
+  const visibleStockItems = stockTablePageSize === 'all'
+    ? stockItems
+    : stockItems.slice((stockTablePage - 1) * pageSize, stockTablePage * pageSize);
+
+  visibleStockItems.forEach((item, rowIndex) => {
     const index = menu.indexOf(item);
     const stock = calculateDishStock(item, true);
     const costPrice = item.costPrice || 0;
@@ -15252,7 +15319,7 @@ function renderStockListTable() {
 
     tr.innerHTML = `
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('stockListBody','selectAllStock')"></td>
-        <td>${rowIndex + 1}</td>
+        <td>${stockTablePageSize === 'all' ? rowIndex + 1 : ((stockTablePage - 1) * pageSize) + rowIndex + 1}</td>
         <td class="u-fs-08 u-text-break">
           <div style="display:flex; align-items:center; gap:8px;">
             <img src="${item.image || 'https://placehold.co/40x40?text=No+Image'}" alt="${escapeHtml(item.name || 'Stock item')}" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #d9d9d9; background:#f7f7f7;">
@@ -15264,6 +15331,9 @@ function renderStockListTable() {
         <td class="u-fs-08 u-text-right">${Number(stock).toFixed(0)}</td>
         <td class="u-fs-08 u-text-right">${getLowStockThreshold(item)}</td>
         <td class="u-fs-08 u-text-right"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(totalCost)}</td>
+        <td class="u-fs-08">${formatStockDate(item.manufactureDate)}</td>
+        <td class="u-fs-08">${formatStockDate(item.expiryDate)}</td>
+        <td class="u-fs-08 u-text-right" style="${getExpiryWarningStyle(item)}">${formatExpiryAlert(item)}</td>
         <td class="u-fs-08">${stockStatusBadge}</td>
         <td class="u-text-right table-actions-cell">
           <button class="icon-btn" title="${shopActionTitle}" aria-label="${shopActionTitle}" onclick="convertToProduct(${index})" style="display:inline-flex; align-items:center; justify-content:center; gap:6px; width:112px; height:auto; padding:6px 12px; border:1px solid #86efac; background:linear-gradient(180deg, #dcfce7 0%, #bbf7d0 100%); color:#166534; font-weight:700; font-size:0.75rem; border-radius:6px; box-shadow:none;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 3.5a.5.5 0 0 1 .5.5V7h2.5a.5.5 0 0 1 0 1H8.5v2.5a.5.5 0 0 1-1 0V8H5a.5.5 0 0 1 0-1h2.5V4a.5.5 0 0 1 .5-.5z"/><path d="M0 2.5A1.5 1.5 0 0 1 1.5 1h13A1.5 1.5 0 0 1 16 2.5v1.1a.5.5 0 0 1-.5.5h-1.11l-.56 8.03A1.5 1.5 0 0 1 12.34 14H3.66a1.5 1.5 0 0 1-1.49-1.87L1.61 4.1H.5a.5.5 0 0 1-.5-.5V2.5zm3.84 1.1 1.7 6.97h5.92l1.7-6.97H3.84zm4.16 8.4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0-1.5-1.5zm-4 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0-1.5-1.5zm8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0-1.5-1.5z"/></svg><span>${shopActionLabel}</span></button>
@@ -15280,6 +15350,13 @@ function renderStockListTable() {
     }
     tbody.appendChild(tr);
   });
+
+  const pageStatus = document.getElementById('stockTablePageStatus');
+  if (pageStatus) {
+    pageStatus.textContent = stockTablePageSize === 'all' || stockItems.length === 0
+      ? `${stockItems.length} item${stockItems.length === 1 ? '' : 's'}`
+      : `Page ${stockTablePage} of ${totalPages} (${stockItems.length} items)`;
+  }
 }
 
 function editStockItem(index) {
@@ -15297,6 +15374,8 @@ function editStockItem(index) {
   document.getElementById('newStockItemCost').value = item.costPrice || 0;
   document.getElementById('newStockItemPrice').value = item.price || 0;
   document.getElementById('newStockItemStock').value = item.stock || 0;
+  document.getElementById('newStockItemManufactureDate').value = item.manufactureDate || '';
+  document.getElementById('newStockItemExpiryDate').value = item.expiryDate || '';
   document.getElementById('newStockItemLowStockThreshold').value = item.lowStockThreshold ?? '';
   document.getElementById('newStockItemCategory').value = item.category || '';
   document.getElementById('newStockItemImageBase64').value = item.image || '';
@@ -15519,6 +15598,8 @@ async function saveNewStockItem() {
   const sellingPriceInput = document.getElementById('newStockItemPrice').value;
   const stock = parseInt(document.getElementById('newStockItemStock').value, 10);
   const lowStockInput = document.getElementById('newStockItemLowStockThreshold').value.trim();
+  const manufactureDate = document.getElementById('newStockItemManufactureDate').value;
+  const expiryDate = document.getElementById('newStockItemExpiryDate').value;
   const lowStockThreshold = lowStockInput === '' ? undefined : Number(lowStockInput);
   const category = document.getElementById('newStockItemCategory')?.value?.trim() || '';
   const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
@@ -15546,6 +15627,9 @@ async function saveNewStockItem() {
   if (lowStockInput !== '' && (!Number.isFinite(lowStockThreshold) || lowStockThreshold < 0)) {
     return showAppAlert("Please enter a valid, non-negative low-stock level.", 'Invalid Low Stock Level');
   }
+  if (manufactureDate && expiryDate && manufactureDate > expiryDate) {
+    return showAppAlert("Manufacture date cannot be after the expiry date.", 'Invalid Dates');
+  }
 
   const existingMatchIndex = itemIndexNumber === null || Number.isNaN(itemIndexNumber) ? getProductCatalogMatchIndex(name) : -1;
 
@@ -15565,6 +15649,8 @@ async function saveNewStockItem() {
     item.category = category || '';
     item.costPrice = costPrice;
     item.stock = stock;
+    item.manufactureDate = manufactureDate || '';
+    item.expiryDate = expiryDate || '';
     item.image = uploadedImage || item.image || undefined;
     if (lowStockInput === '') delete item.lowStockThreshold;
     else item.lowStockThreshold = lowStockThreshold;
@@ -15612,6 +15698,8 @@ async function saveNewStockItem() {
       costPrice,
       stock,
       unit,
+      manufactureDate,
+      expiryDate,
       lowStockThreshold: lowStockInput === '' ? existingItem?.lowStockThreshold : lowStockThreshold,
       price: (() => {
         if (sellingPriceInput && !isNaN(parseFloat(sellingPriceInput))) return parseFloat(sellingPriceInput);
@@ -15649,6 +15737,8 @@ async function saveNewStockItem() {
       costPrice,
       stock,
       unit,
+      manufactureDate,
+      expiryDate,
       lowStockThreshold,
       price,
       image: uploadedImage || undefined
@@ -15754,6 +15844,8 @@ function clearNewStockItemForm() {
   document.getElementById('newStockItemCost').value = '';
   document.getElementById('newStockItemPrice').value = '';
   document.getElementById('newStockItemStock').value = '';
+  document.getElementById('newStockItemManufactureDate').value = '';
+  document.getElementById('newStockItemExpiryDate').value = '';
   document.getElementById('newStockItemLowStockThreshold').value = '';
   document.getElementById('newStockItemCategory').value = '';
   document.getElementById('newStockItemImageBase64').value = '';
@@ -19833,6 +19925,26 @@ function addNotification(message, type = 'info', action = null) {
   updateNotificationBadge();
   renderNotifications();
 }
+
+const expiryNotificationKeys = new Set();
+
+function notifyExpiringStockItems(items = []) {
+  if (typeof window.addNotification !== 'function') return;
+  const warningDays = Number(settings?.expiryWarningDays ?? 5);
+  items.forEach(item => {
+    const days = getExpiryDaysRemaining(item?.expiryDate);
+    if (days === null || days > warningDays) return;
+    const itemKey = `${item.recordId || item.id || item.name}:${item.expiryDate}:${warningDays}`;
+    if (expiryNotificationKeys.has(itemKey)) return;
+    expiryNotificationKeys.add(itemKey);
+    const message = days < 0
+      ? `${item.name} has expired.`
+      : `${item.name} expires in ${days} day${days === 1 ? '' : 's'}.`;
+    window.addNotification(message, 'alert');
+  });
+}
+
+window.addNotification = addNotification;
 
 function addOrUpdateAdminNoticeNotification(message, sentAt, notices = []) {
   if (!message || !sentAt) return;

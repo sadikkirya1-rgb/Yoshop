@@ -1065,6 +1065,9 @@
                   <th>Category</th>
                   <th style="text-align: right;">Low Stock Level</th>
                   <th style="text-align: right;">Stock</th>
+                    <th>Man/Date</th>
+                    <th>Exp/Date</th>
+                    <th style="text-align: right;">Days Alert</th>
                 </tr>
               </thead>
               <tbody id="dashboardLowStockBody"></tbody>
@@ -1082,11 +1085,16 @@
             class="u-flex-grow-0 u-flex-basis-100">
           <button class="btn" onclick="saveSettings()">Save</button>
         </div>
+        <div class="input-row u-mb-20 u-flex-nowrap settings-group">
+          <label for="expiryWarningDays">Expiry warning days:</label>
+          <input type="number" id="expiryWarningDays" placeholder="5" min="0" step="1" class="u-flex-grow-0 u-flex-basis-100">
+          <span>Warn when an item expires within this many days.</span>
+        </div>
         <div class="section-heading-row u-mt-20 u-mb-10">
           <h5 class="u-m-0">Low Stock Report</h5>
-          <button class="btn btn-secondary" type="button" id="toggleLowStockReportBtn" onclick="toggleLowStockReportSection()">📦 Hide Low Stock Report (0)</button>
+          <button class="btn btn-secondary" type="button" id="toggleLowStockReportBtn" data-hidden="true" aria-expanded="false" onclick="toggleLowStockReportSection()">📦 Show Low Stock Report (0)</button>
         </div>
-        <div id="lowStockReportTableContainer">
+        <div id="lowStockReportTableContainer" style="display: none;">
           <table class="u-mt-10 table-excel">
             <thead>
               <tr>
@@ -1094,6 +1102,9 @@
                 <th>Category</th>
                 <th class="u-text-right">Low Stock Level</th>
                 <th class="u-text-right">Current Stock</th>
+                <th>Man/Date</th>
+                <th>Exp/Date</th>
+                <th class="u-text-right">Days Alert</th>
               </tr>
             </thead>
             <tbody id="lowStockReportBody"></tbody>
@@ -1128,6 +1139,8 @@
             <input type="number" id="newStockItemStock" placeholder="Initial Stock" min="0">
             <input type="number" id="newStockItemLowStockThreshold" placeholder="Low-stock level" min="0" step="0.01"
               title="Alert level for this item. Leave empty to use the default level.">
+            <label>Man <input type="date" id="newStockItemManufactureDate" title="Manufacture date"></label>
+            <label>Exp <input type="date" id="newStockItemExpiryDate" title="Expiry date"></label>
           </div>
           <div class="input-row" style="align-items: center; gap: 12px; flex-wrap: wrap;">
             <input type="file" id="newStockItemImage" accept="image/*" onchange="previewStockItemImage(this)" style="max-width: 280px;">
@@ -1144,7 +1157,7 @@
         <table class="u-mt-10 table-excel">
           <thead>
             <tr>
-              <th colspan="9">
+              <th colspan="13">
                 <div class="stock-toolbar-row">
                   <input type="text" id="stockSearchInput" onkeyup="renderStockListTable()"
                     placeholder="Search stock items..." class="stock-search-input">
@@ -1168,12 +1181,24 @@
               <th class="u-text-right">Stock</th> <!-- 4 -->
               <th class="u-text-right">Low Stock</th>
               <th class="u-text-right">Total</th> <!-- 5 -->
+              <th>Man/Date</th>
+              <th>Exp/Date</th>
+              <th class="u-text-right">Days Alert</th>
               <th>Status</th>
               <th class="u-text-right">Action</th> <!-- 6 -->
             </tr>
           </thead>
           <tbody id="stockListBody"></tbody>
         </table>
+        <div class="stock-pagination-controls" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
+          <span>Show rows:</span>
+          <button type="button" class="btn btn-secondary stock-page-size-btn active" data-page-size="5" onclick="setStockTablePageSize(5)">5</button>
+          <button type="button" class="btn btn-secondary stock-page-size-btn" data-page-size="10" onclick="setStockTablePageSize(10)">10</button>
+          <button type="button" class="btn btn-secondary stock-page-size-btn" data-page-size="50" onclick="setStockTablePageSize(50)">50</button>
+          <button type="button" class="btn btn-secondary stock-page-size-btn" data-page-size="100" onclick="setStockTablePageSize(100)">100</button>
+          <button type="button" class="btn btn-secondary stock-page-size-btn" data-page-size="all" onclick="setStockTablePageSize('all')">All</button>
+          <span id="stockTablePageStatus" aria-live="polite"></span>
+        </div>
       </section>
 
       <!-- Purchase -->
