@@ -18039,6 +18039,10 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
     document.body.appendChild(overlay);
   }
   overlay.style.display = 'flex';
+  if (overlay._pinShopNameResizeObserver) {
+    overlay._pinShopNameResizeObserver.disconnect();
+    overlay._pinShopNameResizeObserver = null;
+  }
 
   if (mode === 'pendingApproval') {
     overlay.style.flexDirection = 'column';
@@ -18221,7 +18225,7 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
               <button onclick="resetLoginStage()" class="btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 12px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">🔙 Switch Account Type</button>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; width: 100%; gap: 8px; flex-wrap: nowrap; min-width: 0;">
                   <a href="#" onclick="event.preventDefault(); forgotPIN();" style="color: white; font-size: 0.72em; text-decoration: underline; opacity: 0.8; white-space: nowrap; flex-shrink: 0;">Forgot PIN?</a>
-                  <button type="button" onclick="event.preventDefault(); logoutToEmailLogin();" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 4px 10px; font-size: 0.72em; margin: 0; cursor: pointer; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; flex-shrink: 0; min-height: 28px; line-height: 1.2;">
+                  <button type="button" onclick="event.preventDefault(); logoutToEmailLogin();" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 4px 10px; font-size: 0.72em; margin: 0; width: auto; max-width: none; cursor: pointer; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; flex-shrink: 0; min-height: 28px; line-height: 1.2;">
                     <span aria-hidden="true" style="font-size:1em; line-height:1;">↪</span>
                     Logout Account
                   </button>
@@ -18240,9 +18244,9 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
           <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
         </div>
         <div class="login-side login-center-card animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); max-width: none; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0; padding: 42px 38px; box-sizing: border-box; border-left: 1px solid rgba(255,255,255,0.3); border-right: 1px solid rgba(255,255,255,0.3); background: linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06) 42%, rgba(7,15,30,0.34)), rgba(20,28,45,0.52); box-shadow: 0 0 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(28px) saturate(140%); -webkit-backdrop-filter: blur(28px) saturate(140%);">
-          <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
+          <div class="pin-card-logo" style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
           <p style="font-size: 1.5em; margin-bottom: 12px; font-weight: bold;">Welcome</p>
-          <h1 style="font-size: 3em; margin-top: 0; margin-bottom: 12px;">${settings?.name || 'YoShop'}</h1>
+          <h1 class="pin-card-shop-name" style="font-size: 3em; margin-top: 0; margin-bottom: 12px;">${settings?.name || 'YoShop'}</h1>
           ${getLoginFeedbackHtml()}
           ${statusDisplay}
 
@@ -18262,6 +18266,32 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
           </div>
         </div>
       `;
+
+    const shopNameHeading = overlay.querySelector('.pin-card-shop-name');
+    if (shopNameHeading) {
+      const baseFontSize = parseFloat(getComputedStyle(shopNameHeading).fontSize);
+      const fitShopName = () => {
+        shopNameHeading.style.fontSize = `${baseFontSize}px`;
+        const availableWidth = shopNameHeading.clientWidth;
+        const textWidth = shopNameHeading.scrollWidth;
+        if (availableWidth > 0 && textWidth > availableWidth) {
+          shopNameHeading.style.fontSize = `${baseFontSize * (availableWidth / textWidth)}px`;
+        }
+      };
+
+      fitShopName();
+      if (window.ResizeObserver) {
+        let lastWidth = shopNameHeading.clientWidth;
+        overlay._pinShopNameResizeObserver = new ResizeObserver(() => {
+          const currentWidth = shopNameHeading.clientWidth;
+          if (currentWidth !== lastWidth) {
+            lastWidth = currentWidth;
+            fitShopName();
+          }
+        });
+        overlay._pinShopNameResizeObserver.observe(shopNameHeading.parentElement);
+      }
+    }
   }
 
   // Attach Enter/Escape keyboard handler for the login overlay
