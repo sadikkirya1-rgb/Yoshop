@@ -132,36 +132,45 @@ export function createRepositoryService(options = {}) {
 
       const force = options.force === true;
       const queue = await repository.getSyncQueue();
-      const results = [];
+      const results = new Array(Array.isArray(queue) ? queue.length : 0);
       const now = Date.now();
       console.log('[SYNC] Flushing sync queue, length:', Array.isArray(queue) ? queue.length : 0);
 
-      for (const action of queue) {
-        const nextRetryTime = action.nextRetryAt ? new Date(action.nextRetryAt).getTime() : 0;
+      let nextActionIndex = 0;
+      const processActions = async () => {
+        while (nextActionIndex < queue.length) {
+          const actionIndex = nextActionIndex++;
+          const action = queue[actionIndex];
+          const nextRetryTime = action.nextRetryAt ? new Date(action.nextRetryAt).getTime() : 0;
 
-        if (!force && nextRetryTime && Number.isFinite(nextRetryTime) && nextRetryTime > now) {
-          results.push({
-            id: action.id,
-            status: 'scheduled',
-            nextRetryAt: action.nextRetryAt
-          });
-          continue;
+          if (!force && nextRetryTime && Number.isFinite(nextRetryTime) && nextRetryTime > now) {
+            results[actionIndex] = {
+              id: action.id,
+              status: 'scheduled',
+              nextRetryAt: action.nextRetryAt
+            };
+            continue;
+          }
+
+          try {
+            console.log('[SYNC] Processing action:', action.id, action.entityType, action.payload && (action.payload.recordId || action.payload.id));
+            await cloudSyncHandler(action);
+            await repository.markSyncActionProcessed(action.id);
+            results[actionIndex] = { id: action.id, status: 'processed' };
+            console.log('[SYNC] Processed action:', action.id);
+          } catch (error) {
+            await repository.markSyncActionFailed(action.id, error.message || 'Sync failed');
+            results[actionIndex] = { id: action.id, status: 'pending', error: error.message || 'Sync failed' };
+            console.warn('[SYNC] Action failed:', action.id, error && error.message);
+          }
         }
+      };
 
-        try {
-          console.log('[SYNC] Processing action:', action.id, action.entityType, action.payload && (action.payload.recordId || action.payload.id));
-          await cloudSyncHandler(action);
-          await repository.markSyncActionProcessed(action.id);
-          results.push({ id: action.id, status: 'processed' });
-          console.log('[SYNC] Processed action:', action.id);
-        } catch (error) {
-          await repository.markSyncActionFailed(action.id, error.message || 'Sync failed');
-          results.push({ id: action.id, status: 'pending', error: error.message || 'Sync failed' });
-          console.warn('[SYNC] Action failed:', action.id, error && error.message);
-        }
-      }
+      const requestedConcurrency = Math.floor(Number(options.concurrency) || 4);
+      const concurrency = Math.min(queue.length, Math.max(1, requestedConcurrency));
+      await Promise.all(Array.from({ length: concurrency }, processActions));
 
-      return results;
+      return results.filter(Boolean);
     },
     getRepository() {
       return repository;

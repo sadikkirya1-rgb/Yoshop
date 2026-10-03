@@ -3775,18 +3775,61 @@ table:not(.payment-modal-content table) td.u-text-break {
   justify-content: center;
 }
 
+.login-brand-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 0 18px;
+  text-align: left;
+}
+
+.login-brand-block > img {
+  flex: 0 0 72px;
+}
+
+.pin-login-brand {
+  flex-direction: column;
+  text-align: center;
+}
+
+.pin-login-brand .login-brand-copy {
+  width: 100%;
+  text-align: center;
+}
+
+.pin-login-brand .login-brand-name {
+  text-align: center;
+}
+
+.login-brand-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.login-welcome {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  opacity: 0.82;
+}
+
+.login-brand-name {
+  margin: 0;
+  color: inherit;
+  font-size: 1.55rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
 .pin-card-shop-name {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
-  overflow: hidden;
-  white-space: nowrap;
-  text-align: center;
-}
-
-.pin-card-logo {
-  position: relative;
-  top: 24px;
+  white-space: normal;
 }
 
 #pin-entry-stage,

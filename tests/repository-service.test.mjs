@@ -71,6 +71,33 @@ test('createRepositoryService queues sync actions and flushes them through a clo
   assert.equal(handled[0].entityType, 'products');
 });
 
+test('createRepositoryService flushes independent queued actions concurrently', async () => {
+  const fakeRepository = createFakeRepository();
+  let activeWrites = 0;
+  let maxActiveWrites = 0;
+  const service = createRepositoryService({
+    repository: fakeRepository,
+    userId: 'user-1',
+    deviceId: 'device-1',
+    cloudSyncHandler: async () => {
+      activeWrites += 1;
+      maxActiveWrites = Math.max(maxActiveWrites, activeWrites);
+      await Promise.resolve();
+      activeWrites -= 1;
+    }
+  });
+
+  await service.initialize();
+  await Promise.all(['sync-a', 'sync-b', 'sync-c'].map(id => (
+    service.enqueueSyncAction({ id, entityType: 'products', payload: { id } })
+  )));
+  const results = await service.flushSyncQueue();
+
+  assert.equal(results.length, 3);
+  assert.equal(results.every(result => result.status === 'processed'), true);
+  assert.equal(maxActiveWrites, 3);
+});
+
 test('createRepositoryService keeps transient sync errors pending so they can retry without getting stuck', async () => {
   const fakeRepository = createFakeRepository();
   const service = createRepositoryService({

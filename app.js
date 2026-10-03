@@ -1156,12 +1156,10 @@ let appAdminSettings = { ...defaultAppAdminSettings };
 let editingAdminEmail = null;
 
 let syncFailureCount = 0;
-let syncDebounceTimer = null;
-let isDebouncing = false;
+let backgroundSyncTimer = null;
 let isSyncing = false;
-const SYNC_DEBOUNCE_DELAY = 200; // 200ms debounce for rapid changes (reduced for quicker sync)
-let lastSyncTime = 0;
-const MIN_SYNC_INTERVAL = 200; // Minimum 200ms between syncs to allow near-immediate updates
+let isPaymentFinalizing = false;
+let hasRecentSyncFailure = false;
 
 // ===== PRODUCTION OPTIMIZATION: Request Deduplication & Caching =====
 const requestCache = new Map(); // Cache for expensive queries
@@ -2138,6 +2136,7 @@ async function enqueueLocalSyncAction(action) {
   const envelope = await repositoryService.enqueueSyncAction(action);
   if (envelope) {
     pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
+    scheduleBackgroundSync({ immediate: true });
     await updateOnlineStatus().catch(error => {
       console.warn('[SYNC] Could not refresh sync status after queue update:', error);
     });
@@ -2759,6 +2758,35 @@ async function syncCloudAction(action) {
     return value;
   }
 
+  if (action.entityType === 'businessLogo') {
+    const dataUrl = action.payload?.dataUrl;
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+      throw new Error('The queued business logo is invalid.');
+    }
+    if (settings.logo !== dataUrl) return;
+
+    const logoUrl = await uploadImage(dataUrl, 'branding/logo.jpg');
+    if (logoUrl === dataUrl || String(logoUrl).startsWith('data:image/')) {
+      throw new Error('Business logo upload failed. It will retry automatically.');
+    }
+
+    const syncedAt = new Date().toISOString();
+    await setDoc(doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile'), {
+      settings: { logo: logoUrl },
+      lastSyncAt: syncedAt,
+      lastSyncedAt: syncedAt,
+      lastUpdated: syncedAt
+    }, { merge: true });
+
+    if (settings.logo === dataUrl) {
+      settings.logo = logoUrl;
+      await saveState('settings', settings, { enqueueSync: false });
+      loadSettings();
+      updateAuthUI(currentUser);
+    }
+    return;
+  }
+
   const queueCollectionPath = getSyncQueueCollectionPath(currentUser.uid);
   const queueDocRef = doc(collection(dbFirestore, ...queueCollectionPath), action.id);
   const sanitizedQueueEntry = sanitizeForFirestore({ ...action, syncStatus: 'synced', lastSyncAt: new Date().toISOString() });
@@ -2830,21 +2858,20 @@ async function flushLocalSyncQueue(options = {}) {
   if (!currentUser || !dbFirestore || !navigator.onLine || !localRepositoryReady || !repositoryService) return [];
   if (isSyncing) return [];
 
-  const statusEl = document.getElementById('connectivity-status');
-  if (statusEl) {
-    statusEl.classList.add('sync-pulse');
-    statusEl.title = 'Online • syncing to cloud...';
-  }
   isSyncing = true;
+  renderSyncStatus({
+    state: 'syncing',
+    label: '',
+    title: 'Online • syncing to cloud...',
+    background: '#f59e0b',
+    showBadge: false
+  });
 
   let results = [];
   try {
     results = await repositoryService.flushSyncQueue(options);
   } finally {
     isSyncing = false;
-    if (statusEl) {
-      statusEl.classList.remove('sync-pulse');
-    }
   }
 
   try {
@@ -2855,10 +2882,37 @@ async function flushLocalSyncQueue(options = {}) {
     console.warn('[SYNC] Could not refresh local sync queue after flush:', error);
   }
 
+  const remainingCount = calculatePendingSyncCount(pendingSyncQueue, 0);
+  renderSyncStatus({
+    state: !navigator.onLine ? '🔴' : remainingCount > 0 ? '🟡' : '🟢',
+    label: remainingCount > 0 ? `${remainingCount} Pending` : '',
+    title: !navigator.onLine
+      ? 'Offline • changes saved locally and waiting to sync'
+      : remainingCount > 0
+        ? `Online • ${remainingCount} item(s) waiting to sync`
+        : 'Online & synced',
+    background: !navigator.onLine ? '#6b7280' : remainingCount > 0 ? '#f59e0b' : '#16a34a',
+    showBadge: remainingCount > 0
+  });
+
   if (!options.skipStatusUpdate) {
     await updateOnlineStatus().catch(error => {
       console.warn('[SYNC] Could not refresh sync status after queue flush:', error);
     });
+  }
+  const failedActions = results.filter(result => result && (result.status === 'failed' || result.error));
+  if (failedActions.length > 0) {
+    hasRecentSyncFailure = true;
+    const successNotice = document.getElementById('successSyncNotice');
+    if (successNotice && lastProcessedTransaction) {
+      successNotice.textContent = 'Sale complete. Weak network: saved on this device; cloud sync will retry automatically.';
+      successNotice.style.color = '#b45309';
+    }
+  } else if (results.length > 0 && results.every(result => result && result.status === 'processed')) {
+    hasRecentSyncFailure = false;
+  }
+  if (pendingSyncQueue.length > 0 && navigator.onLine) {
+    scheduleBackgroundSync();
   }
   return results;
 }
@@ -2883,17 +2937,41 @@ function summarizeSyncResults(results = []) {
   return summary;
 }
 
-async function scheduleBackgroundSync() {
+async function scheduleBackgroundSync({ immediate = false } = {}) {
   if (!localRepositoryReady || !localRepository || !navigator.onLine || !currentUser) return;
-  if (syncDebounceTimer) return;
-  syncDebounceTimer = setTimeout(async () => {
-    syncDebounceTimer = null;
+  if (backgroundSyncTimer) {
+    if (!immediate) return;
+    clearTimeout(backgroundSyncTimer);
+    backgroundSyncTimer = null;
+  }
+  let delay = 0;
+  if (!immediate) {
+    try {
+      const queue = await localRepository.getSyncQueue();
+      const now = Date.now();
+      const readyActionExists = queue.some(action => {
+        const retryTime = action?.nextRetryAt ? new Date(action.nextRetryAt).getTime() : 0;
+        return !Number.isFinite(retryTime) || retryTime <= now;
+      });
+      const retryTimes = queue
+        .map(action => action?.nextRetryAt ? new Date(action.nextRetryAt).getTime() : 0)
+        .filter(time => Number.isFinite(time) && time > now);
+      if (!readyActionExists && retryTimes.length > 0) {
+        delay = Math.min(...retryTimes) - now;
+      }
+    } catch (error) {
+      console.warn('[SYNC] Could not inspect retry schedule:', error);
+    }
+  }
+  if (backgroundSyncTimer) return;
+  backgroundSyncTimer = setTimeout(async () => {
+    backgroundSyncTimer = null;
     try {
       await flushLocalSyncQueue();
     } catch (error) {
       console.warn('[SYNC] Background sync failed:', error);
     }
-  }, 300);
+  }, delay);
 }
 
 async function restoreImageCache() {
@@ -4737,61 +4815,8 @@ async function saveDataNow(syncToCloud = true, options = {}) {
       await mirrorEnterpriseRecordsToLocalStores();
     }
     await persistImageCache();
-    // Debounce cloud sync to prevent excessive Firebase writes
-    const effectiveUid = getEffectiveUid();
-    if (syncToCloud && effectiveUid && isInitialLoadComplete && dbFirestore) {
-      // If we're online and ready, attempt an immediate flush so new items sync on-spot
-      if (navigator.onLine && !isSyncing) {
-        try {
-          await flushLocalSyncQueue({ force: true, skipStatusUpdate: true });
-        } catch (e) {
-          console.warn('[SYNC] Immediate flush failed:', e);
-        }
-      }
-      if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-      syncDebounceTimer = setTimeout(async () => {
-        syncDebounceTimer = null;
-        const now = Date.now();
-        if (now - lastSyncTime < MIN_SYNC_INTERVAL) return;
-
-        try {
-          isDebouncing = true;
-          const statusEl = document.getElementById('connectivity-status');
-          if (statusEl) statusEl.style.opacity = '0.5';
-
-                  const syncResults = await flushLocalSyncQueue({ force: true, skipStatusUpdate: true });
-          const syncSummary = summarizeSyncResults(syncResults);
-
-          lastSyncTime = Date.now();
-
-          if (syncSummary.failed > 0) {
-            syncFailureCount += syncSummary.failed;
-          } else {
-            syncFailureCount = 0;
-          }
-
-          if (statusEl) {
-            statusEl.style.opacity = '1';
-            statusEl.classList.add('sync-pulse');
-            setTimeout(() => statusEl.classList.remove('sync-pulse'), 600);
-          }
-
-          const syncBtn = document.getElementById('header-sync-status');
-          if (syncBtn) {
-            syncBtn.setAttribute('data-tooltip', 'Last synced: ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-          }
-          console.log('[SYNC] Queue flush complete:', syncSummary);
-        } catch (firestoreError) {
-          syncFailureCount++;
-          handleFirebaseError(firestoreError, "Firestore Sync", `users/${effectiveUid}/data/shop_profile`);
-        } finally {
-          isDebouncing = false;
-        }
-      }, SYNC_DEBOUNCE_DELAY);
-    }
-
     if (syncToCloud && navigator.onLine) {
-      scheduleBackgroundSync();
+      scheduleBackgroundSync({ immediate: true });
     }
     await updateOnlineStatus().catch(error => {
       console.warn('[SYNC] Could not refresh sync status after save:', error);
@@ -5169,27 +5194,26 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
   const syncBadgeEl = document.getElementById('sync-badge');
   const syncBtn = document.getElementById('header-sync-status');
   const syncIcon = syncBtn ? syncBtn.querySelector('.header-sync-icon') : null;
-  const shouldPulse = /syncing/i.test(String(title || '')) || state === 'syncing' || isSyncing === true;
+  const isSyncActive = isSyncing || state === 'syncing' || /syncing/i.test(String(title || ''));
+  const displayState = state === 'syncing' ? '🟡' : (state || '🔴');
 
   if (statusEl) {
     statusEl.textContent = '';
     statusEl.title = title;
-    statusEl.classList.toggle('sync-pulse', false);
   }
 
   if (syncBtn) {
     syncBtn.title = title;
     syncBtn.setAttribute('data-tooltip', title);
     syncBtn.setAttribute('aria-label', title);
-    syncBtn.classList.toggle('sync-pulse', shouldPulse);
+    syncBtn.classList.remove('sync-pulse');
   }
 
   if (syncIcon) {
-    syncIcon.innerHTML = shouldPulse
-      ? '<img class="cloud-sync-icon" src="assets/icons/Cloud.svg.svg" alt="">'
-      : (state || '🔴');
-    syncIcon.classList.toggle('sync-pulse', shouldPulse);
-    syncIcon.classList.toggle('sync-icon-spinning', shouldPulse);
+    syncIcon.innerHTML = isSyncActive
+      ? '<img class="cloud-sync-icon" src="assets/icons/Cloud.svg.svg" alt="Syncing to cloud">'
+      : displayState;
+    syncIcon.classList.remove('sync-pulse', 'sync-icon-spinning');
   }
 
   if (syncBadgeEl) {
@@ -5202,12 +5226,9 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
 async function syncNow() {
   if (!currentUser) return alert("Please login to sync data to the cloud.");
 
-  const statusEl = document.getElementById('connectivity-status');
   const syncBtn = document.getElementById('header-sync-status');
 
-  if (statusEl) {
-    statusEl.innerHTML = '<img class="cloud-sync-icon cloud-sync-icon-small" src="assets/icons/Cloud.svg.svg" alt="Syncing">';
-  }
+  renderSyncStatus({ state: 'syncing', label: '', title: 'Online • syncing to cloud...', background: '#f59e0b', showBadge: false });
   if (syncBtn) syncBtn.disabled = true;
 
   try {
@@ -5239,12 +5260,6 @@ async function updateOnlineStatus() {
   const statusEl = document.getElementById('connectivity-status');
   if (!statusEl) return;
 
-  if (navigator.onLine && !isSyncing) {
-    await flushLocalSyncQueue({ force: true, skipStatusUpdate: true }).catch(error => {
-      console.warn('[SYNC] Forced online queue flush failed:', error);
-    });
-  }
-
   const { pendingCount, retryCount, retryNowCount, retryLaterCount, nextRetryAt } = await getPendingSyncSummary();
   renderSyncHealthPanel().catch(console.warn);
 
@@ -5263,7 +5278,7 @@ async function updateOnlineStatus() {
 
   if (isSyncing) {
     renderSyncStatus({
-      state: '🟢',
+      state: '🟡',
       label: '',
       title: 'Online • syncing to cloud...',
       background: '#16a34a',
@@ -5274,9 +5289,9 @@ async function updateOnlineStatus() {
 
   if (pendingCount > 0) {
     renderSyncStatus({
-      state: 'syncing',
-      label: '',
-      title: `Online • syncing ${pendingCount} item(s) to cloud...`,
+      state: '🟡',
+      label: `${pendingCount} Pending`,
+      title: `Online • ${pendingCount} item(s) waiting to sync`,
       background: '#f59e0b',
       showBadge: false
     });
@@ -5323,9 +5338,10 @@ function updateAuthUI(user) {
   authContainer.style.cssText = 'display: flex; align-items: center; gap: 4px; font-size: 0.8em; margin-left: 6px; flex-wrap: nowrap; overflow: hidden;';
 
   if (user) {
+    const avatarUrl = user.photoURL || sanitizeLogoUrl(settings.logo) || 'assets/icons/icon.png';
     authContainer.innerHTML = `
         <div style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; min-width: 0;">
-          <img src="${user.photoURL || 'https://placehold.co/30'}" style="width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; flex-shrink: 0;">
+          <img src="${avatarUrl}" alt="Account profile" style="width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; flex-shrink: 0;">
         </div>
       `;
 
@@ -8165,6 +8181,7 @@ function calculateChange() {
 }
 
 async function finalizePayment(isSplit = false) {
+  if (isPaymentFinalizing) return;
   const currentOrder = activeOrders[CART_ID];
   if (!currentOrder || !Array.isArray(currentOrder.items) || currentOrder.items.length === 0) {
     await showAppAlert("There is no active order to complete.", "Nothing to Pay");
@@ -8223,7 +8240,8 @@ async function finalizePayment(isSplit = false) {
     return;
   }
 
-  setPaymentProcessingState(true, navigator.onLine ? 'Processing payment…' : 'Offline mode: saving your sale locally and syncing it when the connection returns.', navigator.onLine ? 'info' : 'success');
+  isPaymentFinalizing = true;
+  setPaymentProcessingState(true, navigator.onLine ? 'Saving sale on this device…' : 'Weak network: saving sale locally…', navigator.onLine ? 'info' : 'success');
 
   try {
     if (!isDraft && isStockTrackingEnabled()) {
@@ -8298,7 +8316,8 @@ async function finalizePayment(isSplit = false) {
     await recordTransaction(transaction);
     const changeDue = isDraft ? 0 : amountTendered - amountPaid;
     activeOrders[CART_ID] = { items: [], server: '' };
-    await saveData();
+    await saveData(false);
+    scheduleBackgroundSync();
     updateOrders(CART_ID, false);
     renderMenu();
 
@@ -8329,6 +8348,8 @@ async function finalizePayment(isSplit = false) {
     console.error('[PAYMENT] Checkout failed:', error);
     setPaymentProcessingState(false, 'Payment could not be completed. Please try again.', 'error');
     await showAppAlert("We could not complete the sale. The order is still available and you can try again.", "Payment Issue");
+  } finally {
+    isPaymentFinalizing = false;
   }
 }
 
@@ -12673,16 +12694,12 @@ async function saveSettings() {
   const logoFile = logoField && logoField.files[0];
   const pendingLogoBase64 = window.pendingLogoBase64 || null;
   const shouldClearLogo = window.companyLogoCleared === true;
+  const previousLogo = settings.logo;
+  let logoUploadData = null;
   if (logoFile || pendingLogoBase64) {
     const base64Logo = pendingLogoBase64 || await toBase64(logoFile);
-    const oldLogo = settings.logo;
-    settings.logo = await uploadImage(base64Logo, 'branding/logo.jpg');
-    if (oldLogo && oldLogo !== settings.logo) {
-      clearImageFromCache(oldLogo);
-    }
-    if (settings.logo) {
-      clearImageFromCache(settings.logo);
-    }
+    settings.logo = base64Logo;
+    logoUploadData = base64Logo;
     window.companyLogoCleared = false;
     window.pendingLogoBase64 = null;
     if (logoField) logoField.value = '';
@@ -12698,8 +12715,19 @@ async function saveSettings() {
 
   settings = touchSettingsRecord(settings, 'settings');
 
-  saveData();
-  enqueueSettingsSync(settings).catch(console.warn);
+  await saveData(false);
+  const settingsForCloud = { ...settings };
+  if (logoUploadData) settingsForCloud.logo = previousLogo;
+  if (String(settingsForCloud.logo || '').startsWith('data:image/')) {
+    delete settingsForCloud.logo;
+  }
+  await enqueueSettingsSync(settingsForCloud).catch(console.warn);
+  if (logoUploadData) {
+    await enqueueLocalSyncAction({
+      entityType: 'businessLogo',
+      payload: { id: 'business-logo', dataUrl: logoUploadData }
+    }).catch(error => console.warn('[SYNC] Could not queue business logo upload:', error));
+  }
   alert('Settings saved!');
   loadSettings(); // Reload to show preview
 
@@ -17358,13 +17386,6 @@ function setupRealTimeSync(uid) {
                     list.innerHTML = '<option value="Admin">' + (Array.isArray(staff) ? staff : []).filter(s => s && s.isActive !== false).map(s => `<option value="${s.name || ''}">`).join('');
                   }
 
-                  // Visual feedback on the sync button
-                  const statusEl = document.getElementById('connectivity-status');
-                  if (statusEl && statusEl.classList) {
-                    statusEl.classList.add('sync-pulse');
-                    setTimeout(() => statusEl.classList.remove('sync-pulse'), 600);
-                  }
-
                   pendingUpdate = null;
                 } catch (error) {
                   captureError('SYNC_UPDATE', error, { uid });
@@ -17610,7 +17631,10 @@ async function mainInit() {
 
     // Initialize Connectivity Status Indicator
     updateOnlineStatus().catch(console.warn);
-    window.addEventListener('online', () => updateOnlineStatus().catch(console.warn));
+    window.addEventListener('online', () => {
+      scheduleBackgroundSync();
+      updateOnlineStatus().catch(console.warn);
+    });
     window.addEventListener('offline', () => updateOnlineStatus().catch(console.warn));
 
     // Assign local settings immediately so login overlay can use them for branding
@@ -17989,11 +18013,8 @@ async function mainInit() {
       const deviceId = new URLSearchParams(window.location.search).get('device') || '';
       console.log(`[SYNC] 🌐 Device ${deviceId || 'default'} back online - syncing all data`);
       if (currentUser && isInitialLoadComplete) {
-        if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-        syncDebounceTimer = null;
-        lastSyncTime = 0; // Reset to allow immediate sync
         saveData();
-        flushLocalSyncQueue().catch((error) => console.warn('[SYNC] Queue flush failed:', error));
+        scheduleBackgroundSync({ immediate: true });
       }
     });
 
@@ -18030,7 +18051,8 @@ function showLoginOverlay(mode = 'login') {
   let overlay = document.getElementById('login-overlay');
   const logoUrl = sanitizeLogoUrl(settings?.logo);
   const displayLogo = logoUrl || 'assets/icons/icon.png';
-const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width: 100px; height: 100px; object-fit: contain; margin-top: -40px; margin-bottom: 12px; background: transparent;">`;
+  const businessName = settings?.name || 'YoShop';
+  const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width: 72px; height: 72px; object-fit: contain; margin: 0; background: transparent;">`;
 
   if (!overlay) {
     overlay = document.createElement('div');
@@ -18095,7 +18117,10 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
           <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
         </div>
         <div class="login-side login-center-card animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); max-width: none; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0; padding: 42px 38px; box-sizing: border-box; border-left: 1px solid rgba(255,255,255,0.3); border-right: 1px solid rgba(255,255,255,0.3); background: linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06) 42%, rgba(7,15,30,0.34)), rgba(20,28,45,0.52); box-shadow: 0 0 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(28px) saturate(140%); -webkit-backdrop-filter: blur(28px) saturate(140%);">
-          <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
+          <div class="login-brand-block">
+            ${logoHtml}
+            <div class="login-brand-copy"><p class="login-welcome">Welcome</p><h1 class="login-brand-name">${businessName}</h1></div>
+          </div>
           <p style="font-size: 1.5em; margin-bottom: 25px; font-weight: bold;">${title}</p>
           ${getLoginFeedbackHtml()}
           
@@ -18244,9 +18269,10 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
           <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
         </div>
         <div class="login-side login-center-card animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); max-width: none; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0; padding: 42px 38px; box-sizing: border-box; border-left: 1px solid rgba(255,255,255,0.3); border-right: 1px solid rgba(255,255,255,0.3); background: linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06) 42%, rgba(7,15,30,0.34)), rgba(20,28,45,0.52); box-shadow: 0 0 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(28px) saturate(140%); -webkit-backdrop-filter: blur(28px) saturate(140%);">
-          <div class="pin-card-logo" style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
-          <p style="font-size: 1.5em; margin-bottom: 12px; font-weight: bold;">Welcome</p>
-          <h1 class="pin-card-shop-name" style="font-size: 3em; margin-top: 0; margin-bottom: 12px;">${settings?.name || 'YoShop'}</h1>
+          <div class="login-brand-block pin-login-brand">
+            ${logoHtml}
+            <div class="login-brand-copy"><p class="login-welcome">Welcome</p><h1 class="login-brand-name pin-card-shop-name">${businessName}</h1></div>
+          </div>
           ${getLoginFeedbackHtml()}
           ${statusDisplay}
 
@@ -18267,31 +18293,6 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
         </div>
       `;
 
-    const shopNameHeading = overlay.querySelector('.pin-card-shop-name');
-    if (shopNameHeading) {
-      const baseFontSize = parseFloat(getComputedStyle(shopNameHeading).fontSize);
-      const fitShopName = () => {
-        shopNameHeading.style.fontSize = `${baseFontSize}px`;
-        const availableWidth = shopNameHeading.clientWidth;
-        const textWidth = shopNameHeading.scrollWidth;
-        if (availableWidth > 0 && textWidth > availableWidth) {
-          shopNameHeading.style.fontSize = `${baseFontSize * (availableWidth / textWidth)}px`;
-        }
-      };
-
-      fitShopName();
-      if (window.ResizeObserver) {
-        let lastWidth = shopNameHeading.clientWidth;
-        overlay._pinShopNameResizeObserver = new ResizeObserver(() => {
-          const currentWidth = shopNameHeading.clientWidth;
-          if (currentWidth !== lastWidth) {
-            lastWidth = currentWidth;
-            fitShopName();
-          }
-        });
-        overlay._pinShopNameResizeObserver.observe(shopNameHeading.parentElement);
-      }
-    }
   }
 
   // Attach Enter/Escape keyboard handler for the login overlay
@@ -19936,7 +19937,9 @@ function triggerConfettiAnimation(container) {
 function showSaleSuccessCelebration(transaction, changeDue = 0) {
   lastProcessedTransaction = transaction;
 
-  const syncState = navigator.onLine ? 'Synced to cloud when connection is available.' : 'Saved offline and will sync when the connection returns.';
+  const syncState = !navigator.onLine || hasRecentSyncFailure
+    ? 'Sale complete. Weak network: saved on this device and will sync when the connection returns.'
+    : 'Sale complete. Saved on this device and syncing to your other devices.';
   const syncNoticeEl = document.getElementById('successSyncNotice');
   if (syncNoticeEl) {
     syncNoticeEl.textContent = syncState;
