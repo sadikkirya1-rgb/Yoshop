@@ -1,9 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-<<<<<<< HEAD
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from '../invoice-utils.mjs';
-=======
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from '../invoice-utils.mjs';
 
 test('paginateInvoiceItems uses one shared thirty-row A4 page limit', () => {
   const items = Array.from({ length: 61 }, (_, index) => ({ id: index + 1 }));
@@ -13,7 +10,6 @@ test('paginateInvoiceItems uses one shared thirty-row A4 page limit', () => {
   assert.deepEqual(paginateInvoiceItems(items.slice(0, 30)).map(page => page.length), [30]);
   assert.deepEqual(paginateInvoiceItems([]), [[]]);
 });
->>>>>>> 6d7d7cf7aff46c4a6b5bc637434259d4ce3d3e08
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [

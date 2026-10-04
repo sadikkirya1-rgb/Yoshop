@@ -20,11 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-<<<<<<< HEAD
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from './invoice-utils.mjs';
-=======
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from './invoice-utils.mjs';
->>>>>>> 6d7d7cf7aff46c4a6b5bc637434259d4ce3d3e08
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -3014,6 +3010,7 @@ let menu = [];
 let stockTableFilter = 'all';
 let stockTablePageSize = 5;
 let stockTablePage = 1;
+let stockTableSearchTerm = '';
 let activeOrders = {};
 let transactions = [];
 let staff = [];
@@ -15415,12 +15412,11 @@ function setStockTablePageSize(pageSize = 5) {
 window.setStockTablePageSize = setStockTablePageSize;
 
 function renderStockListTable() {
-<<<<<<< HEAD
   const searchTerm = String(document.getElementById('stockSearchInput')?.value || '').trim().toLowerCase();
-=======
-  stockTablePage = 1;
-  const searchTerm = document.getElementById('stockSearchInput')?.value.toLowerCase() || '';
->>>>>>> 6d7d7cf7aff46c4a6b5bc637434259d4ce3d3e08
+  if (searchTerm !== stockTableSearchTerm) {
+    stockTablePage = 1;
+    stockTableSearchTerm = searchTerm;
+  }
   const tbody = document.getElementById('stockListBody');
   if (!tbody) return;
   tbody.innerHTML = '';
@@ -15440,20 +15436,16 @@ function renderStockListTable() {
     return true;
   });
 
-<<<<<<< HEAD
   if (searchTerm && stockItems.length === 0) {
     const emptyRow = document.createElement('tr');
     const emptyCell = document.createElement('td');
-    emptyCell.colSpan = 10;
+    emptyCell.colSpan = 13;
     emptyCell.className = 'u-text-center';
     emptyCell.textContent = 'No data found.';
     emptyRow.appendChild(emptyCell);
     tbody.appendChild(emptyRow);
-    return;
   }
 
-  stockItems.forEach((item, rowIndex) => {
-=======
   const pageSize = stockTablePageSize === 'all' ? stockItems.length || 1 : stockTablePageSize;
   const totalPages = Math.max(1, Math.ceil(stockItems.length / pageSize));
   stockTablePage = Math.min(stockTablePage, totalPages);
@@ -15462,7 +15454,6 @@ function renderStockListTable() {
     : stockItems.slice((stockTablePage - 1) * pageSize, stockTablePage * pageSize);
 
   visibleStockItems.forEach((item, rowIndex) => {
->>>>>>> 6d7d7cf7aff46c4a6b5bc637434259d4ce3d3e08
     const index = menu.indexOf(item);
     const stock = calculateDishStock(item, true);
     const costPrice = item.costPrice || 0;
@@ -16705,22 +16696,33 @@ function applyDataTableControls(toolbar) {
   const filterValue = String(filter?.value || 'all').toLowerCase();
 
   const rows = Array.from(body.querySelectorAll(':scope > tr:not([data-search-empty-row])'));
-  let visibleRows = 0;
   rows.forEach(row => {
     const rowText = String(row.textContent || '').toLowerCase();
     const isService = rowText.includes('service');
     const matchesFilter = filterValue === 'all'
       || (filterValue === 'product' && !isService)
       || rowText.includes(filterValue);
-<<<<<<< HEAD
-    row.hidden = !(matchesFilter && (!searchValue || rowText.includes(searchValue)));
-    if (!row.hidden) visibleRows += 1;
-=======
     const filterHidden = !(matchesFilter && (!searchValue || rowText.includes(searchValue)));
     row.dataset.dataTableFilterHidden = String(filterHidden);
     row.hidden = filterHidden;
   });
   applyDataTablePagination(body);
+
+  const shouldShowEmptyRow = Boolean(searchValue)
+    && rows.every(row => row.dataset.dataTableFilterHidden === 'true');
+  let emptyRow = body.querySelector(':scope > tr[data-search-empty-row]');
+  if (shouldShowEmptyRow && !emptyRow) {
+    emptyRow = document.createElement('tr');
+    emptyRow.dataset.searchEmptyRow = 'true';
+    const emptyCell = document.createElement('td');
+    emptyCell.colSpan = body.closest('table')?.querySelector('thead tr:last-child')?.children.length || 1;
+    emptyCell.className = 'u-text-center';
+    emptyCell.textContent = 'No data found.';
+    emptyRow.appendChild(emptyCell);
+    body.appendChild(emptyRow);
+  } else if (!shouldShowEmptyRow && emptyRow) {
+    emptyRow.remove();
+  }
 }
 
 const dataTablePageSizes = new Map();
@@ -16731,7 +16733,7 @@ function applyDataTablePagination(body) {
   if (!controls) return;
 
   const pageSize = dataTablePageSizes.get(body.id) || 5;
-  const rows = Array.from(body.querySelectorAll(':scope > tr'));
+  const rows = Array.from(body.querySelectorAll(':scope > tr:not([data-search-empty-row])'));
   rows.forEach(row => {
     if (row.dataset.dataTablePageHidden === 'true') {
       row.hidden = row.dataset.dataTableFilterHidden === 'true';
@@ -16790,23 +16792,7 @@ function initializeDataTablePagination() {
 
     new MutationObserver(() => applyDataTablePagination(body)).observe(body, { childList: true });
     applyDataTablePagination(body);
->>>>>>> 6d7d7cf7aff46c4a6b5bc637434259d4ce3d3e08
   });
-
-  const shouldShowEmptyRow = Boolean(searchValue) && visibleRows === 0;
-  let emptyRow = body.querySelector(':scope > tr[data-search-empty-row]');
-  if (shouldShowEmptyRow && !emptyRow) {
-    emptyRow = document.createElement('tr');
-    emptyRow.dataset.searchEmptyRow = 'true';
-    const emptyCell = document.createElement('td');
-    emptyCell.colSpan = body.closest('table')?.querySelector('thead tr:last-child')?.children.length || 1;
-    emptyCell.className = 'u-text-center';
-    emptyCell.textContent = 'No data found.';
-    emptyRow.appendChild(emptyCell);
-    body.appendChild(emptyRow);
-  } else if (!shouldShowEmptyRow && emptyRow) {
-    emptyRow.remove();
-  }
 }
 
 function initializeDataTableControls() {
