@@ -13843,6 +13843,7 @@ function renderCustomerList() {
     const whatsappAction = '';
     const sendStatusAction = '';
     const tr = document.createElement('tr');
+    tr.dataset.customerName = String(customer.name || '').trim().toLowerCase();
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
                         <td>${i + 1}</td>
                         <td>${escapeHtml(customer.name)}</td>
@@ -16696,13 +16697,21 @@ function applyDataTableControls(toolbar) {
   const filterValue = String(filter?.value || 'all').toLowerCase();
 
   const rows = Array.from(body.querySelectorAll(':scope > tr:not([data-search-empty-row])'));
+  const customerNameRows = toolbar.dataset.tableSearchPriority === 'customer-name' && searchValue
+    ? rows.filter(row => row.dataset.customerName?.includes(searchValue))
+    : [];
+  const exactCustomerRows = new Set(customerNameRows.filter(row => row.dataset.customerName === searchValue));
+  const prioritizedCustomerRows = exactCustomerRows.size > 0 ? exactCustomerRows : new Set(customerNameRows);
   rows.forEach(row => {
     const rowText = String(row.textContent || '').toLowerCase();
     const isService = rowText.includes('service');
     const matchesFilter = filterValue === 'all'
       || (filterValue === 'product' && !isService)
       || rowText.includes(filterValue);
-    const filterHidden = !(matchesFilter && (!searchValue || rowText.includes(searchValue)));
+    const matchesSearch = !searchValue || (prioritizedCustomerRows.size > 0
+      ? prioritizedCustomerRows.has(row)
+      : rowText.includes(searchValue));
+    const filterHidden = !(matchesFilter && matchesSearch);
     row.dataset.dataTableFilterHidden = String(filterHidden);
     row.hidden = filterHidden;
   });

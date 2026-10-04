@@ -266,6 +266,17 @@ export function filterInvoiceRowsBySearch(rows = [], searchTerm = '') {
   const normalizedTerm = String(searchTerm || '').trim().toLowerCase();
   if (!normalizedTerm) return invoiceRows;
 
+  const customerNameMatches = invoiceRows.filter(row => {
+    const customerName = String(row?.customer?.name || row?.customerName || '').trim().toLowerCase();
+    return customerName.includes(normalizedTerm);
+  });
+  const exactCustomerMatches = customerNameMatches.filter(row => {
+    const customerName = String(row?.customer?.name || row?.customerName || '').trim().toLowerCase();
+    return customerName === normalizedTerm;
+  });
+  if (exactCustomerMatches.length > 0) return exactCustomerMatches;
+  if (customerNameMatches.length > 0) return customerNameMatches;
+
   return invoiceRows.filter(row => {
     const transaction = row?.transaction || {};
     const searchableValues = [
@@ -306,10 +317,11 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
       const lastAdjustment = mergedAdjustments.length > 0 ? mergedAdjustments[mergedAdjustments.length - 1] : (transaction.lastAdjustment || null);
 
       const normalizedBalance = Number.isFinite(paymentSummary.balance) ? paymentSummary.balance : 0;
+      const customerName = customer?.name || transaction.customerNameReal || transaction.customerName || 'Unknown Customer';
       const previewData = {
         date: transaction.date || new Date().toISOString(),
-        customerName: transaction.customerNameReal || transaction.customerName || customer?.name || 'Unknown Customer',
-        customerNameReal: transaction.customerNameReal || transaction.customerName || customer?.name || 'Unknown Customer',
+        customerName,
+        customerNameReal: customerName,
         customerContact: transaction.customerContact || transaction.contact || customer?.contact || customer?.phone || customer?.mobile || '',
         customerAddress: transaction.customerAddress || transaction.address || customer?.address || '',
         tableNo: transaction.tableNo || 'Customer Account',

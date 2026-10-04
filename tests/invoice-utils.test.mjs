@@ -48,6 +48,17 @@ test('filterInvoiceRowsBySearch matches customer, served-by, and invoice number'
   assert.deepEqual(filterInvoiceRowsBySearch(rows, ''), rows);
 });
 
+test('filterInvoiceRowsBySearch prioritizes the exact customer and excludes cross-field matches', () => {
+  const rows = [
+    { customer: { id: 'customer-1', name: 'Alex Smith' }, customerName: 'Alex Smith', invoiceNumber: 'INV-101' },
+    { customer: { id: 'customer-2', name: 'Morgan Lee' }, customerName: 'Morgan Lee', invoiceNumber: 'Alex Smith-202', transaction: { servedBy: 'Alex Smith' } },
+    { customer: { id: 'customer-1', name: 'Alex Smith' }, customerName: 'Alex Smith', invoiceNumber: 'INV-102' }
+  ];
+
+  assert.deepEqual(filterInvoiceRowsBySearch(rows, 'Alex Smith'), [rows[0], rows[2]]);
+  assert.deepEqual(filterInvoiceRowsBySearch(rows, 'Alex'), [rows[0], rows[2]]);
+});
+
 test('buildInvoiceListItems keeps separate debt transactions for the same customer', () => {
   const customer = {
     id: 'cust-1',
