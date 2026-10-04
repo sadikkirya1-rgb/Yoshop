@@ -567,6 +567,8 @@ function renderAuditReportTable() {
   }).join('');
 }
 
+window.renderAuditReportTable = renderAuditReportTable;
+
 function populateAuditReportFilters() {
   const staffSelect = document.getElementById('auditReportStaffFilter');
   const dateInput = document.getElementById('auditReportDateFilter');
@@ -6443,7 +6445,7 @@ function renderMenu() {
 
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
   const sellableMenu = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
-  const searchTerm = document.getElementById('menuSearch')?.value.toLowerCase() || '';
+  const searchTerm = String(document.getElementById('menuSearch')?.value || '').trim().toLowerCase();
   const categoryFilter = document.getElementById('categoryFilter')?.value || '';
   renderPickedItems();
 
@@ -6457,6 +6459,13 @@ function renderMenu() {
   });
 
   const categories = [...new Set(filteredMenu.map(d => d.category || "Uncategorized"))];
+
+  if (searchTerm && filteredMenu.length === 0) {
+    const emptyMessage = document.createElement('p');
+    emptyMessage.className = 'u-text-center';
+    emptyMessage.textContent = 'No data found.';
+    container.appendChild(emptyMessage);
+  }
 
   categories.forEach(cat => {
     const catDiv = document.createElement('div');
@@ -6552,6 +6561,8 @@ function renderMenu() {
   // Initial orders sync
   updateOrders(CART_ID, false);
 }
+
+window.renderMenu = renderMenu;
 
 function renderPickedItems() {
   const container = document.getElementById('menuPickedItems');
@@ -10377,8 +10388,12 @@ function renderTransactions() {
   tbody.innerHTML = ''; // Clear existing rows
 
   if (tableRows.length === 0) {
-    const emptyStateTitle = (startDate || endDate) ? 'No sales in this date range' : 'No sales yet';
-    const emptyStateSubtitle = (startDate || endDate)
+    const emptyStateTitle = searchValue
+      ? 'No data found'
+      : (startDate || endDate) ? 'No sales in this date range' : 'No sales yet';
+    const emptyStateSubtitle = searchValue
+      ? 'No sales match your search.'
+      : (startDate || endDate)
       ? 'Try a different date range or create a new sale to populate this list.'
       : 'Your sales history will appear here after the first bill is created.';
 
@@ -10425,6 +10440,8 @@ function renderTransactions() {
     });
   }
 }
+
+window.renderTransactions = renderTransactions;
 
 /**
  * Triggers a cloud search for transactions within the specified date range
@@ -15181,14 +15198,15 @@ function setStockTableFilter(filterName = 'all') {
 }
 
 function renderStockListTable() {
-  const searchTerm = document.getElementById('stockSearchInput')?.value.toLowerCase() || '';
+  const searchTerm = String(document.getElementById('stockSearchInput')?.value || '').trim().toLowerCase();
   const tbody = document.getElementById('stockListBody');
   if (!tbody) return;
   tbody.innerHTML = '';
 
   const stockItems = menu.filter(item => {
     if (item.stock === undefined) return false;
-    const matchesSearch = !searchTerm || item.name.toLowerCase().includes(searchTerm);
+    const searchableText = `${item.name || ''} ${item.barcode || ''} ${item.unit || ''}`.toLowerCase();
+    const matchesSearch = !searchTerm || searchableText.includes(searchTerm);
     if (!matchesSearch) return false;
 
     const stockValue = Number(calculateDishStock(item, true) || 0);
@@ -15199,6 +15217,17 @@ function renderStockListTable() {
     if (stockTableFilter === 'in') return stockValue > 0;
     return true;
   });
+
+  if (searchTerm && stockItems.length === 0) {
+    const emptyRow = document.createElement('tr');
+    const emptyCell = document.createElement('td');
+    emptyCell.colSpan = 10;
+    emptyCell.className = 'u-text-center';
+    emptyCell.textContent = 'No data found.';
+    emptyRow.appendChild(emptyCell);
+    tbody.appendChild(emptyRow);
+    return;
+  }
 
   stockItems.forEach((item, rowIndex) => {
     const index = menu.indexOf(item);
@@ -16417,14 +16446,32 @@ function applyDataTableControls(toolbar) {
   const searchValue = String(search?.value || '').trim().toLowerCase();
   const filterValue = String(filter?.value || 'all').toLowerCase();
 
-  body.querySelectorAll(':scope > tr').forEach(row => {
+  const rows = Array.from(body.querySelectorAll(':scope > tr:not([data-search-empty-row])'));
+  let visibleRows = 0;
+  rows.forEach(row => {
     const rowText = String(row.textContent || '').toLowerCase();
     const isService = rowText.includes('service');
     const matchesFilter = filterValue === 'all'
       || (filterValue === 'product' && !isService)
       || rowText.includes(filterValue);
     row.hidden = !(matchesFilter && (!searchValue || rowText.includes(searchValue)));
+    if (!row.hidden) visibleRows += 1;
   });
+
+  const shouldShowEmptyRow = Boolean(searchValue) && visibleRows === 0;
+  let emptyRow = body.querySelector(':scope > tr[data-search-empty-row]');
+  if (shouldShowEmptyRow && !emptyRow) {
+    emptyRow = document.createElement('tr');
+    emptyRow.dataset.searchEmptyRow = 'true';
+    const emptyCell = document.createElement('td');
+    emptyCell.colSpan = body.closest('table')?.querySelector('thead tr:last-child')?.children.length || 1;
+    emptyCell.className = 'u-text-center';
+    emptyCell.textContent = 'No data found.';
+    emptyRow.appendChild(emptyCell);
+    body.appendChild(emptyRow);
+  } else if (!shouldShowEmptyRow && emptyRow) {
+    emptyRow.remove();
+  }
 }
 
 function initializeDataTableControls() {
