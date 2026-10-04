@@ -53,7 +53,9 @@ export function getSubscriptionBucket({ userStatus = 'active', shopStatus = 'act
   const normalizedShopStatus = String(shopStatus || 'active').trim().toLowerCase();
 
   if (normalizedUserStatus === 'pending') return 'pending';
-  if (normalizedShopStatus !== 'active') return 'suspended';
+  if (['deactivated', 'disabled', 'inactive'].includes(normalizedUserStatus)
+    || ['deactivated', 'disabled', 'inactive'].includes(normalizedShopStatus)) return 'deactivated';
+  if (normalizedUserStatus === 'suspended' || normalizedShopStatus === 'suspended') return 'suspended';
 
   if (!subscriptionExpires) {
     return 'active';
@@ -78,7 +80,8 @@ export function getSubscriptionMeta({ userStatus = 'active', shopStatus = 'activ
     expired: 'Expired',
     'expiring-soon': 'Expiring Soon',
     pending: 'Pending',
-    suspended: 'Suspended'
+    suspended: 'Suspended',
+    deactivated: 'Deactivated'
   };
 
   const classMap = {
@@ -86,7 +89,8 @@ export function getSubscriptionMeta({ userStatus = 'active', shopStatus = 'activ
     expired: 'deactivated',
     'expiring-soon': 'suspended',
     pending: 'suspended',
-    suspended: 'suspended'
+    suspended: 'suspended',
+    deactivated: 'deactivated'
   };
 
   return {

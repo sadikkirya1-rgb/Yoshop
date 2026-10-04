@@ -3775,6 +3775,63 @@ table:not(.payment-modal-content table) td.u-text-break {
   justify-content: center;
 }
 
+.login-brand-block {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  width: 100%;
+  max-width: 340px;
+  margin: 0 0 18px;
+  text-align: left;
+}
+
+.login-brand-block > img {
+  flex: 0 0 72px;
+}
+
+.pin-login-brand {
+  flex-direction: column;
+  text-align: center;
+}
+
+.pin-login-brand .login-brand-copy {
+  width: 100%;
+  text-align: center;
+}
+
+.pin-login-brand .login-brand-name {
+  text-align: center;
+}
+
+.login-brand-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.login-welcome {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  opacity: 0.82;
+}
+
+.login-brand-name {
+  margin: 0;
+  color: inherit;
+  font-size: 1.55rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+.pin-card-shop-name {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  white-space: normal;
+}
+
 #pin-entry-stage,
 #pin-actions-container,
 #staff-name-container {
@@ -3816,7 +3873,13 @@ table:not(.payment-modal-content table) td.u-text-break {
   #login-overlay {
     flex-direction: column !important;
     align-items: center !important;
-    justify-content: center !important;
+    justify-content: flex-start !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    box-sizing: border-box;
+    padding: max(16px, env(safe-area-inset-top)) 0 max(16px, env(safe-area-inset-bottom));
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
   }
 
   #login-overlay .marketing-side {
@@ -3831,7 +3894,9 @@ table:not(.payment-modal-content table) td.u-text-break {
     width: min(440px, calc(100vw - 32px)) !important;
     min-width: 0 !important;
     max-width: calc(100vw - 32px) !important;
-    margin: 16px !important;
+    flex: 0 0 auto !important;
+    align-self: center !important;
+    margin: 0 16px 16px !important;
     padding: 28px 22px !important;
     border-radius: 22px !important;
     box-shadow: 0 20px 50px rgba(4, 12, 24, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.22) !important;

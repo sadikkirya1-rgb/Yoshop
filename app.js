@@ -20,7 +20,11 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
+<<<<<<< HEAD
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from './invoice-utils.mjs';
+=======
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from './invoice-utils.mjs';
+>>>>>>> 6d7d7cf7aff46c4a6b5bc637434259d4ce3d3e08
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -239,8 +243,10 @@ function formatPresenceValue(lastSeenValue) {
 }
 
 function getPresenceStatus(userData = {}) {
-  const isOnline = userData.isOnline === true;
   const lastSeen = userData.lastSeen || userData.lastLogin;
+  const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : NaN;
+  const presenceIsFresh = Number.isFinite(lastSeenTime) && (Date.now() - lastSeenTime) <= 10 * 60 * 1000;
+  const isOnline = userData.isOnline === true && presenceIsFresh;
   const detail = isOnline ? 'Online now' : `Last seen ${formatPresenceValue(lastSeen)}`;
 
   return {
@@ -251,12 +257,13 @@ function getPresenceStatus(userData = {}) {
   };
 }
 
-async function syncUserPresence(online = true) {
-  if (!dbFirestore || !auth?.currentUser?.uid) return;
+async function syncUserPresence(online = true, userId = '') {
+  const uid = userId || auth?.currentUser?.uid;
+  if (!dbFirestore || !uid) return;
 
   try {
     const now = new Date().toISOString();
-    await setDoc(doc(dbFirestore, 'users', auth.currentUser.uid), {
+    await setDoc(doc(dbFirestore, 'users', uid), {
       isOnline: online,
       lastSeen: now,
       ...(online ? { lastLogin: now } : {})
@@ -747,7 +754,7 @@ function getButtonActionPermission(button) {
     customerTab: 'customers', transactionsTab: 'sales', invoicesTab: 'invoices', stockTab: 'inventory',
     settingsTab: 'settings', reportsTab: 'reports', menuTab: 'sales'
   }[section];
-  if (/editTransaction\(|reopenTransaction\(|sendOrderStatusNotification\(/.test(onclick)) return 'sales.edit';
+  if (/editTransaction\(|reopenTransaction\(|sendOrderStatusNotification\(|sendOrderStatusEmail\(/.test(onclick)) return 'sales.edit';
   if (/deleteTransaction\(/.test(onclick)) return 'sales.delete';
   if (/openStaffPermissionsModal\(/.test(onclick)) return 'staff.permissions';
   if (/deleteItem\(|deleteMarkedProducts\(/.test(onclick)) return 'products.delete';
@@ -1155,12 +1162,10 @@ let appAdminSettings = { ...defaultAppAdminSettings };
 let editingAdminEmail = null;
 
 let syncFailureCount = 0;
-let syncDebounceTimer = null;
-let isDebouncing = false;
+let backgroundSyncTimer = null;
 let isSyncing = false;
-const SYNC_DEBOUNCE_DELAY = 200; // 200ms debounce for rapid changes (reduced for quicker sync)
-let lastSyncTime = 0;
-const MIN_SYNC_INTERVAL = 200; // Minimum 200ms between syncs to allow near-immediate updates
+let isPaymentFinalizing = false;
+let hasRecentSyncFailure = false;
 
 // ===== PRODUCTION OPTIMIZATION: Request Deduplication & Caching =====
 const requestCache = new Map(); // Cache for expensive queries
@@ -2137,6 +2142,7 @@ async function enqueueLocalSyncAction(action) {
   const envelope = await repositoryService.enqueueSyncAction(action);
   if (envelope) {
     pendingSyncQueue = [...pendingSyncQueue.filter(item => item.id !== envelope.id), envelope];
+    scheduleBackgroundSync({ immediate: true });
     await updateOnlineStatus().catch(error => {
       console.warn('[SYNC] Could not refresh sync status after queue update:', error);
     });
@@ -2758,6 +2764,35 @@ async function syncCloudAction(action) {
     return value;
   }
 
+  if (action.entityType === 'businessLogo') {
+    const dataUrl = action.payload?.dataUrl;
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) {
+      throw new Error('The queued business logo is invalid.');
+    }
+    if (settings.logo !== dataUrl) return;
+
+    const logoUrl = await uploadImage(dataUrl, 'branding/logo.jpg');
+    if (logoUrl === dataUrl || String(logoUrl).startsWith('data:image/')) {
+      throw new Error('Business logo upload failed. It will retry automatically.');
+    }
+
+    const syncedAt = new Date().toISOString();
+    await setDoc(doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile'), {
+      settings: { logo: logoUrl },
+      lastSyncAt: syncedAt,
+      lastSyncedAt: syncedAt,
+      lastUpdated: syncedAt
+    }, { merge: true });
+
+    if (settings.logo === dataUrl) {
+      settings.logo = logoUrl;
+      await saveState('settings', settings, { enqueueSync: false });
+      loadSettings();
+      updateAuthUI(currentUser);
+    }
+    return;
+  }
+
   const queueCollectionPath = getSyncQueueCollectionPath(currentUser.uid);
   const queueDocRef = doc(collection(dbFirestore, ...queueCollectionPath), action.id);
   const sanitizedQueueEntry = sanitizeForFirestore({ ...action, syncStatus: 'synced', lastSyncAt: new Date().toISOString() });
@@ -2772,7 +2807,13 @@ async function syncCloudAction(action) {
       const shopDocRef = doc(dbFirestore, 'users', currentUser.uid, 'data', 'shop_profile');
       const safeCloudPayload = await protectCloudPayloadFromEmptyOverwrite(shopDocRef, cloudPayload, action);
       if (safeCloudPayload) {
-        await setDoc(shopDocRef, sanitizeForFirestore(safeCloudPayload), { merge: true });
+        const syncTimestamp = new Date().toISOString();
+        await setDoc(shopDocRef, sanitizeForFirestore({
+          ...safeCloudPayload,
+          lastSyncAt: syncTimestamp,
+          lastSyncedAt: syncTimestamp,
+          lastUpdated: syncTimestamp
+        }), { merge: true });
       }
       return;
     }
@@ -2823,21 +2864,20 @@ async function flushLocalSyncQueue(options = {}) {
   if (!currentUser || !dbFirestore || !navigator.onLine || !localRepositoryReady || !repositoryService) return [];
   if (isSyncing) return [];
 
-  const statusEl = document.getElementById('connectivity-status');
-  if (statusEl) {
-    statusEl.classList.add('sync-pulse');
-    statusEl.title = 'Online • syncing to cloud...';
-  }
   isSyncing = true;
+  renderSyncStatus({
+    state: 'syncing',
+    label: '',
+    title: 'Online • syncing to cloud...',
+    background: '#f59e0b',
+    showBadge: false
+  });
 
   let results = [];
   try {
     results = await repositoryService.flushSyncQueue(options);
   } finally {
     isSyncing = false;
-    if (statusEl) {
-      statusEl.classList.remove('sync-pulse');
-    }
   }
 
   try {
@@ -2848,10 +2888,37 @@ async function flushLocalSyncQueue(options = {}) {
     console.warn('[SYNC] Could not refresh local sync queue after flush:', error);
   }
 
+  const remainingCount = calculatePendingSyncCount(pendingSyncQueue, 0);
+  renderSyncStatus({
+    state: !navigator.onLine ? '🔴' : remainingCount > 0 ? '🟡' : '🟢',
+    label: remainingCount > 0 ? `${remainingCount} Pending` : '',
+    title: !navigator.onLine
+      ? 'Offline • changes saved locally and waiting to sync'
+      : remainingCount > 0
+        ? `Online • ${remainingCount} item(s) waiting to sync`
+        : 'Online & synced',
+    background: !navigator.onLine ? '#6b7280' : remainingCount > 0 ? '#f59e0b' : '#16a34a',
+    showBadge: remainingCount > 0
+  });
+
   if (!options.skipStatusUpdate) {
     await updateOnlineStatus().catch(error => {
       console.warn('[SYNC] Could not refresh sync status after queue flush:', error);
     });
+  }
+  const failedActions = results.filter(result => result && (result.status === 'failed' || result.error));
+  if (failedActions.length > 0) {
+    hasRecentSyncFailure = true;
+    const successNotice = document.getElementById('successSyncNotice');
+    if (successNotice && lastProcessedTransaction) {
+      successNotice.textContent = 'Sale complete. Weak network: saved on this device; cloud sync will retry automatically.';
+      successNotice.style.color = '#b45309';
+    }
+  } else if (results.length > 0 && results.every(result => result && result.status === 'processed')) {
+    hasRecentSyncFailure = false;
+  }
+  if (pendingSyncQueue.length > 0 && navigator.onLine) {
+    scheduleBackgroundSync();
   }
   return results;
 }
@@ -2876,17 +2943,41 @@ function summarizeSyncResults(results = []) {
   return summary;
 }
 
-async function scheduleBackgroundSync() {
+async function scheduleBackgroundSync({ immediate = false } = {}) {
   if (!localRepositoryReady || !localRepository || !navigator.onLine || !currentUser) return;
-  if (syncDebounceTimer) return;
-  syncDebounceTimer = setTimeout(async () => {
-    syncDebounceTimer = null;
+  if (backgroundSyncTimer) {
+    if (!immediate) return;
+    clearTimeout(backgroundSyncTimer);
+    backgroundSyncTimer = null;
+  }
+  let delay = 0;
+  if (!immediate) {
+    try {
+      const queue = await localRepository.getSyncQueue();
+      const now = Date.now();
+      const readyActionExists = queue.some(action => {
+        const retryTime = action?.nextRetryAt ? new Date(action.nextRetryAt).getTime() : 0;
+        return !Number.isFinite(retryTime) || retryTime <= now;
+      });
+      const retryTimes = queue
+        .map(action => action?.nextRetryAt ? new Date(action.nextRetryAt).getTime() : 0)
+        .filter(time => Number.isFinite(time) && time > now);
+      if (!readyActionExists && retryTimes.length > 0) {
+        delay = Math.min(...retryTimes) - now;
+      }
+    } catch (error) {
+      console.warn('[SYNC] Could not inspect retry schedule:', error);
+    }
+  }
+  if (backgroundSyncTimer) return;
+  backgroundSyncTimer = setTimeout(async () => {
+    backgroundSyncTimer = null;
     try {
       await flushLocalSyncQueue();
     } catch (error) {
       console.warn('[SYNC] Background sync failed:', error);
     }
-  }, 300);
+  }, delay);
 }
 
 async function restoreImageCache() {
@@ -2921,6 +3012,8 @@ const PLACEHOLDER_IMAGE = '/assets/icons/android192x192.png';
 let defaultMenu = [];
 let menu = [];
 let stockTableFilter = 'all';
+let stockTablePageSize = 5;
+let stockTablePage = 1;
 let activeOrders = {};
 let transactions = [];
 let staff = [];
@@ -2938,10 +3031,12 @@ const defaultSettings = {
   name: "My Business",
   address: "123 Business Avenue, Suite 100",
   contact: "555-123-4567",
+  customerEmailSender: "",
   currency: "$",
   theme: "light",
   defaultMarkup: 200, // Default 200% markup
   lowStockThreshold: 10,
+  expiryWarningDays: 5,
   taxRate: 0,
   ShopAdminPIN: "1234", // Default ShopAdmin PIN
   transactionEditWindowMinutes: 30,
@@ -3750,6 +3845,42 @@ function compareBusinessIds(leftValue, rightValue) {
   return leftNumber - rightNumber;
 }
 
+function getShopLastSyncValue(shopData = {}) {
+  const candidates = [
+    shopData.lastSyncedAt,
+    shopData.lastSyncAt,
+    shopData.lastUpdated,
+    shopData.sync?.lastSyncedAt,
+    shopData.sync?.lastSyncAt
+  ];
+  ['menu', 'staff', 'customers', 'units', 'dishCategories', 'restockHistory'].forEach(collectionName => {
+    const records = Array.isArray(shopData[collectionName]) ? shopData[collectionName] : [];
+    records.forEach(record => {
+      candidates.push(record?.lastSyncedAt, record?.lastSyncAt, record?.updatedAt);
+    });
+  });
+  const validDates = candidates
+    .filter(Boolean)
+    .map(value => new Date(value))
+    .filter(date => !Number.isNaN(date.getTime()))
+    .sort((left, right) => right.getTime() - left.getTime());
+  return validDates.length ? validDates[0].toLocaleString() : 'Never';
+}
+
+function getAdminShopStatus(userStatus, shopStatus) {
+  const normalizedUserStatus = String(userStatus || 'active').trim().toLowerCase();
+  const normalizedShopStatus = String(shopStatus || 'active').trim().toLowerCase();
+  if (normalizedUserStatus === 'pending') return { label: 'Pending', className: 'suspended' };
+  if (['deactivated', 'disabled', 'inactive'].includes(normalizedUserStatus)
+    || ['deactivated', 'disabled', 'inactive'].includes(normalizedShopStatus)) {
+    return { label: 'Deactivated', className: 'deactivated' };
+  }
+  if (normalizedUserStatus === 'suspended' || normalizedShopStatus === 'suspended') {
+    return { label: 'Suspended', className: 'suspended' };
+  }
+  return { label: 'Active', className: 'active' };
+}
+
 async function refreshAppAdminSubscriptions(filter = subscriptionsAdminState.filter) {
   if (currentUserRole !== 'appAdmin') return;
 
@@ -3782,7 +3913,7 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
       const subscriptionExpires = userData.subscriptionExpires || null;
       const meta = getSubscriptionMeta({ userStatus, shopStatus, subscriptionExpires, now: today });
-      const lastSync = shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never';
+      const lastSync = getShopLastSyncValue(shopData);
       const presence = getPresenceStatus(userData);
 
       // compute plan details and recent sales
@@ -4102,13 +4233,9 @@ async function refreshAppAdminShops() {
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
 
       // Priority: Global User Status (Pending/Active) then Shop-specific status
-      let statusLabel = userStatus.charAt(0).toUpperCase() + userStatus.slice(1);
-      let statusClass = userStatus === 'active' ? 'active' : (userStatus === 'pending' ? 'suspended' : 'deactivated');
-
-      if (userStatus === 'active' && shopStatus !== 'active') {
-        statusLabel = shopStatus.charAt(0).toUpperCase() + shopStatus.slice(1);
-        statusClass = 'suspended';
-      }
+      const adminShopStatus = getAdminShopStatus(userStatus, shopStatus);
+      const statusLabel = adminShopStatus.label;
+      const statusClass = adminShopStatus.className;
 
       let subStatusHtml = '';
       if (subExpires) {
@@ -4140,7 +4267,7 @@ async function refreshAppAdminShops() {
             <p class="u-fs-08"><strong>WhatsApp:</strong> ${whatsappNum}</p>
             ${adminContactHtml}
             <p class="u-fs-08"><strong>Last Active:</strong> ${lastActive}</p>
-            <p class="u-fs-08"><strong>Last Sync:</strong> ${shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never'}</p>
+            <p class="u-fs-08"><strong>Last Sync:</strong> ${getShopLastSyncValue(shopData)}</p>
             ${subStatusHtml}
           </div>
           <div style="display:flex; gap:5px; margin-top:auto; padding-top:10px; border-top: 1px solid var(--border-color); flex-wrap: wrap;">
@@ -4261,12 +4388,9 @@ async function refreshAppAdminShopsTable() {
       const userStatus = userData.status || 'active';
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
 
-      let statusLabel = userStatus.charAt(0).toUpperCase() + userStatus.slice(1);
-      let statusClass = userStatus === 'active' ? 'active' : (userStatus === 'pending' ? 'suspended' : 'deactivated');
-      if (userStatus === 'active' && shopStatus !== 'active') {
-        statusLabel = shopStatus.charAt(0).toUpperCase() + shopStatus.slice(1);
-        statusClass = 'suspended';
-      }
+      const adminShopStatus = getAdminShopStatus(userStatus, shopStatus);
+      const statusLabel = adminShopStatus.label;
+      const statusClass = adminShopStatus.className;
 
       const subExpires = userData.subscriptionExpires ? new Date(userData.subscriptionExpires) : null;
       let subText = 'PROMO PLAN';
@@ -4290,7 +4414,7 @@ async function refreshAppAdminShopsTable() {
           <td class="u-fs-08">${whatsappNum}</td>
           <td class="u-text-center"><span class="shop-card-status ${statusClass}" style="padding: 2px 6px; font-size: 0.7em;">${statusLabel}</span></td>
           <td class="u-fs-08" style="${subStyle}">${subText}</td>
-          <td class="u-fs-08">${shopData.lastUpdated ? new Date(shopData.lastUpdated).toLocaleDateString() : 'Never'}</td>
+          <td class="u-fs-08">${getShopLastSyncValue(shopData)}</td>
           <td class="u-text-right">
             <div style="display:flex; gap:4px; justify-content:flex-end;">
               <button class="btn btn-info u-fs-08" style="padding:4px 8px; margin:0;" onclick="monitorShop('${uid}', '${(shopSettings.name || 'Unnamed Shop').replace(/'/g, "\\'")}')">Monitor</button>
@@ -4697,61 +4821,8 @@ async function saveDataNow(syncToCloud = true, options = {}) {
       await mirrorEnterpriseRecordsToLocalStores();
     }
     await persistImageCache();
-    // Debounce cloud sync to prevent excessive Firebase writes
-    const effectiveUid = getEffectiveUid();
-    if (syncToCloud && effectiveUid && isInitialLoadComplete && dbFirestore) {
-      // If we're online and ready, attempt an immediate flush so new items sync on-spot
-      if (navigator.onLine && !isSyncing) {
-        try {
-          await flushLocalSyncQueue({ force: true, skipStatusUpdate: true });
-        } catch (e) {
-          console.warn('[SYNC] Immediate flush failed:', e);
-        }
-      }
-      if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-      syncDebounceTimer = setTimeout(async () => {
-        syncDebounceTimer = null;
-        const now = Date.now();
-        if (now - lastSyncTime < MIN_SYNC_INTERVAL) return;
-
-        try {
-          isDebouncing = true;
-          const statusEl = document.getElementById('connectivity-status');
-          if (statusEl) statusEl.style.opacity = '0.5';
-
-                  const syncResults = await flushLocalSyncQueue({ force: true, skipStatusUpdate: true });
-          const syncSummary = summarizeSyncResults(syncResults);
-
-          lastSyncTime = Date.now();
-
-          if (syncSummary.failed > 0) {
-            syncFailureCount += syncSummary.failed;
-          } else {
-            syncFailureCount = 0;
-          }
-
-          if (statusEl) {
-            statusEl.style.opacity = '1';
-            statusEl.classList.add('sync-pulse');
-            setTimeout(() => statusEl.classList.remove('sync-pulse'), 600);
-          }
-
-          const syncBtn = document.getElementById('header-sync-status');
-          if (syncBtn) {
-            syncBtn.setAttribute('data-tooltip', 'Last synced: ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
-          }
-          console.log('[SYNC] Queue flush complete:', syncSummary);
-        } catch (firestoreError) {
-          syncFailureCount++;
-          handleFirebaseError(firestoreError, "Firestore Sync", `users/${effectiveUid}/data/shop_profile`);
-        } finally {
-          isDebouncing = false;
-        }
-      }, SYNC_DEBOUNCE_DELAY);
-    }
-
     if (syncToCloud && navigator.onLine) {
-      scheduleBackgroundSync();
+      scheduleBackgroundSync({ immediate: true });
     }
     await updateOnlineStatus().catch(error => {
       console.warn('[SYNC] Could not refresh sync status after save:', error);
@@ -5129,27 +5200,26 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
   const syncBadgeEl = document.getElementById('sync-badge');
   const syncBtn = document.getElementById('header-sync-status');
   const syncIcon = syncBtn ? syncBtn.querySelector('.header-sync-icon') : null;
-  const shouldPulse = /syncing/i.test(String(title || '')) || state === 'syncing' || isSyncing === true;
+  const isSyncActive = isSyncing || state === 'syncing' || /syncing/i.test(String(title || ''));
+  const displayState = state === 'syncing' ? '🟡' : (state || '🔴');
 
   if (statusEl) {
     statusEl.textContent = '';
     statusEl.title = title;
-    statusEl.classList.toggle('sync-pulse', false);
   }
 
   if (syncBtn) {
     syncBtn.title = title;
     syncBtn.setAttribute('data-tooltip', title);
     syncBtn.setAttribute('aria-label', title);
-    syncBtn.classList.toggle('sync-pulse', shouldPulse);
+    syncBtn.classList.remove('sync-pulse');
   }
 
   if (syncIcon) {
-    syncIcon.innerHTML = shouldPulse
-      ? '<img class="cloud-sync-icon" src="assets/icons/Cloud.svg.svg" alt="">'
-      : (state || '🔴');
-    syncIcon.classList.toggle('sync-pulse', shouldPulse);
-    syncIcon.classList.toggle('sync-icon-spinning', shouldPulse);
+    syncIcon.innerHTML = isSyncActive
+      ? '<img class="cloud-sync-icon" src="assets/icons/Cloud.svg.svg" alt="Syncing to cloud">'
+      : displayState;
+    syncIcon.classList.remove('sync-pulse', 'sync-icon-spinning');
   }
 
   if (syncBadgeEl) {
@@ -5162,12 +5232,9 @@ function renderSyncStatus({ state, label, title, background, showBadge = true })
 async function syncNow() {
   if (!currentUser) return alert("Please login to sync data to the cloud.");
 
-  const statusEl = document.getElementById('connectivity-status');
   const syncBtn = document.getElementById('header-sync-status');
 
-  if (statusEl) {
-    statusEl.innerHTML = '<img class="cloud-sync-icon cloud-sync-icon-small" src="assets/icons/Cloud.svg.svg" alt="Syncing">';
-  }
+  renderSyncStatus({ state: 'syncing', label: '', title: 'Online • syncing to cloud...', background: '#f59e0b', showBadge: false });
   if (syncBtn) syncBtn.disabled = true;
 
   try {
@@ -5199,12 +5266,6 @@ async function updateOnlineStatus() {
   const statusEl = document.getElementById('connectivity-status');
   if (!statusEl) return;
 
-  if (navigator.onLine && !isSyncing) {
-    await flushLocalSyncQueue({ force: true, skipStatusUpdate: true }).catch(error => {
-      console.warn('[SYNC] Forced online queue flush failed:', error);
-    });
-  }
-
   const { pendingCount, retryCount, retryNowCount, retryLaterCount, nextRetryAt } = await getPendingSyncSummary();
   renderSyncHealthPanel().catch(console.warn);
 
@@ -5223,7 +5284,7 @@ async function updateOnlineStatus() {
 
   if (isSyncing) {
     renderSyncStatus({
-      state: '🟢',
+      state: '🟡',
       label: '',
       title: 'Online • syncing to cloud...',
       background: '#16a34a',
@@ -5234,9 +5295,9 @@ async function updateOnlineStatus() {
 
   if (pendingCount > 0) {
     renderSyncStatus({
-      state: 'syncing',
-      label: '',
-      title: `Online • syncing ${pendingCount} item(s) to cloud...`,
+      state: '🟡',
+      label: `${pendingCount} Pending`,
+      title: `Online • ${pendingCount} item(s) waiting to sync`,
       background: '#f59e0b',
       showBadge: false
     });
@@ -5283,9 +5344,10 @@ function updateAuthUI(user) {
   authContainer.style.cssText = 'display: flex; align-items: center; gap: 4px; font-size: 0.8em; margin-left: 6px; flex-wrap: nowrap; overflow: hidden;';
 
   if (user) {
+    const avatarUrl = user.photoURL || sanitizeLogoUrl(settings.logo) || 'assets/icons/icon.png';
     authContainer.innerHTML = `
         <div style="display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; min-width: 0;">
-          <img src="${user.photoURL || 'https://placehold.co/30'}" style="width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; flex-shrink: 0;">
+          <img src="${avatarUrl}" alt="Account profile" style="width: 28px; height: 28px; border-radius: 50%; border: 2px solid white; flex-shrink: 0;">
         </div>
       `;
 
@@ -6105,6 +6167,7 @@ window.closeReceiptModal = closeReceiptModal;
 window.sendCustomerStatusNotification = sendCustomerStatusNotification;
 window.sendSelectedCustomersStatusNotification = sendSelectedCustomersStatusNotification;
 window.sendOrderStatusNotification = sendOrderStatusNotification;
+window.sendOrderStatusEmail = sendOrderStatusEmail;
 window.promptAndUpdateOrderStatus = promptAndUpdateOrderStatus;
 window.updateReceiptOrderStatus = updateReceiptOrderStatus;
 window.updateTransactionStatusByIndex = updateTransactionStatusByIndex;
@@ -6364,10 +6427,12 @@ function showTab(tabId, btn) {
       renderSyncHealthPanel().catch(console.warn);
       break;
     case 'stockTab':
+      toggleLowStockReportSection(true);
       renderInventoryReport(); // For the low stock report
       renderStockListTable(); // For the main stock table
       renderUnitList();
       renderRestockHistoryTable(); // For the main stock table
+      if (activeSection) activeSection.scrollIntoView({ behavior: 'auto', block: 'start' });
       break;
     case 'purchaseTab':
       populatePurchaseFormOptions();
@@ -6826,6 +6891,40 @@ function getLowStockThreshold(item) {
   if (Number.isFinite(productThreshold) && productThreshold >= 0) return productThreshold;
   const defaultThreshold = Number(settings?.lowStockThreshold);
   return Number.isFinite(defaultThreshold) && defaultThreshold >= 0 ? defaultThreshold : 10;
+}
+
+function getExpiryDaysRemaining(expiryDate, today = new Date()) {
+  if (!expiryDate) return null;
+  const expiry = new Date(`${expiryDate}T00:00:00`);
+  if (Number.isNaN(expiry.getTime())) return null;
+  const current = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  return Math.ceil((expiry - current) / 86400000);
+}
+
+function formatStockDate(date) {
+  return date || '-';
+}
+
+function formatExpiryCountdown(item) {
+  const days = getExpiryDaysRemaining(item?.expiryDate);
+  if (days === null) return '-';
+  if (days < 0) return `Expired (${Math.abs(days)}d)`;
+  return `${days}d`;
+}
+
+function formatExpiryAlert(item) {
+  const days = getExpiryDaysRemaining(item?.expiryDate);
+  const countdown = formatExpiryCountdown(item);
+  const warningDays = Number(settings?.expiryWarningDays ?? 5);
+  return days !== null && days <= warningDays ? `${countdown} alert` : countdown;
+}
+
+function getExpiryWarningStyle(item) {
+  const days = getExpiryDaysRemaining(item?.expiryDate);
+  const warningDays = Number(settings?.expiryWarningDays ?? 5);
+  return days !== null && days <= warningDays
+    ? 'color: #dc3545; font-weight: bold;'
+    : '';
 }
 
 async function addDish(buttonElement) {
@@ -7454,11 +7553,14 @@ async function processSplitPayments() {
         subtotal: Number(billTotals.subtotal || 0),
         tax: Number(billTotals.tax || 0),
         deliveryFee: deliveryFee,
-        paymentMethod: paymentMethod
+        paymentMethod: paymentMethod,
+        orderType: settings.serviceMode ? 'service' : 'product'
       };
       totalProcessed += transaction.total;
       await recordTransaction(transaction); // Use individual record helper
-      bill.items.forEach(item => deductStock(item.name, item.qty));
+      if (isStockTrackingEnabled() && transaction.orderType !== 'service') {
+        bill.items.forEach(item => deductStock(item.name, item.qty));
+      }
       document.getElementById('paymentModal').style.display = 'none';
     } else {
       await showAppAlert("Payment cancelled. Remaining split bills will not be processed.", "Payment Cancelled");
@@ -8094,6 +8196,7 @@ function calculateChange() {
 }
 
 async function finalizePayment(isSplit = false) {
+  if (isPaymentFinalizing) return;
   const currentOrder = activeOrders[CART_ID];
   if (!currentOrder || !Array.isArray(currentOrder.items) || currentOrder.items.length === 0) {
     await showAppAlert("There is no active order to complete.", "Nothing to Pay");
@@ -8152,7 +8255,8 @@ async function finalizePayment(isSplit = false) {
     return;
   }
 
-  setPaymentProcessingState(true, navigator.onLine ? 'Processing payment…' : 'Offline mode: saving your sale locally and syncing it when the connection returns.', navigator.onLine ? 'info' : 'success');
+  isPaymentFinalizing = true;
+  setPaymentProcessingState(true, navigator.onLine ? 'Saving sale on this device…' : 'Weak network: saving sale locally…', navigator.onLine ? 'info' : 'success');
 
   try {
     if (!isDraft && isStockTrackingEnabled()) {
@@ -8227,7 +8331,8 @@ async function finalizePayment(isSplit = false) {
     await recordTransaction(transaction);
     const changeDue = isDraft ? 0 : amountTendered - amountPaid;
     activeOrders[CART_ID] = { items: [], server: '' };
-    await saveData();
+    await saveData(false);
+    scheduleBackgroundSync();
     updateOrders(CART_ID, false);
     renderMenu();
 
@@ -8258,6 +8363,8 @@ async function finalizePayment(isSplit = false) {
     console.error('[PAYMENT] Checkout failed:', error);
     setPaymentProcessingState(false, 'Payment could not be completed. Please try again.', 'error');
     await showAppAlert("We could not complete the sale. The order is still available and you can try again.", "Payment Issue");
+  } finally {
+    isPaymentFinalizing = false;
   }
 }
 
@@ -8762,15 +8869,12 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const transactionId = String(source.id || source.transactionId || source.recordId || source.invoiceNumber || source.date || '').trim();
   const barcodeImgUrl = getBarcodeDataUrl(transactionId || invoiceNumber);
   const barcodeHtml = barcodeImgUrl ? `<div style="text-align:center; margin: 18px 0 8px;"><img src="${barcodeImgUrl}" style="width: 85%; max-height: 60px;"></div>` : '';
-  const MAX_ITEMS_PER_A4_PAGE = 10;
-  const itemPages = rawItems.length > MAX_ITEMS_PER_A4_PAGE
-    ? Array.from({ length: Math.ceil(rawItems.length / MAX_ITEMS_PER_A4_PAGE) }, (_, pageIndex) => rawItems.slice(pageIndex * MAX_ITEMS_PER_A4_PAGE, (pageIndex + 1) * MAX_ITEMS_PER_A4_PAGE))
-    : [rawItems];
+  const itemPages = paginateInvoiceItems(rawItems, INVOICE_ROWS_PER_PAGE);
 
   const pagesHtml = itemPages.map((pageItems, pageIndex) => {
     const isLastPage = pageIndex === itemPages.length - 1;
     const pageRowsHtml = pageItems.length > 0 ? pageItems.map((item, offset) => {
-      const globalIndex = (pageIndex * MAX_ITEMS_PER_A4_PAGE) + offset + 1;
+      const globalIndex = (pageIndex * INVOICE_ROWS_PER_PAGE) + offset + 1;
       const name = escapeHtml(item?.name || item?.productName || item?.itemName || 'Item');
       const qty = Number(item?.qty || item?.quantity || 1);
       const price = Number(item?.price || item?.unitPrice || item?.cost || 0);
@@ -8788,19 +8892,34 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
           <td colspan="5" style="text-align:center; color:#64748b;">No items available</td>
         </tr>`;
 
-    const showSummaryOnThisPage = isLastPage || pageIndex === 0;
+    const showSummaryOnThisPage = isLastPage;
+    const stampStatus = (safePaymentStatus || 'Approved').toUpperCase();
     const summaryHtml = showSummaryOnThisPage ? `
       <div class="summary ${isLastPage ? 'last-page-summary' : ''}">
-        <table>
-          <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
-          <tr><td>Discount</td><td align="right">${discountText}</td></tr>
-          <tr><td>Delivery Fee</td><td align="right">${deliveryFeeText}</td></tr>
-          <tr><td>VAT</td><td align="right">${taxText}</td></tr>
-          ${adjustmentRowsHtml}
-          <tr><td>Amount Paid</td><td align="right">${paidText}</td></tr>
-          <tr><td>Balance</td><td align="right">${balanceText}</td></tr>
-          <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
-        </table>
+        <div class="summary-inner">
+          <table>
+            <tr><td>Subtotal</td><td align="right">${subtotalText}</td></tr>
+            <tr><td>Discount</td><td align="right">${discountText}</td></tr>
+            <tr><td>Delivery Fee</td><td align="right">${deliveryFeeText}</td></tr>
+            <tr><td>VAT</td><td align="right">${taxText}</td></tr>
+            ${adjustmentRowsHtml}
+            <tr><td>Amount Paid</td><td align="right">${paidText}</td></tr>
+            <tr><td>Balance</td><td align="right">${balanceText}</td></tr>
+            <tr class="grand"><td>Total</td><td align="right">${grandText}</td></tr>
+          </table>
+          <div class="digital-stamp-wrap">
+            <div class="digital-stamp" aria-label="Digital stamp">
+              <div class="stamp-watermark">${escapeHtml(stampStatus)}</div>
+              <div class="stamp-rubric"></div>
+              <div class="stamp-signature-wrap">
+                <div class="stamp-status">${escapeHtml(stampStatus)}</div>
+                <div class="stamp-date">${new Date().toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+                <div class="stamp-signature">${safeServedBy || 'Authorized Signatory'}</div>
+                <div class="stamp-line"></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     ` : '';
 
@@ -8870,7 +8989,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     :root { --primary-light: #ff6b35; --primary-hover-light: #ff854f; --bg-light: #f0f2f5; --card-light: #fff; --text-light: #333; --border-light: #eee; --primary-dark: #ff854f; --primary-hover-dark: #ff6b35; --primary: #ff6b35; --primary-hover: #ff854f; --secondary:#10b981; --light:#f8fafc; --border:#dbe4ee; --text:#334155; }
     * { box-sizing:border-box; margin:0; padding:0; font-family:'Segoe UI', Arial, sans-serif; }
     body { background:#edf2f7; padding:8px; color:var(--text); }
-    .invoice-page { width:210mm; min-height:297mm; background:white; margin:0 auto 18px; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(0,0,0,.15); page-break-after:auto; break-after:auto; display:flex; flex-direction:column; }
+    .invoice-page { width:210mm; height:297mm; min-height:297mm; max-height:297mm; background:white; margin:0 auto 18px; border-radius:18px; overflow:hidden; box-shadow:0 18px 45px rgba(0,0,0,.15); page-break-after:page; break-after:page; display:flex; flex-direction:column; }
     .invoice-page:last-child { page-break-after:auto; break-after:auto; margin-bottom:0; }
     .invoice-page:not(:last-child) { page-break-after:page; break-after:page; }
     .header { background:linear-gradient(135deg,#2563eb,#1d4ed8,#10b981); color:white; padding:14px 18px; display:flex; justify-content:space-between; align-items:center; page-break-inside:avoid; break-inside:avoid; }
@@ -8880,29 +8999,43 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .logo p { opacity:.9; font-size:0.76rem; }
     .invoice-title { text-align:right; }
     .invoice-title h2 { font-size:24px; }
-    .content { padding:12px 16px 10px; display:flex; flex-direction:column; min-height:calc(297mm - 118px); }
-    .invoice-page-content { min-height:calc(297mm - 120px); }
+    .content { padding:12px 16px 10px; display:flex; flex-direction:column; height:calc(297mm - 86px); min-height:0; }
+    .invoice-page-content { height:calc(297mm - 86px); }
     .cards { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:10px; }
     .card { background:linear-gradient(180deg,#ffffff 0%,#f8fafc 100%); border:1px solid #dbe4ee; border-left:5px solid var(--primary); padding:8px 10px; border-radius:12px; box-shadow:0 6px 16px rgba(15,23,42,0.04); }
     .card h3 { color:var(--primary); margin-bottom:6px; font-size:0.78rem; text-transform:uppercase; letter-spacing:0.05em; }
     .card p { margin:3px 0; line-height:1.2; color:#475569; font-size:0.76rem; }
     .badge { display:inline-block; padding:4px 8px; background:#10b981; color:white; border-radius:30px; font-size:10px; font-weight:bold; }
-    table { width:100%; border-collapse:collapse; margin-top:8px; border:1px solid #d8e1ea; border-radius:12px; overflow:hidden; }
-    thead { background:linear-gradient(135deg,#ff7b42,#ff6b35); color:white; }
-    th { padding:8px 6px; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.03em; text-align:center; border-bottom:1px solid rgba(100, 116, 139, 0.75); }
-    td { padding:6px 8px; border-bottom:1px solid rgba(148, 163, 184, 0.7); font-size:0.72rem; text-align:center; }
-    tbody tr:nth-child(even) { background:#f8fafc; }
+    table { width:100%; border-collapse:collapse; margin-top:8px; border:1.5px solid #dbe4ee; border-radius:12px; overflow:hidden; background:#f8fafc; box-shadow:0 4px 12px rgba(15,23,42,0.04); }
+    thead { background:#f3f7f5; color:#334155; }
+    tbody tr { height:26px; }
+    th { padding:5px 6px; height:26px; font-size:0.66rem; text-transform:uppercase; letter-spacing:0.03em; text-align:center; border-left:1.5px solid rgba(22, 163, 74, 0.4); border-right:1.5px solid rgba(22, 163, 74, 0.4); border-bottom:1.5px solid rgba(22, 163, 74, 0.4); }
+    td { padding:3px 8px; height:26px; line-height:1.1; border-left:1.5px solid #dbe4ee; border-right:1.5px solid #dbe4ee; border-bottom:1.5px solid #dbe4ee; font-size:0.70rem; text-align:center; }
+    tbody tr:nth-child(even) { background:#f3f7f5; }
     tbody tr:last-child td { border-bottom:none; }
-    th:first-child, td:first-child { text-align:center; }
+    th:first-child, td:first-child { text-align:center; border-left:1.5px solid #dbe4ee; }
+    th:last-child, td:last-child { border-right:1.5px solid #dbe4ee; }
     th:nth-child(2), td:nth-child(2) { text-align:left; }
     th:nth-child(3), td:nth-child(3), th:nth-child(4), td:nth-child(4), th:nth-child(5), td:nth-child(5) { text-align:center; }
-    .summary { margin-top:6px; width:100%; max-width:none; margin-left:0; margin-right:0; background:#f8fafc; border:1px solid #dbe4ee; border-radius:12px; padding:4px; box-shadow:0 6px 14px rgba(15,23,42,0.04); }
+    .summary { margin-top:6px; width:100%; max-width:none; margin-left:0; margin-right:0; background:#f8fafc; border:1.5px solid #dbe4ee; border-radius:12px; padding:4px; box-shadow:0 6px 14px rgba(15,23,42,0.04); }
     .last-page-summary { margin-top:auto; align-self:stretch; width:100%; }
+    .summary-inner { display:flex; align-items:center; justify-content:center; gap:12px; position:relative; }
     .summary table { margin-top:0; border:none; width:100%; }
     .summary td { padding:4px 6px; border:none; font-size:0.72rem; }
     .summary td:first-child { text-align:left; }
     .summary td:last-child { text-align:right; }
     .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:15px; font-weight:bold; border-radius:10px; }
+    .digital-stamp-wrap { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); z-index:2; pointer-events:none; }
+    .digital-stamp { position:relative; width:136px; height:136px; border:3px solid rgba(37, 99, 235, 0.78); border-radius:20px; background:rgba(239,246,255,0.26); display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 2px rgba(37,99,235,0.12), inset 0 0 18px rgba(30,64,175,0.16), inset 0 2px 2px rgba(255,255,255,0.78), 0 0 0 1px rgba(37,99,235,0.16), 0 2px 0 rgba(255,255,255,0.7), 2px 4px 0 rgba(30,64,175,0.22); backdrop-filter:blur(0.3px); }
+    .digital-stamp::before { content:''; position:absolute; inset:5px; border:2px solid rgba(37,99,235,0.34); border-radius:15px; transform:rotate(-1deg); box-shadow:inset 0 1px 1px rgba(255,255,255,0.65), 0 1px 1px rgba(30,64,175,0.16); }
+    .digital-stamp::after { content:''; position:absolute; inset:0; border-radius:20px; box-shadow:inset 0 0 0 1px rgba(15,23,42,0.04), inset 0 -2px 2px rgba(30,64,175,0.1); }
+    .stamp-watermark { position:absolute; inset:10px 8px; display:flex; align-items:center; justify-content:center; font-size:0.52rem; letter-spacing:0.18em; font-weight:900; color:rgba(37,99,235,0.13); transform:rotate(-18deg); text-transform:uppercase; }
+    .stamp-rubric { position:absolute; inset:11px; border:1.5px dashed rgba(37,99,235,0.7); border-radius:13px; }
+    .stamp-status { position:relative; z-index:2; width:max-content; max-width:100%; margin:0 auto -1px; padding:0 6px; background:rgba(239,246,255,0.86); text-align:center; font-size:0.52rem; letter-spacing:0.16em; font-weight:800; color:rgba(30,64,175,0.9); text-transform:uppercase; }
+    .stamp-signature-wrap { position:relative; z-index:1; text-align:center; margin-top:13px; }
+    .stamp-date { margin:0 auto 6px; font-size:0.5rem; font-weight:800; letter-spacing:0.08em; text-transform:uppercase; color:rgba(30,64,175,0.88); border-top:1px solid rgba(30,64,175,0.45); padding-top:3px; }
+    .stamp-signature { max-width:118px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; font-size:1.18rem; font-weight:500; font-style:italic; color:rgba(25,70,178,0.92); letter-spacing:0.01em; text-shadow:0.5px 0 rgba(30,64,175,0.2), 0 1px 0 rgba(255,255,255,0.72); line-height:1; transform:skewX(-10deg) rotate(-6deg); font-family:'Segoe Print','Bradley Hand','Lucida Handwriting',cursive; }
+    .stamp-line { width:92px; height:15px; margin:3px auto 0; border-bottom:1.5px solid rgba(30,64,175,0.72); border-radius:50%; transform:skewY(-8deg) rotate(-2deg); box-shadow:0 1px 0 rgba(255,255,255,0.55); }
     .footer { margin-top:12px; text-align:center; }
     .footer p { font-size:0.82rem; }
     .promo { display:inline-block; margin-top:8px; padding:6px 10px; border:1px dashed #94a3b8; color:#475569; font-size:0.76rem; font-weight:700; }
@@ -8931,24 +9064,26 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
       html,body { background:white; padding:0; margin:0; }
       body { margin:0; }
       .actions, .preview-controls { display:none !important; }
+      #preview-zoom-wrapper { transform:none !important; margin:0 !important; }
       .invoice-page {
-        width:100%;
-        min-height:0;
-        margin:0 0 8mm;
+        width:210mm;
+        height:297mm;
+        min-height:297mm;
+        max-height:297mm;
+        margin:0;
         border-radius:0;
         box-shadow:none;
         page-break-inside:avoid;
         break-inside:avoid;
-        page-break-after:auto;
-        break-after:auto;
+        page-break-after:page;
+        break-after:page;
       }
-      .invoice-page:last-child { page-break-after:auto; break-after:auto; margin-bottom:0; }
-      .invoice-page:not(:last-child) { page-break-after:page; break-after:page; }
+      .invoice-page:last-child { page-break-after:auto; break-after:auto; }
       .header, .content, .summary, table, thead, tbody, tr, td, th {
         page-break-inside:avoid;
         break-inside:avoid;
       }
-      @page { size:A4; margin:0; }
+      @page { size:A4 portrait; margin:0; }
     }
   </style>
   <script>
@@ -9051,10 +9186,8 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     </div>
   </div>
   <div id="preview-zoom-wrapper">
-    <div class="preview-inner">
       <div class="preview-inner">
         ${pagesHtml}
-      </div>
     </div>
   </div>
 </body>
@@ -10357,6 +10490,7 @@ function renderTransactions() {
           </button>
           <button class="icon-btn" title="Edit Sale" onclick="editTransaction(${txIndex})" ${canModifyTransaction(t) ? '' : 'disabled'}>✎</button>
           <button class="icon-btn" title="Send Order Status" onclick="sendOrderStatusNotification(${txIndex})" style="margin-right:4px;" ${canModifyTransaction(t) ? '' : 'disabled'}>📩</button>
+          <button class="icon-btn" title="Email Order Status" aria-label="Email order status" onclick="sendOrderStatusEmail(${txIndex})" style="margin-right:4px;" ${canModifyTransaction(t) ? '' : 'disabled'}>✉</button>
           <button class="icon-btn" title="Re-Open Bill" onclick="reopenTransaction(${txIndex})" ${canModifyTransaction(t) ? '' : 'disabled'}>${iconReopen}</button>
           <button class="icon-btn" title="Download PDF" onclick="downloadBillAsPDF(${txIndex})">${iconDownload}</button>
           <button class="icon-btn" title="Delete Bill" onclick="deleteTransaction(${txIndex})" ${canModifyTransaction(t) ? '' : 'disabled'}>${iconDelete}</button>
@@ -11599,6 +11733,7 @@ let reportProfitChartInstance;
 let monthlyRevenueChartInstance;
 
 let dashboardDateFilterMode = 'today';
+let presenceHeartbeat = null;
 
 function updateQuickFilterButtons(selected) {
   document.querySelectorAll('.dashboard-filter-buttons button').forEach(btn => {
@@ -11918,7 +12053,7 @@ function updateDashboard() {
   const totalBills = filteredTransactions.length;
   const debtSummary = summarizeDebtInvoices({
     customers: Array.isArray(customers) ? customers : [],
-    transactions: Array.isArray(transactions) ? transactions : []
+    transactions: filteredTransactions
   });
   const outstandingDebt = debtSummary.outstandingDebt;
   const pendingInvoices = debtSummary.pendingInvoices;
@@ -12555,9 +12690,16 @@ async function saveSettings() {
   settings.name = document.getElementById('companyName').value;
   settings.address = document.getElementById('companyAddress').value;
   settings.contact = document.getElementById('companyContact').value;
+  const senderEmailInput = document.getElementById('customerEmailSender');
+  if (senderEmailInput && !senderEmailInput.checkValidity()) {
+    return alert('Enter a valid customer email sender address.');
+  }
+  settings.customerEmailSender = senderEmailInput?.value.trim() || '';
   settings.currency = document.getElementById('currency').value;
   const lowStockThresholdVal = parseInt(document.getElementById('lowStockThreshold').value, 10);
   settings.lowStockThreshold = isNaN(lowStockThresholdVal) ? 10 : lowStockThresholdVal;
+  const expiryWarningDaysVal = parseInt(document.getElementById('expiryWarningDays')?.value, 10);
+  settings.expiryWarningDays = Number.isFinite(expiryWarningDaysVal) && expiryWarningDaysVal >= 0 ? expiryWarningDaysVal : 5;
   settings.defaultMarkup = parseFloat(document.getElementById('defaultMarkup').value) || 200;
   settings.taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
   settings.invoiceDateFormat = document.getElementById('invoiceDateFormat')?.value || 'locale';
@@ -12573,16 +12715,12 @@ async function saveSettings() {
   const logoFile = logoField && logoField.files[0];
   const pendingLogoBase64 = window.pendingLogoBase64 || null;
   const shouldClearLogo = window.companyLogoCleared === true;
+  const previousLogo = settings.logo;
+  let logoUploadData = null;
   if (logoFile || pendingLogoBase64) {
     const base64Logo = pendingLogoBase64 || await toBase64(logoFile);
-    const oldLogo = settings.logo;
-    settings.logo = await uploadImage(base64Logo, 'branding/logo.jpg');
-    if (oldLogo && oldLogo !== settings.logo) {
-      clearImageFromCache(oldLogo);
-    }
-    if (settings.logo) {
-      clearImageFromCache(settings.logo);
-    }
+    settings.logo = base64Logo;
+    logoUploadData = base64Logo;
     window.companyLogoCleared = false;
     window.pendingLogoBase64 = null;
     if (logoField) logoField.value = '';
@@ -12598,8 +12736,19 @@ async function saveSettings() {
 
   settings = touchSettingsRecord(settings, 'settings');
 
-  saveData();
-  enqueueSettingsSync(settings).catch(console.warn);
+  await saveData(false);
+  const settingsForCloud = { ...settings };
+  if (logoUploadData) settingsForCloud.logo = previousLogo;
+  if (String(settingsForCloud.logo || '').startsWith('data:image/')) {
+    delete settingsForCloud.logo;
+  }
+  await enqueueSettingsSync(settingsForCloud).catch(console.warn);
+  if (logoUploadData) {
+    await enqueueLocalSyncAction({
+      entityType: 'businessLogo',
+      payload: { id: 'business-logo', dataUrl: logoUploadData }
+    }).catch(error => console.warn('[SYNC] Could not queue business logo upload:', error));
+  }
   alert('Settings saved!');
   loadSettings(); // Reload to show preview
 
@@ -12802,8 +12951,10 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('companyName', settings.name || '');
   setVal('companyAddress', settings.address || '');
   setVal('companyContact', settings.contact || '');
+  setVal('customerEmailSender', settings.customerEmailSender || '');
   setVal('currency', settings.currency || '$');
   setVal('lowStockThreshold', (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10);
+  setVal('expiryWarningDays', settings.expiryWarningDays ?? 5);
   setVal('taxRate', settings.taxRate || 0);
   setVal('promoMessage', settings.promoMessage || '');
   setVal('invoiceDateFormat', settings.invoiceDateFormat || 'locale');
@@ -13691,7 +13842,7 @@ function renderCustomerList() {
       : `<span style="${outstandingBalance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${outstandingBalance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(outstandingBalance))}</span>`;
 
     const whatsappCell = customer.whatsapp ? `<a href="https://wa.me/${encodeURIComponent(customer.whatsapp.replace(/\s+/g, ''))}" target="_blank" rel="noreferrer" style="color:#25D366; text-decoration:none; font-weight:600;">${escapeHtml(customer.whatsapp)}</a>` : '<span style="color:#888;">N/A</span>';
-    const emailCell = customer.email ? `<a href="mailto:${encodeURIComponent(customer.email)}" style="color:#0d6efd; text-decoration:none; font-weight:600;">${escapeHtml(customer.email)}</a>` : '<span style="color:#888;">N/A</span>';
+    const emailCell = customer.email ? `<span style="color:#0d6efd; font-weight:600;">${escapeHtml(customer.email)}</span>` : '<span style="color:#888;">N/A</span>';
     const whatsappAction = '';
     const sendStatusAction = '';
     const tr = document.createElement('tr');
@@ -13782,48 +13933,68 @@ function getCustomerEmailAddress(customer) {
   return String(email || '').trim();
 }
 
-async function sendCustomerEmailViaBackend(customer, template = '', customMessage = '') {
+function openGmailCompose({to = '', bcc = [], subject = '', message = ''} = {}) {
+  const gmailUrl = new URL('https://mail.google.com/mail/');
+  gmailUrl.searchParams.set('view', 'cm');
+  gmailUrl.searchParams.set('fs', '1');
+  if (to) gmailUrl.searchParams.set('to', to);
+  if (bcc.length) gmailUrl.searchParams.set('bcc', bcc.join(','));
+  gmailUrl.searchParams.set('su', subject);
+  gmailUrl.searchParams.set('body', message);
+
+  const composeWindow = window.open(gmailUrl.toString(), '_blank');
+  if (composeWindow) {
+    composeWindow.opener = null;
+    return true;
+  }
+
+  window.location.assign(gmailUrl.toString());
+  return false;
+}
+
+function openCustomerEmailInBrowser(customer, template = '', customMessage = '') {
   const email = getCustomerEmailAddress(customer);
   if (!email) {
     return showAppAlert('This customer does not have an email address.', 'Missing Email');
   }
 
-  try {
-    const sendCustomerNotification = httpsCallable(functions, 'sendCustomerNotificationEmail');
-    const subject = `${settings?.name || 'YoShop'} update`;
-    const message = buildCustomerStatusMessage(customer, template, customMessage);
-    const result = await sendCustomerNotification({
-      to: email,
-      subject,
-      message,
-      customerName: customer.name || 'Customer'
-    });
+  return openGmailCompose({
+    to: email,
+    subject: `${settings?.name || 'YoShop'} update`,
+    message: buildCustomerStatusMessage(customer, template, customMessage)
+  });
+}
 
-    const delivered = result?.data?.success;
-    if (delivered) {
-      await showAppAlert(`Email sent successfully to ${email}.`, 'Email Sent');
-      return true;
-    }
+function getBulkCustomerEmailMessage(template = '', customMessage = '') {
+  const storeName = settings?.name || 'YoShop';
+  const body = customMessage || (template === 'balance_due'
+    ? 'This is a friendly reminder that your account has an outstanding balance. Please contact us for details.'
+    : getCustomerQuickMessageText({}, template)) || 'Thank you for choosing us.';
 
-    throw new Error(result?.data?.message || 'Email delivery failed.');
-  } catch (error) {
-    console.error('sendCustomerEmailViaBackend failed:', error);
-    const message = error?.message || 'Could not send email automatically.';
-    await showAppAlert(`${message} Please check your email configuration or use the mail app fallback.`, 'Email Send Failed');
-    return false;
+  return `Hello,\n\n${body}\n\nThank you for choosing ${storeName}.\n\nIf you have any questions, reply to this message and we will be happy to help.`;
+}
+
+function openBulkCustomerEmailInBrowser(customerList, template = '', customMessage = '') {
+  const recipients = [...new Set((Array.isArray(customerList) ? customerList : [])
+    .map(getCustomerEmailAddress)
+    .filter(Boolean)
+    .map(email => email.toLowerCase()))];
+  if (!recipients.length) {
+    return showAppAlert('No customers with email addresses were found.', 'Bulk Email');
   }
+
+  const ownerEmail = String(currentUser?.email || '').trim();
+  const bcc = recipients.filter(email => email !== ownerEmail.toLowerCase());
+  return openGmailCompose({
+    to: ownerEmail,
+    bcc,
+    subject: `${settings?.name || 'YoShop'} update`,
+    message: getBulkCustomerEmailMessage(template, customMessage)
+  });
 }
 
 function openCustomerEmailComposer(customer, template = '', customMessage = '') {
-  const email = getCustomerEmailAddress(customer);
-  if (!email) {
-    return showAppAlert('This customer does not have an email address.', 'Missing Email');
-  }
-
-  const subject = `${settings?.name || 'YoShop'} update`;
-  const body = buildCustomerStatusMessage(customer, template, customMessage);
-  const mailtoUrl = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  window.location.href = mailtoUrl;
+  return openCustomerEmailInBrowser(customer, template, customMessage);
 }
 
 function sendCustomerStatusNotification(index) {
@@ -13900,7 +14071,7 @@ async function sendCustomerStatusNotificationByEmail(index) {
   const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
 
-  await sendCustomerEmailViaBackend(customer, template, customMessage);
+  openCustomerEmailInBrowser(customer, template, customMessage);
 }
 
 async function sendSelectedCustomersStatusNotificationByEmail() {
@@ -13909,15 +14080,12 @@ async function sendSelectedCustomersStatusNotificationByEmail() {
     return showAppAlert('Select at least one customer to send the email notification.', 'No Customer Selected');
   }
 
+  const selectedCustomers = selectedRows
+    .map(checkbox => customers[parseInt(checkbox.value, 10)])
+    .filter(Boolean);
   const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
-
-  for (const checkbox of selectedRows) {
-    const index = parseInt(checkbox.value, 10);
-    const customer = customers[index];
-    if (!customer) continue;
-    await sendCustomerEmailViaBackend(customer, template, customMessage);
-  }
+  openBulkCustomerEmailInBrowser(selectedCustomers, template, customMessage);
 }
 
 async function sendAllCustomersStatusNotificationByEmail() {
@@ -13940,9 +14108,7 @@ async function sendAllCustomersStatusNotificationByEmail() {
   const template = document.getElementById('customerStatusTemplateSelect')?.value || '';
   const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
 
-  for (const customer of customersWithEmail) {
-    await sendCustomerEmailViaBackend(customer, template, customMessage);
-  }
+  openBulkCustomerEmailInBrowser(customersWithEmail, template, customMessage);
 }
 
 window.applyCustomerQuickMessage = applyCustomerQuickMessage;
@@ -13965,6 +14131,17 @@ function getTransactionWhatsAppNumber(transaction) {
   }
 
   return String(phone).replace(/\D/g, '');
+}
+
+function getTransactionEmailAddress(transaction) {
+  if (!transaction || typeof transaction !== 'object') return '';
+  const linkedCustomer = transaction.customerId
+    ? customers.find(customer => customer && String(customer.id) === String(transaction.customerId))
+    : null;
+  const candidates = linkedCustomer
+    ? [linkedCustomer.email, linkedCustomer.customerEmail, linkedCustomer.mainEmail]
+    : [transaction.customerEmail, transaction.email, transaction.customer?.email];
+  return String(candidates.find(value => String(value || '').trim()) || '').trim();
 }
 
 async function updateTransactionStatusByIndex(transactionIndex, status) {
@@ -14132,6 +14309,28 @@ function sendOrderStatusNotification(index, overrideStatus) {
   const text = buildOrderStatusMessage(tx, status, customMessage);
   const shareUrl = `https://wa.me/${whatsappNumber}?text=${encodeURIComponent(text)}`;
   window.open(shareUrl, '_blank', 'noopener,noreferrer');
+}
+
+function sendOrderStatusEmail(index) {
+  const transaction = Array.isArray(transactions) ? transactions[index] : null;
+  if (!transaction) return showAppAlert('Order not found.', 'Email Order Status');
+  if (!requireActionPermission('sales.edit', 'sending an order status email')) return;
+  if (!canModifyTransaction(transaction)) {
+    return showAppAlert(getTransactionActionLockTitle(transaction), 'Transaction Locked');
+  }
+
+  const email = getTransactionEmailAddress(transaction);
+  if (!email) {
+    return showAppAlert('No email address is available for this order.', 'Missing Email');
+  }
+
+  const status = String(transaction.orderStatus || transaction.status || 'pending').trim().toLowerCase();
+  const customMessage = document.getElementById('customerStatusMessageInput')?.value.trim() || '';
+  return openGmailCompose({
+    to: email,
+    subject: `${settings?.name || 'YoShop'} order status: ${getOrderStatusLabel(status)}`,
+    message: buildOrderStatusMessage(transaction, status, customMessage)
+  });
 }
 
 function createCustomerDebtInvoice(customer) {
@@ -14409,6 +14608,7 @@ function renderInvoices() {
         const lastDate = row.date ? new Date(row.date).toLocaleString() : new Date().toLocaleString();
         const transactionIndex = Array.isArray(transactions) ? transactions.indexOf(row.transaction) : -1;
         const salesBy = getTransactionStaffName(row.transaction || {});
+        const invoicePreviewData = { ...previewData, servedBy: salesBy };
         const transactionActionsAllowed = canModifyTransaction(row.transaction || {});
         const isDraft = String(row.transaction?.orderStatus || row.transaction?.status || '').toLowerCase() === 'draft';
         const allAdjustments = Array.isArray(previewData?.adjustments) ? previewData.adjustments : [];
@@ -14437,7 +14637,7 @@ function renderInvoices() {
         bcButton.textContent = 'BC🖨️';
         bcButton.addEventListener('click', event => {
           event.stopPropagation();
-          previewOrder(previewData);
+          previewOrder(invoicePreviewData);
         });
 
         const a4Button = document.createElement('button');
@@ -14447,7 +14647,7 @@ function renderInvoices() {
         a4Button.textContent = 'A4🖨️';
         a4Button.addEventListener('click', event => {
           event.stopPropagation();
-          openA4InvoicePreview(previewData);
+          openA4InvoicePreview(invoicePreviewData);
         });
 
         const statusBadge = document.createElement('span');
@@ -15137,10 +15337,9 @@ function renderInventoryReport() {
   const toggleButton = document.getElementById('toggleLowStockReportBtn');
   if (!tbody) return;
   tbody.innerHTML = '';
-  const threshold = (settings.lowStockThreshold !== undefined && settings.lowStockThreshold !== null) ? settings.lowStockThreshold : 10;
-
   // Only check primary ingredients (items with a stock property) for the low stock report.
   const lowStockItems = menu.filter(item => item.stock !== undefined && calculateDishStock(item, true) <= getLowStockThreshold(item));
+  notifyExpiringStockItems(menu.filter(item => item.stock !== undefined));
 
   if (toggleButton) {
     toggleButton.dataset.lowStockCount = String(lowStockItems.length);
@@ -15150,8 +15349,8 @@ function renderInventoryReport() {
   }
 
   if (lowStockItems.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 15px;">No items are currently low on stock.</td></tr>`;
-    if (dashboardTbody) dashboardTbody.innerHTML = `<tr><td colspan="4" style="text-align: center; padding: 12px;">No items are currently low on stock.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 15px;">No items are currently low on stock.</td></tr>`;
+    if (dashboardTbody) dashboardTbody.innerHTML = `<tr><td colspan="7" style="text-align: center; padding: 12px;">No items are currently low on stock.</td></tr>`;
     if (toggleButton) toggleButton.textContent = `${toggleButton.dataset.hidden === 'true' ? 'Show' : 'Hide'} Low Stock Report (0)`;
     return;
   }
@@ -15164,6 +15363,9 @@ function renderInventoryReport() {
         <td>${item.category}</td>
         <td style="text-align: right;">${getLowStockThreshold(item)}</td>
         <td style="text-align: right; color: #dc3545; font-weight: bold;">${Number(stock).toFixed(1)}</td>
+        <td>${formatStockDate(item.manufactureDate)}</td>
+        <td>${formatStockDate(item.expiryDate)}</td>
+        <td style="text-align: right; ${getExpiryWarningStyle(item)}">${formatExpiryAlert(item)}</td>
       `;
     tbody.appendChild(tr);
   });
@@ -15179,6 +15381,9 @@ function renderInventoryReport() {
           <td>${item.category}</td>
           <td style="text-align: right;">${getLowStockThreshold(item)}</td>
           <td style="text-align: right; color: #dc3545; font-weight: bold;">${Number(stock).toFixed(1)}</td>
+          <td>${formatStockDate(item.manufactureDate)}</td>
+          <td>${formatStockDate(item.expiryDate)}</td>
+          <td style="text-align: right; ${getExpiryWarningStyle(item)}">${formatExpiryAlert(item)}</td>
         `;
       dashboardTbody.appendChild(tr);
     });
@@ -15189,6 +15394,7 @@ window.toggleLowStockReportSection = toggleLowStockReportSection;
 
 function setStockTableFilter(filterName = 'all') {
   stockTableFilter = filterName || 'all';
+  stockTablePage = 1;
   const buttons = document.querySelectorAll('.stock-filter-btn');
   buttons.forEach(button => {
     const isActive = button.dataset.stockFilter === stockTableFilter;
@@ -15197,8 +15403,24 @@ function setStockTableFilter(filterName = 'all') {
   renderStockListTable();
 }
 
+function setStockTablePageSize(pageSize = 5) {
+  stockTablePageSize = pageSize === 'all' ? 'all' : Number(pageSize) || 5;
+  stockTablePage = 1;
+  document.querySelectorAll('.stock-page-size-btn').forEach(button => {
+    button.classList.toggle('active', String(button.dataset.pageSize) === String(stockTablePageSize));
+  });
+  renderStockListTable();
+}
+
+window.setStockTablePageSize = setStockTablePageSize;
+
 function renderStockListTable() {
+<<<<<<< HEAD
   const searchTerm = String(document.getElementById('stockSearchInput')?.value || '').trim().toLowerCase();
+=======
+  stockTablePage = 1;
+  const searchTerm = document.getElementById('stockSearchInput')?.value.toLowerCase() || '';
+>>>>>>> 6d7d7cf7aff46c4a6b5bc637434259d4ce3d3e08
   const tbody = document.getElementById('stockListBody');
   if (!tbody) return;
   tbody.innerHTML = '';
@@ -15218,6 +15440,7 @@ function renderStockListTable() {
     return true;
   });
 
+<<<<<<< HEAD
   if (searchTerm && stockItems.length === 0) {
     const emptyRow = document.createElement('tr');
     const emptyCell = document.createElement('td');
@@ -15230,6 +15453,16 @@ function renderStockListTable() {
   }
 
   stockItems.forEach((item, rowIndex) => {
+=======
+  const pageSize = stockTablePageSize === 'all' ? stockItems.length || 1 : stockTablePageSize;
+  const totalPages = Math.max(1, Math.ceil(stockItems.length / pageSize));
+  stockTablePage = Math.min(stockTablePage, totalPages);
+  const visibleStockItems = stockTablePageSize === 'all'
+    ? stockItems
+    : stockItems.slice((stockTablePage - 1) * pageSize, stockTablePage * pageSize);
+
+  visibleStockItems.forEach((item, rowIndex) => {
+>>>>>>> 6d7d7cf7aff46c4a6b5bc637434259d4ce3d3e08
     const index = menu.indexOf(item);
     const stock = calculateDishStock(item, true);
     const costPrice = item.costPrice || 0;
@@ -15246,7 +15479,7 @@ function renderStockListTable() {
 
     tr.innerHTML = `
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('stockListBody','selectAllStock')"></td>
-        <td>${rowIndex + 1}</td>
+        <td>${stockTablePageSize === 'all' ? rowIndex + 1 : ((stockTablePage - 1) * pageSize) + rowIndex + 1}</td>
         <td class="u-fs-08 u-text-break">
           <div style="display:flex; align-items:center; gap:8px;">
             <img src="${item.image || 'https://placehold.co/40x40?text=No+Image'}" alt="${escapeHtml(item.name || 'Stock item')}" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #d9d9d9; background:#f7f7f7;">
@@ -15258,6 +15491,9 @@ function renderStockListTable() {
         <td class="u-fs-08 u-text-right">${Number(stock).toFixed(0)}</td>
         <td class="u-fs-08 u-text-right">${getLowStockThreshold(item)}</td>
         <td class="u-fs-08 u-text-right"><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(totalCost)}</td>
+        <td class="u-fs-08">${formatStockDate(item.manufactureDate)}</td>
+        <td class="u-fs-08">${formatStockDate(item.expiryDate)}</td>
+        <td class="u-fs-08 u-text-right" style="${getExpiryWarningStyle(item)}">${formatExpiryAlert(item)}</td>
         <td class="u-fs-08">${stockStatusBadge}</td>
         <td class="u-text-right table-actions-cell">
           <button class="icon-btn" title="${shopActionTitle}" aria-label="${shopActionTitle}" onclick="convertToProduct(${index})" style="display:inline-flex; align-items:center; justify-content:center; gap:6px; width:112px; height:auto; padding:6px 12px; border:1px solid #86efac; background:linear-gradient(180deg, #dcfce7 0%, #bbf7d0 100%); color:#166534; font-weight:700; font-size:0.75rem; border-radius:6px; box-shadow:none;"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" viewBox="0 0 16 16"><path d="M8 3.5a.5.5 0 0 1 .5.5V7h2.5a.5.5 0 0 1 0 1H8.5v2.5a.5.5 0 0 1-1 0V8H5a.5.5 0 0 1 0-1h2.5V4a.5.5 0 0 1 .5-.5z"/><path d="M0 2.5A1.5 1.5 0 0 1 1.5 1h13A1.5 1.5 0 0 1 16 2.5v1.1a.5.5 0 0 1-.5.5h-1.11l-.56 8.03A1.5 1.5 0 0 1 12.34 14H3.66a1.5 1.5 0 0 1-1.49-1.87L1.61 4.1H.5a.5.5 0 0 1-.5-.5V2.5zm3.84 1.1 1.7 6.97h5.92l1.7-6.97H3.84zm4.16 8.4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0-1.5-1.5zm-4 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0-1.5-1.5zm8 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0-1.5-1.5z"/></svg><span>${shopActionLabel}</span></button>
@@ -15274,6 +15510,13 @@ function renderStockListTable() {
     }
     tbody.appendChild(tr);
   });
+
+  const pageStatus = document.getElementById('stockTablePageStatus');
+  if (pageStatus) {
+    pageStatus.textContent = stockTablePageSize === 'all' || stockItems.length === 0
+      ? `${stockItems.length} item${stockItems.length === 1 ? '' : 's'}`
+      : `Page ${stockTablePage} of ${totalPages} (${stockItems.length} items)`;
+  }
 }
 
 function editStockItem(index) {
@@ -15291,6 +15534,8 @@ function editStockItem(index) {
   document.getElementById('newStockItemCost').value = item.costPrice || 0;
   document.getElementById('newStockItemPrice').value = item.price || 0;
   document.getElementById('newStockItemStock').value = item.stock || 0;
+  document.getElementById('newStockItemManufactureDate').value = item.manufactureDate || '';
+  document.getElementById('newStockItemExpiryDate').value = item.expiryDate || '';
   document.getElementById('newStockItemLowStockThreshold').value = item.lowStockThreshold ?? '';
   document.getElementById('newStockItemCategory').value = item.category || '';
   document.getElementById('newStockItemImageBase64').value = item.image || '';
@@ -15513,6 +15758,8 @@ async function saveNewStockItem() {
   const sellingPriceInput = document.getElementById('newStockItemPrice').value;
   const stock = parseInt(document.getElementById('newStockItemStock').value, 10);
   const lowStockInput = document.getElementById('newStockItemLowStockThreshold').value.trim();
+  const manufactureDate = document.getElementById('newStockItemManufactureDate').value;
+  const expiryDate = document.getElementById('newStockItemExpiryDate').value;
   const lowStockThreshold = lowStockInput === '' ? undefined : Number(lowStockInput);
   const category = document.getElementById('newStockItemCategory')?.value?.trim() || '';
   const itemIndex = document.getElementById('newStockItemFormContainer').dataset.editingIndex;
@@ -15540,6 +15787,9 @@ async function saveNewStockItem() {
   if (lowStockInput !== '' && (!Number.isFinite(lowStockThreshold) || lowStockThreshold < 0)) {
     return showAppAlert("Please enter a valid, non-negative low-stock level.", 'Invalid Low Stock Level');
   }
+  if (manufactureDate && expiryDate && manufactureDate > expiryDate) {
+    return showAppAlert("Manufacture date cannot be after the expiry date.", 'Invalid Dates');
+  }
 
   const existingMatchIndex = itemIndexNumber === null || Number.isNaN(itemIndexNumber) ? getProductCatalogMatchIndex(name) : -1;
 
@@ -15559,6 +15809,8 @@ async function saveNewStockItem() {
     item.category = category || '';
     item.costPrice = costPrice;
     item.stock = stock;
+    item.manufactureDate = manufactureDate || '';
+    item.expiryDate = expiryDate || '';
     item.image = uploadedImage || item.image || undefined;
     if (lowStockInput === '') delete item.lowStockThreshold;
     else item.lowStockThreshold = lowStockThreshold;
@@ -15606,6 +15858,8 @@ async function saveNewStockItem() {
       costPrice,
       stock,
       unit,
+      manufactureDate,
+      expiryDate,
       lowStockThreshold: lowStockInput === '' ? existingItem?.lowStockThreshold : lowStockThreshold,
       price: (() => {
         if (sellingPriceInput && !isNaN(parseFloat(sellingPriceInput))) return parseFloat(sellingPriceInput);
@@ -15643,6 +15897,8 @@ async function saveNewStockItem() {
       costPrice,
       stock,
       unit,
+      manufactureDate,
+      expiryDate,
       lowStockThreshold,
       price,
       image: uploadedImage || undefined
@@ -15748,6 +16004,8 @@ function clearNewStockItemForm() {
   document.getElementById('newStockItemCost').value = '';
   document.getElementById('newStockItemPrice').value = '';
   document.getElementById('newStockItemStock').value = '';
+  document.getElementById('newStockItemManufactureDate').value = '';
+  document.getElementById('newStockItemExpiryDate').value = '';
   document.getElementById('newStockItemLowStockThreshold').value = '';
   document.getElementById('newStockItemCategory').value = '';
   document.getElementById('newStockItemImageBase64').value = '';
@@ -16454,8 +16712,85 @@ function applyDataTableControls(toolbar) {
     const matchesFilter = filterValue === 'all'
       || (filterValue === 'product' && !isService)
       || rowText.includes(filterValue);
+<<<<<<< HEAD
     row.hidden = !(matchesFilter && (!searchValue || rowText.includes(searchValue)));
     if (!row.hidden) visibleRows += 1;
+=======
+    const filterHidden = !(matchesFilter && (!searchValue || rowText.includes(searchValue)));
+    row.dataset.dataTableFilterHidden = String(filterHidden);
+    row.hidden = filterHidden;
+  });
+  applyDataTablePagination(body);
+}
+
+const dataTablePageSizes = new Map();
+
+function applyDataTablePagination(body) {
+  if (!body) return;
+  const controls = document.querySelector(`[data-row-controls="${body.id}"]`);
+  if (!controls) return;
+
+  const pageSize = dataTablePageSizes.get(body.id) || 5;
+  const rows = Array.from(body.querySelectorAll(':scope > tr'));
+  rows.forEach(row => {
+    if (row.dataset.dataTablePageHidden === 'true') {
+      row.hidden = row.dataset.dataTableFilterHidden === 'true';
+      delete row.dataset.dataTablePageHidden;
+    }
+  });
+  const visibleRows = rows.filter(row => !row.hidden);
+  visibleRows.forEach((row, index) => {
+    if (pageSize !== 'all' && index >= pageSize) {
+      row.hidden = true;
+      row.dataset.dataTablePageHidden = 'true';
+    }
+  });
+
+  controls.querySelectorAll('[data-row-page-size]').forEach(button => {
+    button.classList.toggle('active', Number(button.dataset.rowPageSize) === pageSize);
+  });
+  const allButton = controls.querySelector('[data-row-page-size="all"]');
+  if (allButton) allButton.classList.toggle('active', pageSize === 'all');
+  const status = controls.querySelector('[data-row-status]');
+  if (status) {
+    status.textContent = `${visibleRows.length} item${visibleRows.length === 1 ? '' : 's'}`;
+  }
+}
+
+function initializeDataTablePagination() {
+  const excludedBodies = new Set(['orderList', 'dashboardLowStockBody', 'stockListBody']);
+  document.querySelectorAll('tbody[id]').forEach(body => {
+    if (excludedBodies.has(body.id) || document.querySelector(`[data-row-controls="${body.id}"]`)) return;
+
+    const controls = document.createElement('div');
+    controls.dataset.rowControls = body.id;
+    controls.style.cssText = 'display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0 0;';
+    controls.innerHTML = `
+      <span>Show rows:</span>
+      <button type="button" class="btn btn-secondary active" data-row-page-size="5">5</button>
+      <button type="button" class="btn btn-secondary" data-row-page-size="10">10</button>
+      <button type="button" class="btn btn-secondary" data-row-page-size="50">50</button>
+      <button type="button" class="btn btn-secondary" data-row-page-size="100">100</button>
+      <button type="button" class="btn btn-secondary" data-row-page-size="all">All</button>
+      <span data-row-status aria-live="polite"></span>`;
+
+    const table = body.closest('table');
+    const tableWrapper = table?.parentElement?.classList.contains('u-overflow-x-auto')
+      ? table.parentElement
+      : table;
+    if (!tableWrapper) return;
+    tableWrapper.insertAdjacentElement('afterend', controls);
+
+    controls.querySelectorAll('[data-row-page-size]').forEach(button => {
+      button.addEventListener('click', () => {
+        dataTablePageSizes.set(body.id, button.dataset.rowPageSize === 'all' ? 'all' : Number(button.dataset.rowPageSize));
+        applyDataTablePagination(body);
+      });
+    });
+
+    new MutationObserver(() => applyDataTablePagination(body)).observe(body, { childList: true });
+    applyDataTablePagination(body);
+>>>>>>> 6d7d7cf7aff46c4a6b5bc637434259d4ce3d3e08
   });
 
   const shouldShowEmptyRow = Boolean(searchValue) && visibleRows === 0;
@@ -16517,6 +16852,7 @@ function clearTableFilters() {
 }
 
 initializeDataTableControls();
+initializeDataTablePagination();
 
 function previewPurchaseEntry(id) {
   const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(record => record.id === id);
@@ -17108,13 +17444,6 @@ function setupRealTimeSync(uid) {
                     list.innerHTML = '<option value="Admin">' + (Array.isArray(staff) ? staff : []).filter(s => s && s.isActive !== false).map(s => `<option value="${s.name || ''}">`).join('');
                   }
 
-                  // Visual feedback on the sync button
-                  const statusEl = document.getElementById('connectivity-status');
-                  if (statusEl && statusEl.classList) {
-                    statusEl.classList.add('sync-pulse');
-                    setTimeout(() => statusEl.classList.remove('sync-pulse'), 600);
-                  }
-
                   pendingUpdate = null;
                 } catch (error) {
                   captureError('SYNC_UPDATE', error, { uid });
@@ -17360,7 +17689,10 @@ async function mainInit() {
 
     // Initialize Connectivity Status Indicator
     updateOnlineStatus().catch(console.warn);
-    window.addEventListener('online', () => updateOnlineStatus().catch(console.warn));
+    window.addEventListener('online', () => {
+      scheduleBackgroundSync();
+      updateOnlineStatus().catch(console.warn);
+    });
     window.addEventListener('offline', () => updateOnlineStatus().catch(console.warn));
 
     // Assign local settings immediately so login overlay can use them for branding
@@ -17461,7 +17793,13 @@ async function mainInit() {
 
     // Background Cloud Sync
     onAuthStateChanged(auth, async (user) => {
+      const previousUser = currentUser;
       currentUser = user;
+
+      if (presenceHeartbeat) {
+        window.clearInterval(presenceHeartbeat);
+        presenceHeartbeat = null;
+      }
 
       if (user && registrationInProgress) return;
 
@@ -17512,6 +17850,9 @@ async function mainInit() {
 
         console.log("Logged in, syncing cloud data in background...");
         syncUserPresence(true).catch(() => {});
+        presenceHeartbeat = window.setInterval(() => {
+          if (auth.currentUser?.uid === user.uid) syncUserPresence(true, user.uid).catch(() => {});
+        }, 2 * 60 * 1000);
 
         // Initialize root user document with PENDING status for new users
         try {
@@ -17626,7 +17967,7 @@ async function mainInit() {
           console.warn('Admin notice check failed on startup:', noticeError);
         }
       } else {
-        syncUserPresence(false).catch(() => {});
+        syncUserPresence(false, previousUser?.uid).catch(() => {});
 
         // User signed out: fully flush session-local state to prevent cross-contamination
         try {
@@ -17730,11 +18071,8 @@ async function mainInit() {
       const deviceId = new URLSearchParams(window.location.search).get('device') || '';
       console.log(`[SYNC] 🌐 Device ${deviceId || 'default'} back online - syncing all data`);
       if (currentUser && isInitialLoadComplete) {
-        if (syncDebounceTimer) clearTimeout(syncDebounceTimer);
-        syncDebounceTimer = null;
-        lastSyncTime = 0; // Reset to allow immediate sync
         saveData();
-        flushLocalSyncQueue().catch((error) => console.warn('[SYNC] Queue flush failed:', error));
+        scheduleBackgroundSync({ immediate: true });
       }
     });
 
@@ -17771,7 +18109,8 @@ function showLoginOverlay(mode = 'login') {
   let overlay = document.getElementById('login-overlay');
   const logoUrl = sanitizeLogoUrl(settings?.logo);
   const displayLogo = logoUrl || 'assets/icons/icon.png';
-const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width: 100px; height: 100px; object-fit: contain; margin-top: -40px; margin-bottom: 12px; background: transparent;">`;
+  const businessName = settings?.name || 'YoShop';
+  const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="this.removeAttribute('crossorigin'); this.src='assets/icons/icon.png';" style="width: 72px; height: 72px; object-fit: contain; margin: 0; background: transparent;">`;
 
   if (!overlay) {
     overlay = document.createElement('div');
@@ -17780,6 +18119,10 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
     document.body.appendChild(overlay);
   }
   overlay.style.display = 'flex';
+  if (overlay._pinShopNameResizeObserver) {
+    overlay._pinShopNameResizeObserver.disconnect();
+    overlay._pinShopNameResizeObserver = null;
+  }
 
   if (mode === 'pendingApproval') {
     overlay.style.flexDirection = 'column';
@@ -17832,7 +18175,10 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
           <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
         </div>
         <div class="login-side login-center-card animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); max-width: none; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0; padding: 42px 38px; box-sizing: border-box; border-left: 1px solid rgba(255,255,255,0.3); border-right: 1px solid rgba(255,255,255,0.3); background: linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06) 42%, rgba(7,15,30,0.34)), rgba(20,28,45,0.52); box-shadow: 0 0 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(28px) saturate(140%); -webkit-backdrop-filter: blur(28px) saturate(140%);">
-          <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
+          <div class="login-brand-block">
+            ${logoHtml}
+            <div class="login-brand-copy"><p class="login-welcome">Welcome</p><h1 class="login-brand-name">${businessName}</h1></div>
+          </div>
           <p style="font-size: 1.5em; margin-bottom: 25px; font-weight: bold;">${title}</p>
           ${getLoginFeedbackHtml()}
           
@@ -17962,7 +18308,7 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
               <button onclick="resetLoginStage()" class="btn" style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.3); color: white; padding: 12px; font-weight: bold; width: 100%; border-radius: 8px; margin: 0; display: flex; align-items: center; justify-content: center; gap: 8px;">🔙 Switch Account Type</button>
               <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; width: 100%; gap: 8px; flex-wrap: nowrap; min-width: 0;">
                   <a href="#" onclick="event.preventDefault(); forgotPIN();" style="color: white; font-size: 0.72em; text-decoration: underline; opacity: 0.8; white-space: nowrap; flex-shrink: 0;">Forgot PIN?</a>
-                  <button type="button" onclick="event.preventDefault(); logoutToEmailLogin();" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 4px 10px; font-size: 0.72em; margin: 0; cursor: pointer; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; flex-shrink: 0; min-height: 28px; line-height: 1.2;">
+                  <button type="button" onclick="event.preventDefault(); logoutToEmailLogin();" class="btn" style="background: transparent; color: white; border: 1px solid white; padding: 4px 10px; font-size: 0.72em; margin: 0; width: auto; max-width: none; cursor: pointer; border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 6px; white-space: nowrap; flex-shrink: 0; min-height: 28px; line-height: 1.2;">
                     <span aria-hidden="true" style="font-size:1em; line-height:1;">↪</span>
                     Logout Account
                   </button>
@@ -17981,9 +18327,10 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
           <img src="assets/icons/marketed.jpeg" crossorigin="anonymous" style="display: block; width: 100%; height: 100%; object-fit: cover; object-position: center;">
         </div>
         <div class="login-side login-center-card animate-panel-right" style="order: 2; flex: 0 1 36%; min-width: min(360px, 42vw); max-width: none; align-self: stretch; display: flex; flex-direction: column; align-items: center; justify-content: center; margin: 0; padding: 42px 38px; box-sizing: border-box; border-left: 1px solid rgba(255,255,255,0.3); border-right: 1px solid rgba(255,255,255,0.3); background: linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.06) 42%, rgba(7,15,30,0.34)), rgba(20,28,45,0.52); box-shadow: 0 0 70px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.2), inset 0 -1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(28px) saturate(140%); -webkit-backdrop-filter: blur(28px) saturate(140%);">
-          <div style="margin-bottom: 20px; opacity: 0.8; transform: scale(0.8);">${logoHtml}</div>
-          <p style="font-size: 1.5em; margin-bottom: 12px; font-weight: bold;">Welcome</p>
-          <h1 style="font-size: 3em; margin-top: 0; margin-bottom: 12px;">${settings?.name || 'YoShop'}</h1>
+          <div class="login-brand-block pin-login-brand">
+            ${logoHtml}
+            <div class="login-brand-copy"><p class="login-welcome">Welcome</p><h1 class="login-brand-name pin-card-shop-name">${businessName}</h1></div>
+          </div>
           ${getLoginFeedbackHtml()}
           ${statusDisplay}
 
@@ -18003,6 +18350,7 @@ const logoHtml = `<img src="${displayLogo}" crossorigin="anonymous" onerror="thi
           </div>
         </div>
       `;
+
   }
 
   // Attach Enter/Escape keyboard handler for the login overlay
@@ -19647,7 +19995,9 @@ function triggerConfettiAnimation(container) {
 function showSaleSuccessCelebration(transaction, changeDue = 0) {
   lastProcessedTransaction = transaction;
 
-  const syncState = navigator.onLine ? 'Synced to cloud when connection is available.' : 'Saved offline and will sync when the connection returns.';
+  const syncState = !navigator.onLine || hasRecentSyncFailure
+    ? 'Sale complete. Weak network: saved on this device and will sync when the connection returns.'
+    : 'Sale complete. Saved on this device and syncing to your other devices.';
   const syncNoticeEl = document.getElementById('successSyncNotice');
   if (syncNoticeEl) {
     syncNoticeEl.textContent = syncState;
@@ -19845,6 +20195,26 @@ function addNotification(message, type = 'info', action = null) {
   updateNotificationBadge();
   renderNotifications();
 }
+
+const expiryNotificationKeys = new Set();
+
+function notifyExpiringStockItems(items = []) {
+  if (typeof window.addNotification !== 'function') return;
+  const warningDays = Number(settings?.expiryWarningDays ?? 5);
+  items.forEach(item => {
+    const days = getExpiryDaysRemaining(item?.expiryDate);
+    if (days === null || days > warningDays) return;
+    const itemKey = `${item.recordId || item.id || item.name}:${item.expiryDate}:${warningDays}`;
+    if (expiryNotificationKeys.has(itemKey)) return;
+    expiryNotificationKeys.add(itemKey);
+    const message = days < 0
+      ? `${item.name} has expired.`
+      : `${item.name} expires in ${days} day${days === 1 ? '' : 's'}.`;
+    window.addNotification(message, 'alert');
+  });
+}
+
+window.addNotification = addNotification;
 
 function addOrUpdateAdminNoticeNotification(message, sentAt, notices = []) {
   if (!message || !sentAt) return;
