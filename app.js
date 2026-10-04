@@ -20,7 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -14320,7 +14320,7 @@ function renderInvoices() {
   const startDate = document.getElementById('invoiceStartDate')?.value;
   const endDate = document.getElementById('invoiceEndDate')?.value;
   const salesByValue = String(document.getElementById('invoiceSalesByFilter')?.value || 'all');
-  const invoiceSearchValue = String(document.getElementById('invoiceSearch')?.value || '').trim().toLowerCase();
+  const invoiceSearchValue = String(document.getElementById('invoiceSearch')?.value || '').trim();
   const invoiceRows = buildInvoiceListItems({
     customers: Array.isArray(customers) ? customers : [],
     transactions: Array.isArray(transactions) ? transactions : []
@@ -14350,14 +14350,7 @@ function renderInvoices() {
   });
 
   const salesFilteredRows = filterInvoiceRowsBySalesBy(dateFilteredRows, salesByValue);
-  const searchFilteredRows = invoiceSearchValue
-    ? salesFilteredRows.filter(row => {
-        const customer = String(row?.customer?.name || row?.customerName || '').toLowerCase();
-        const invoiceNumber = String(row?.invoiceNumber || '').toLowerCase();
-        const salesBy = String(getTransactionStaffName(row?.transaction || '') || '').toLowerCase();
-        return customer.includes(invoiceSearchValue) || invoiceNumber.includes(invoiceSearchValue) || salesBy.includes(invoiceSearchValue);
-      })
-    : salesFilteredRows;
+  const searchFilteredRows = filterInvoiceRowsBySearch(salesFilteredRows, invoiceSearchValue);
   const filteredRows = filterInvoiceRowsByStatus(searchFilteredRows, currentInvoiceFilter);
   currentInvoiceTableRows = filteredRows;
 
@@ -14385,7 +14378,7 @@ function renderInvoices() {
       const emptyCell = document.createElement('td');
       emptyCell.colSpan = 12;
       emptyCell.className = 'u-text-center';
-      emptyCell.textContent = 'No debt invoices found.';
+      emptyCell.textContent = invoiceSearchValue ? 'No data found.' : 'No debt invoices found.';
       emptyRow.appendChild(emptyCell);
       tbody.appendChild(emptyRow);
     } else {
@@ -14585,6 +14578,8 @@ function renderInvoices() {
     }
   }
 }
+
+window.renderInvoices = renderInvoices;
 
 async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
   const transactionIdOrKey = (typeof transactionOrCustomer === 'string' || typeof transactionOrCustomer === 'number')

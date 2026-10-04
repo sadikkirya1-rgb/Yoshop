@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals } from '../invoice-utils.mjs';
 
 test('filterInvoiceRowsByStatus separates paid and pending invoices', () => {
   const rows = [
@@ -24,6 +24,19 @@ test('filterInvoiceRowsBySalesBy keeps only rows from the selected sales staff',
   assert.deepEqual(filterInvoiceRowsBySalesBy(rows, 'Alice').map(row => row.transaction.servedBy), ['Alice', 'Alice']);
   assert.deepEqual(filterInvoiceRowsBySalesBy(rows, 'all').map(row => row.transaction.servedBy), ['Alice', 'Bob', 'Alice']);
   assert.deepEqual(filterInvoiceRowsBySalesBy(rows, 'Charlie').map(row => row.transaction.servedBy), []);
+});
+
+test('filterInvoiceRowsBySearch matches customer, served-by, and invoice number', () => {
+  const rows = [
+    { customerName: 'Alice Smith', invoiceNumber: 'INV-101', transaction: { servedBy: 'Jordan Lee' } },
+    { customerName: 'Morgan Chen', invoiceNumber: 'INV-202', transaction: { servedBy: 'Taylor Reed' } }
+  ];
+
+  assert.deepEqual(filterInvoiceRowsBySearch(rows, 'ALICE'), [rows[0]]);
+  assert.deepEqual(filterInvoiceRowsBySearch(rows, 'jordan'), [rows[0]]);
+  assert.deepEqual(filterInvoiceRowsBySearch(rows, 'inv-202'), [rows[1]]);
+  assert.deepEqual(filterInvoiceRowsBySearch(rows, 'unknown'), []);
+  assert.deepEqual(filterInvoiceRowsBySearch(rows, ''), rows);
 });
 
 test('buildInvoiceListItems keeps separate debt transactions for the same customer', () => {

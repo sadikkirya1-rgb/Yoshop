@@ -885,7 +885,7 @@
           <select id="invoiceSalesByFilter" onchange="renderInvoices()" aria-label="Filter invoices by sales by">
             <option value="all">Sales By: all</option>
           </select>
-          <input type="search" id="invoiceSearch" oninput="renderInvoices()" placeholder="Search invoices..." aria-label="Search invoices">
+          <input type="search" id="invoiceSearch" oninput="renderInvoices()" placeholder="Customer name, served by, or invoice number" title="Search by customer name, served by, or invoice number" aria-label="Search invoices by customer name, served by, or invoice number">
           <div id="invoiceCountInfo">Showing 0 of 0 invoices</div>
           <div class="button-group" style="gap:6px; align-items:center;">
             <button class="btn btn-secondary" type="button" data-invoice-filter="all" onclick="setInvoiceFilter('all')">📋 All</button>

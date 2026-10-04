@@ -248,6 +248,29 @@ export function filterInvoiceRowsBySalesBy(rows = [], salesBy = 'all') {
   });
 }
 
+export function filterInvoiceRowsBySearch(rows = [], searchTerm = '') {
+  const invoiceRows = Array.isArray(rows) ? rows : [];
+  const normalizedTerm = String(searchTerm || '').trim().toLowerCase();
+  if (!normalizedTerm) return invoiceRows;
+
+  return invoiceRows.filter(row => {
+    const transaction = row?.transaction || {};
+    const searchableValues = [
+      row?.customer?.name,
+      row?.customerName,
+      transaction.customerNameReal,
+      transaction.customerName,
+      row?.invoiceNumber,
+      transaction.invoiceNumber,
+      transaction.servedBy,
+      transaction.staffName,
+      transaction.cashier,
+      transaction.createdByName
+    ];
+    return searchableValues.some(value => String(value || '').toLowerCase().includes(normalizedTerm));
+  });
+}
+
 export function buildInvoiceListItems({ customers = [], transactions = [] } = {}) {
   const customerList = Array.isArray(customers) ? customers : [];
   const txList = Array.isArray(transactions) ? transactions : [];
