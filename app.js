@@ -3084,30 +3084,85 @@ function getTransactionActionLockTitle(transaction = {}) {
     : 'Locked: staff transaction action window has expired or this sale belongs to another staff member';
 }
 
+function repairConflictingCustomerName(source = {}) {
+  if (!source || typeof source !== 'object') return source;
+
+  const customerList = Array.isArray(customers) ? customers : [];
+  const linkedCustomer = source.customerId
+    ? customerList.find(candidate => candidate && (candidate.id === source.customerId || String(candidate.id) === String(source.customerId))) || null
+    : null;
+
+  const preferredName = linkedCustomer?.name || source.customer?.name || source.customerNameReal || source.customerName || '';
+  const candidateNames = [
+    linkedCustomer?.name,
+    source.customer?.name,
+    source.customerNameReal,
+    source.customerName
+  ].filter(value => typeof value === 'string' && value.trim() !== '');
+  const uniqueNames = [...new Set(candidateNames.map(value => value.trim().toLowerCase()))];
+
+  if (!preferredName && uniqueNames.length === 0) return source;
+
+  if (uniqueNames.length > 1 && preferredName) {
+    source.customerNameReal = preferredName;
+    source.customerName = preferredName;
+    if (source.customer && typeof source.customer === 'object') {
+      source.customer.name = preferredName;
+    }
+  }
+
+  if (!source.customerNameReal && preferredName) {
+    source.customerNameReal = preferredName;
+  }
+  if (!source.customerName && preferredName) {
+    source.customerName = preferredName;
+  }
+
+  return source;
+}
+
+function getInvoiceDefaultNote(source = {}) {
+  const normalizedSource = repairConflictingCustomerName(source);
+  const customerName = normalizedSource.customerNameReal || normalizedSource.customer?.name || normalizedSource.customerName || 'customer account';
+  const invoiceTotal = Number(normalizedSource.total ?? normalizedSource.grandTotal ?? normalizedSource.amount ?? 0);
+  const paymentSummary = calculateInvoicePaymentSummary(normalizedSource, invoiceTotal);
+  const resolvedBalance = Number(paymentSummary.balance ?? normalizedSource.balance ?? 0);
+  return resolvedBalance === 0
+    ? `Invoice paid in full for ${customerName}`
+    : `Outstanding balance due for ${customerName}`;
+}
+
 function normalizeInvoicePrintData(source = {}) {
-  const servedBy = source.servedBy || source.cashier || source.staffName || getCurrentServerName() || 'Staff';
-  const customerName = source.customerName || source.customer?.name || source.customerNameReal || 'Walk-in Customer';
-  const customerPhone = source.customerPhone || source.customerContact || source.contact || source.customer?.phone || source.customer?.mobile || source.customer?.whatsapp || source.phone || '';
-  const customerAddress = source.customerAddress || source.address || source.customer?.address || '';
-  const paymentMethod = source.paymentMethod || source.payment?.method || source.method || 'Cash';
-  const orderStatus = source.orderStatus || source.status || 'pending';
-  const orderType = source.orderType || ((source.serviceOrder && Object.values(source.serviceOrder).some(value => value)) ? 'service' : 'product');
-  const serviceOrder = source.serviceOrder || {};
-  const subtotal = Number(source.subtotal ?? source.subTotal ?? 0);
-  const tax = Number(source.taxAmount ?? source.tax ?? source.vatAmount ?? source.vat ?? 0);
-  const deliveryFee = Math.max(0, Number(source.deliveryFee ?? source.delivery_fee ?? 0) || 0);
-  const discountAmount = Math.max(0, Number(source.discount?.amount ?? source.discountAmount ?? source.discount?.value ?? 0) || 0);
-  const discount = { ...(source.discount || {}), amount: discountAmount };
-  const total = Number(source.total ?? source.grandTotal ?? source.amount ?? subtotal + tax + deliveryFee - discountAmount);
-  const paymentSummary = calculateInvoicePaymentSummary(source, total);
+  const repairedSource = repairConflictingCustomerName(source);
+  const servedBy = repairedSource.servedBy || repairedSource.cashier || repairedSource.staffName || getCurrentServerName() || 'Staff';
+  const canonicalCustomerName = repairedSource.customerNameReal || repairedSource.customer?.name || repairedSource.customerName || 'Walk-in Customer';
+  const customerName = canonicalCustomerName;
+  const customerPhone = repairedSource.customerPhone || repairedSource.customerContact || repairedSource.contact || repairedSource.customer?.phone || repairedSource.customer?.mobile || repairedSource.customer?.whatsapp || repairedSource.phone || '';
+  const customerAddress = repairedSource.customerAddress || repairedSource.address || repairedSource.customer?.address || '';
+  const paymentMethod = repairedSource.paymentMethod || repairedSource.payment?.method || repairedSource.method || 'Cash';
+  const orderStatus = repairedSource.orderStatus || repairedSource.status || 'pending';
+  const orderType = repairedSource.orderType || ((repairedSource.serviceOrder && Object.values(repairedSource.serviceOrder).some(value => value)) ? 'service' : 'product');
+  const serviceOrder = repairedSource.serviceOrder || {};
+  const subtotal = Number(repairedSource.subtotal ?? repairedSource.subTotal ?? 0);
+  const tax = Number(repairedSource.taxAmount ?? repairedSource.tax ?? repairedSource.vatAmount ?? repairedSource.vat ?? 0);
+  const deliveryFee = Math.max(0, Number(repairedSource.deliveryFee ?? repairedSource.delivery_fee ?? 0) || 0);
+  const discountAmount = Math.max(0, Number(repairedSource.discount?.amount ?? repairedSource.discountAmount ?? repairedSource.discount?.value ?? 0) || 0);
+  const discount = { ...(repairedSource.discount || {}), amount: discountAmount };
+  const total = Number(repairedSource.total ?? repairedSource.grandTotal ?? repairedSource.amount ?? subtotal + tax + deliveryFee - discountAmount);
+  const paymentSummary = calculateInvoicePaymentSummary(repairedSource, total);
   const amountPaid = paymentSummary.amountPaid;
   const balance = paymentSummary.balance;
-  const transactionId = String(source.id || source.transactionId || source.recordId || source.invoiceNumber || source.invoiceNo || source.date || '').trim();
+  const transactionId = String(repairedSource.id || repairedSource.transactionId || repairedSource.recordId || repairedSource.invoiceNumber || repairedSource.invoiceNo || repairedSource.date || '').trim();
+  const defaultNote = getInvoiceDefaultNote(repairedSource);
+  const note = typeof repairedSource.note === 'string' && repairedSource.note.trim() && !/(Invoice paid in full for|Outstanding balance due for)/.test(repairedSource.note)
+    ? repairedSource.note
+    : defaultNote;
 
   return {
-    ...source,
+    ...repairedSource,
     servedBy,
     customerName,
+    customerNameReal: repairedSource.customerNameReal || canonicalCustomerName,
     customerPhone,
     customerAddress,
     paymentMethod,
@@ -3121,8 +3176,9 @@ function normalizeInvoicePrintData(source = {}) {
     amountPaid,
     total,
     balance,
+    note,
     transactionId,
-    invoiceNumber: normalizeInvoiceNumber(source.invoiceNumber || source.invoiceNo || source.receiptNumber || source.transactionNumber || source.invoiceNo || undefined)
+    invoiceNumber: normalizeInvoiceNumber(repairedSource.invoiceNumber || repairedSource.invoiceNo || repairedSource.receiptNumber || repairedSource.transactionNumber || repairedSource.invoiceNo || undefined)
   };
 }
 
@@ -8790,7 +8846,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const invoiceNumber = data.invoiceNumber || 'INV-UNKNOWN';
   const invoiceDate = formatInvoiceDisplayDate(getInvoiceEffectiveDate(data), { includeTime: true });
   const invoiceRecordKey = String(data.id || data.recordId || data.invoiceNumber || '');
-  const customerName = data.customerName;
+  const customerName = data.customerNameReal || data.customer?.name || data.customerName || 'Walk-in Customer';
   const customerPhone = data.customerPhone;
   const customerAddress = data.customerAddress;
   const paymentMethod = data.paymentMethod;
@@ -8809,7 +8865,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const showServiceModeStatus = settings.serviceMode === true && isServiceTransaction;
   const safeOrderType = escapeHtml(effectiveOrderType === 'service' ? 'Service' : 'Product');
   const serviceTypeHtml = showServiceModeStatus ? `<p>Type: <b>${safeOrderType}</b></p>` : '';
-  const note = source.note || 'Please keep this invoice for warranty and return purposes.';
+  const note = getInvoiceDefaultNote(source) || source.note || 'Please keep this invoice for warranty and return purposes.';
   const currencySymbol = getCurrencySymbol();
   const storeName = settings?.name || 'YO SHOP';
   const storeAddress = settings?.address || 'Smart POS & Inventory System';
@@ -9205,6 +9261,24 @@ function previewOrder(transactionData = null) {
   const receiptModal = document.getElementById('receiptModal');
   let currentTransaction;
   console.log('previewOrder called with:', transactionData);
+  if (transactionData && typeof transactionData === 'object') {
+    repairConflictingCustomerName(transactionData);
+  }
+  const previewCustomerNameFields = [
+    transactionData?.customerNameReal,
+    transactionData?.customerName,
+    transactionData?.customer?.name,
+    transactionData?.customerNameReal || transactionData?.customer?.name || transactionData?.customerName
+  ].filter(value => typeof value === 'string' && value.trim() !== '');
+  const previewUniqueCustomerNames = [...new Set(previewCustomerNameFields.map(value => value.trim().toLowerCase()))];
+  if (previewUniqueCustomerNames.length > 1) {
+    const warningMessage = `This invoice has conflicting customer names in its data.\n\n${previewCustomerNameFields.map((value, index) => `${index + 1}. ${value}`).join('\n')}\n\nThe preview may show the wrong customer. Please fix the record before printing.`;
+    if (typeof showAppAlert === 'function') {
+      showAppAlert(warningMessage, 'Customer Name Warning');
+    } else {
+      alert(warningMessage);
+    }
+  }
 
 
   const dateInput = document.getElementById('receiptInvoiceDateTime');
@@ -9616,6 +9690,25 @@ async function printReceipt() {
 
   const receiptModal = document.getElementById('receiptModal');
   let printTransaction = receiptModal && receiptModal._transactionData ? receiptModal._transactionData : null;
+  if (printTransaction && typeof printTransaction === 'object') {
+    repairConflictingCustomerName(printTransaction);
+  }
+  const customerNameFields = [
+    printTransaction?.customerNameReal,
+    printTransaction?.customerName,
+    printTransaction?.customer?.name,
+    printTransaction?.customerNameReal || printTransaction?.customer?.name || printTransaction?.customerName
+  ].filter(value => typeof value === 'string' && value.trim() !== '');
+  const uniqueCustomerNames = [...new Set(customerNameFields.map(value => value.trim().toLowerCase()))];
+  if (uniqueCustomerNames.length > 1) {
+    const warningMessage = `This invoice has conflicting customer names saved in different fields.\n\n${customerNameFields.map((value, index) => `${index + 1}. ${value}`).join('\n')}\n\nPlease fix the customer record before printing.`;
+    if (typeof showAppAlert === 'function') {
+      await showAppAlert(warningMessage, 'Customer Name Warning');
+    } else {
+      alert(warningMessage);
+    }
+    return;
+  }
 
   if (!printTransaction) {
     const currentOrder = activeOrders[CART_ID];
@@ -10630,7 +10723,10 @@ function populateReceiptContent(transaction) {
   transaction = normalizeInvoicePrintData(transaction || {});
   transaction.date = getInvoiceEffectiveDate(transaction);
   const { date, customerName, tableNo, items, total, subtotal, tax, deliveryFee = 0, discount, receiptType, paymentMethod, note, amountPaid, orderStatus, servedBy, customerNameReal, serviceOrder = {}, orderType } = transaction;
-  const displayCustomerName = customerNameReal || transaction.customer?.name || customerName || 'Walk-in Customer';
+  const normalizedTransaction = normalizeInvoicePrintData(transaction || {});
+  const canonicalCustomerName = normalizedTransaction.customerNameReal || normalizedTransaction.customer?.name || normalizedTransaction.customerName || 'Walk-in Customer';
+  const noteText = normalizedTransaction.note || note || 'Please keep this invoice for warranty and return purposes.';
+  const displayCustomerName = canonicalCustomerName;
   const transactionId = new Date(date).getTime();
   const invoiceNumber = getInvoiceNumber(transaction);
   const currencySymbol = getCurrencySymbol();
@@ -10686,7 +10782,7 @@ function populateReceiptContent(transaction) {
   const customerContactLine = (transaction.customerContact || transaction.contact || transaction.customer?.phone || transaction.customer?.mobile || transaction.customer?.whatsapp) ? `<div class="summary-line"><span>Contact</span> <span>${escapeHtml(transaction.customerContact || transaction.contact || transaction.customer?.phone || transaction.customer?.mobile || transaction.customer?.whatsapp)}</span></div>` : '';
   const customerAddressLine = (transaction.customerAddress || transaction.address || transaction.customer?.address) ? `<div class="summary-line"><span>Address</span> <span>${escapeHtml(transaction.customerAddress || transaction.address || transaction.customer?.address)}</span></div>` : '';
   const methodLine = paymentMethod ? `<div class="summary-line"><span>Method</span> <span>${escapeHtml(paymentMethod)}</span></div>` : '';
-  const noteLine = note ? `<div class="summary-line"><span>Note</span> <span>${escapeHtml(note)}</span></div>` : '';
+  const noteLine = noteText ? `<div class="summary-line"><span>Note</span> <span>${escapeHtml(noteText)}</span></div>` : '';
   const paidLine = amountPaid !== undefined ? `<div class="summary-line"><span>Amount Paid</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(amountPaid)}</span></div>` : '';
   // show all adjustments (if any) for debt receipts or adjustments
   const adjustmentsArr = Array.isArray(transaction.adjustments) && transaction.adjustments.length
