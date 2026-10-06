@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from '../invoice-utils.mjs';
 
 test('paginateInvoiceItems uses one shared thirty-row A4 page limit', () => {
   const items = Array.from({ length: 61 }, (_, index) => ({ id: index + 1 }));
@@ -206,6 +206,31 @@ test('calculateInvoicePaymentSummary does not double-count adjustments saved in 
 
   assert.equal(summary.amountPaid, 200000);
   assert.equal(summary.balance, -100000);
+});
+
+test('reverseLastInvoiceAdjustment removes only the latest invoice adjustment and restores the balance', () => {
+  const transaction = {
+    id: 'tx-reverse',
+    date: '2024-10-01T10:00:00.000Z',
+    customerId: 'cust-reverse',
+    customerNameReal: 'Reverse Customer',
+    total: 300000,
+    amountPaid: 300000,
+    balance: 0,
+    adjustmentsAppliedToAmountPaid: true,
+    adjustments: [
+      { id: 'adj-1', amount: 100000, date: '2024-10-02T10:00:00.000Z', method: 'Cash' },
+      { id: 'adj-2', amount: 50000, date: '2024-10-03T10:00:00.000Z', method: 'Card' }
+    ]
+  };
+
+  const result = reverseLastInvoiceAdjustment(transaction);
+
+  assert.equal(result.removedAmount, 50000);
+  assert.equal(result.transaction.amountPaid, 250000);
+  assert.equal(result.transaction.balance, -50000);
+  assert.deepEqual(result.transaction.adjustments.map(entry => entry.amount), [100000]);
+  assert.equal(result.transaction.lastAdjustment.amount, 100000);
 });
 
 test('buildInvoiceListItems preserves payment state for invoice previews', () => {

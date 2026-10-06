@@ -20,7 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -14628,6 +14628,72 @@ function renderInvoices() {
           showInvoiceAdjustmentPrompt(row.transaction?.id || row.transaction?.invoiceNumber || '');
         });
 
+        const hasInvoiceAdjustment = Boolean(
+          Array.isArray(row.transaction?.adjustments) ? row.transaction.adjustments.length > 0 : Boolean(row.transaction?.lastAdjustment)
+        );
+        const latestInvoiceAdjustment = Array.isArray(row.transaction?.adjustments) && row.transaction.adjustments.length > 0
+          ? row.transaction.adjustments[row.transaction.adjustments.length - 1]
+          : (row.transaction?.lastAdjustment || null);
+        const undoAdjustmentButton = document.createElement('button');
+        undoAdjustmentButton.className = 'btn invoice-action-btn';
+        undoAdjustmentButton.type = 'button';
+        undoAdjustmentButton.textContent = '↩️ Undo';
+        undoAdjustmentButton.title = hasInvoiceAdjustment ? 'Reverse the latest invoice adjustment' : 'No adjustment to reverse';
+        undoAdjustmentButton.disabled = !hasInvoiceAdjustment || !transactionActionsAllowed;
+        if (undoAdjustmentButton.disabled) undoAdjustmentButton.style.cssText = 'opacity:0.45; pointer-events:none;';
+        undoAdjustmentButton.addEventListener('click', async event => {
+          event.stopPropagation();
+          if (!row.transaction || !latestInvoiceAdjustment) return;
+          const adjustmentAmount = Number(latestInvoiceAdjustment.amount) || 0;
+          const confirmed = await showAppConfirm(
+            `Reverse the latest adjustment of ${currencySymbol}${formatCurrency(adjustmentAmount)} for invoice ${invoiceNumber}? This returns the invoice to its previous balance state.`,
+            'Reverse Invoice Adjustment',
+            'Undo Adjustment',
+            'Cancel'
+          );
+          if (!confirmed?.confirmed) return;
+
+          const reversal = reverseLastInvoiceAdjustment(row.transaction);
+          if (!reversal.reversed) {
+            await showAppAlert('This invoice has no saved adjustment to reverse.', 'No Adjustment to Undo');
+            return;
+          }
+
+          Object.assign(row.transaction, reversal.transaction);
+          row.amountPaid = reversal.transaction.amountPaid;
+          row.balance = reversal.transaction.balance;
+          row.previewData = {
+            ...(row.previewData || {}),
+            adjustments: reversal.transaction.adjustments,
+            lastAdjustment: reversal.transaction.lastAdjustment,
+            amountPaid: reversal.transaction.amountPaid,
+            balance: reversal.transaction.balance,
+            adjustmentsAppliedToAmountPaid: reversal.transaction.adjustmentsAppliedToAmountPaid
+          };
+
+          if (typeof enqueueLocalSyncAction === 'function') {
+            await enqueueLocalSyncAction({
+              entityType: 'sales',
+              payload: row.transaction,
+              businessId: getEffectiveUid(),
+              userId: currentUser?.uid || getEffectiveUid(),
+              staffId: getCurrentStaffId(),
+              updatedBy: currentUser?.uid || getEffectiveUid(),
+              deviceId: getCurrentDeviceId()
+            });
+          }
+
+          await saveData(false);
+          if (navigator.onLine && currentUser && dbFirestore) {
+            await flushLocalSyncQueue({ force: true }).catch(error => {
+              console.warn('[SYNC] Adjustment reversal flush failed:', error);
+            });
+          }
+          renderInvoices();
+          renderTransactions();
+          await showAppAlert(`The ${currencySymbol}${formatCurrency(reversal.removedAmount)} adjustment was reversed on invoice ${invoiceNumber}.`, 'Adjustment Reversed');
+        });
+
         const bcButton = document.createElement('button');
         bcButton.className = 'btn invoice-action-btn';
         bcButton.type = 'button';
@@ -14672,6 +14738,9 @@ function renderInvoices() {
         actionWrapper.className = 'invoice-action-group';
         actionWrapper.style.cssText = 'display:inline-flex; flex-wrap:nowrap; gap:4px; justify-content:flex-end; align-items:center; min-width:0; overflow-x:auto; white-space:nowrap;';
         actionWrapper.appendChild(adjustButton);
+        if (hasInvoiceAdjustment) {
+          actionWrapper.appendChild(undoAdjustmentButton);
+        }
         const editButton = document.createElement('button');
         editButton.className = 'btn invoice-action-btn';
         editButton.type = 'button';

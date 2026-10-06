@@ -87,6 +87,55 @@ export function calculateInvoicePaymentSummary(transaction = {}, totalOverride =
   };
 }
 
+export function reverseLastInvoiceAdjustment(transaction = {}) {
+  const sourceTransaction = transaction && typeof transaction === 'object' ? { ...transaction } : {};
+  const adjustments = Array.isArray(sourceTransaction.adjustments) && sourceTransaction.adjustments.length > 0
+    ? sourceTransaction.adjustments.filter(Boolean)
+    : (sourceTransaction.lastAdjustment && typeof sourceTransaction.lastAdjustment === 'object' ? [sourceTransaction.lastAdjustment] : []);
+
+  if (adjustments.length === 0) {
+    return {
+      reversed: false,
+      removedAmount: 0,
+      removedAdjustment: null,
+      transaction: {
+        ...sourceTransaction,
+        adjustments: [],
+        lastAdjustment: null,
+        amountPaid: Number(sourceTransaction.amountPaid ?? 0) || 0,
+        balance: Number(sourceTransaction.balance ?? 0) || 0
+      }
+    };
+  }
+
+  const lastAdjustment = adjustments[adjustments.length - 1];
+  const removedAmount = Number(lastAdjustment?.amount) || 0;
+  const remainingAdjustments = adjustments.slice(0, -1);
+
+  const nextTransaction = {
+    ...sourceTransaction,
+    adjustments: remainingAdjustments,
+    lastAdjustment: remainingAdjustments.length > 0 ? remainingAdjustments[remainingAdjustments.length - 1] : null,
+    lastTransactionDate: remainingAdjustments.length > 0 ? remainingAdjustments[remainingAdjustments.length - 1].date || sourceTransaction.lastTransactionDate || null : null,
+    adjustmentsAppliedToAmountPaid: remainingAdjustments.length > 0 ? Boolean(sourceTransaction.adjustmentsAppliedToAmountPaid) : false
+  };
+
+  if (sourceTransaction.adjustmentsAppliedToAmountPaid === true) {
+    nextTransaction.amountPaid = Math.max(0, (Number(sourceTransaction.amountPaid) || 0) - removedAmount);
+  } else {
+    nextTransaction.amountPaid = Number(sourceTransaction.amountPaid) || 0;
+  }
+
+  nextTransaction.balance = Math.min(0, Number(nextTransaction.amountPaid || 0) - Number(sourceTransaction.total || 0));
+
+  return {
+    reversed: true,
+    removedAmount,
+    removedAdjustment: lastAdjustment,
+    transaction: nextTransaction
+  };
+}
+
 function getTransactionItemsSignature(transaction = {}) {
   const items = Array.isArray(transaction?.items) ? transaction.items : [];
   const normalizedItems = items
