@@ -14807,6 +14807,9 @@ function renderInvoices() {
           adjustedText
         ];
 
+        const amountPaidColor = balance === 0 ? '#28a745' : '#f4b400';
+        const balanceColor = balance < 0 ? '#dc3545' : '#28a745';
+        const adjustedColor = '#2563eb';
         const textCellStyles = [
           null,
           null,
@@ -14816,8 +14819,9 @@ function renderInvoices() {
           null,
           'text-align: right;',
           'text-align: right;',
-          `text-align: right; color:${balance < 0 ? '#dc3545' : '#28a745'}; font-weight:bold;`,
-          'text-align: right;'
+          `text-align: right; color:${amountPaidColor}; font-weight:bold;`,
+          `text-align: right; color:${balanceColor}; font-weight:bold;`,
+          `text-align: right; color:${adjustedColor}; font-weight:bold;`
         ];
 
         cells.forEach((value, index) => {
