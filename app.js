@@ -15392,26 +15392,18 @@ function editCustomer(index) {
 }
 
 async function deleteCustomer(index) {
-  const confirmed = await showAppConfirm(`Are you sure you want to delete customer "${customers[index].name}"?`, 'Delete Customer', 'Delete', 'Cancel');
+  const requestedCustomer = customers[index];
+  if (!requestedCustomer) return;
+
+  const customerId = getEnterpriseRecordId(requestedCustomer);
+  const confirmed = await showAppConfirm(`Are you sure you want to delete customer "${requestedCustomer.name}"?`, 'Delete Customer', 'Delete', 'Cancel');
   if (confirmed?.confirmed) {
-    const customerToDelete = customers[index];
-    const linkedTransactions = (Array.isArray(transactions) ? transactions : [])
-      .filter(transaction => transaction?.customerId && customerToDelete?.id && String(transaction.customerId) === String(customerToDelete.id));
-    linkedTransactions.forEach(transaction => {
-      const transactionId = transaction.id || transaction.recordId || transaction.date;
-      enqueueLocalSyncAction({
-        entityType: 'sales',
-        operation: 'delete',
-        payload: { id: transactionId, recordId: transactionId, operation: 'delete' },
-        businessId: getEffectiveUid(),
-        userId: currentUser?.uid || getEffectiveUid(),
-        updatedBy: currentUser?.uid || getEffectiveUid(),
-        deviceId: getCurrentDeviceId()
-      }).catch(console.warn);
-    });
+    const customerIndex = customers.findIndex(customer => getEnterpriseRecordId(customer) === customerId);
+    if (customerIndex < 0) return;
+
+    const customerToDelete = customers[customerIndex];
     enqueueEnterpriseRecordChange('customers', customerToDelete, 'delete').catch(console.warn);
-    transactions = (Array.isArray(transactions) ? transactions : []).filter(transaction => !linkedTransactions.includes(transaction));
-    customers.splice(index, 1);
+    customers.splice(customerIndex, 1);
     ['orderCustomerSelect', 'paymentCustomerSelect'].forEach(id => {
       const select = document.getElementById(id);
       if (select && select.value === String(customerToDelete.id)) select.value = '';
