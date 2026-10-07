@@ -5457,6 +5457,7 @@ function updateAuthUI(user) {
       if (overlay) overlay.style.display = 'none';
       const lockBtn = document.getElementById('nav-lock-btn');
       if (lockBtn) lockBtn.style.display = 'inline-block';
+      restoreActiveTab();
       applyRolePermissions();
     } else {
       setAppShellLocked(true);
@@ -6419,6 +6420,39 @@ function updateCurrencyDisplay() {
 }
 
 // ===== Tabs =====
+function getActiveTabStorageKey() {
+  if (!isPinVerified || !currentUserRole) return null;
+
+  const identity = [
+    currentUser?.uid || 'local',
+    currentUserRole,
+    currentLoggedInStaffName
+  ].join(':');
+  return `yoshop_active_tab_${encodeURIComponent(identity)}`;
+}
+
+function restoreActiveTab() {
+  const storageKey = getActiveTabStorageKey();
+  if (!storageKey) return;
+
+  let savedTabId;
+  try {
+    savedTabId = localStorage.getItem(storageKey);
+  } catch (error) {
+    console.warn('Could not restore the last active screen:', error);
+    return;
+  }
+
+  const section = savedTabId && document.getElementById(savedTabId);
+  const hasAccess = isFullAccessRole() || currentUserPermissions.includes(savedTabId);
+  if (!section || section.tagName !== 'SECTION' || !hasAccess) return;
+
+  const button = Array.from(document.querySelectorAll('nav button')).find((navButton) => (
+    navButton.getAttribute('onclick')?.includes(`showTab('${savedTabId}'`)
+  ));
+  showTab(savedTabId, button);
+}
+
 function showTab(tabId, btn) {
   const hasFullAccess = isFullAccessRole();
   if (!hasFullAccess && !currentUserPermissions.includes(tabId)) {
@@ -6435,6 +6469,15 @@ function showTab(tabId, btn) {
   if (activeSection) {
     activeSection.classList.add('active');
     activeSection.style.display = 'block';
+
+    const storageKey = getActiveTabStorageKey();
+    if (storageKey) {
+      try {
+        localStorage.setItem(storageKey, tabId);
+      } catch (error) {
+        console.warn('Could not save the active screen:', error);
+      }
+    }
   }
 
   document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
@@ -13530,7 +13573,16 @@ function openStaffPermissionsModal(index) {
     { id: 'transactionsTab', label: 'Sales' },
     { id: 'reportsTab', label: 'Reports' },
     { id: 'auditReportTab', label: 'Audit Report' },
-    { id: 'settingsTab', label: 'Settings' }
+    { id: 'settingsTab', label: 'Settings' },
+    { id: 'invoicesTab', label: 'Invoices' },
+    { id: 'expensesTab', label: 'Expenses' },
+    { id: 'printingTab', label: 'Printing' },
+    { id: 'exportTab', label: 'Export' },
+    { id: 'deleteTab', label: 'Delete' },
+    { id: 'discountApproval', label: 'Discount Approval' },
+    { id: 'priceOverride', label: 'Price Override' },
+    { id: 'lockPin', label: 'Lock PIN' },
+    { id: 'logoutAccount', label: 'Logout Account' }
   ];
 
   const actions = ACTION_PERMISSION_TOKENS.map(id => ({

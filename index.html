@@ -1806,8 +1806,12 @@
 
   <!-- Staff Permissions Modal -->
   <div id="staffPermissionsModal" class="receipt-modal-overlay">
-    <div class="custom-modal-card" style="max-width: 500px;">
-      <h3>Manage Permissions for <span id="permStaffName"></span></h3>
+    <div class="custom-modal-card staff-permissions-modal-card" style="max-width: 500px;">
+      <div class="staff-permissions-modal-header">
+        <h3>Manage Permissions for <span id="permStaffName"></span></h3>
+        <button type="button" class="staff-permissions-close" aria-label="Close Manage Permissions" title="Close"
+          onclick="document.getElementById('staffPermissionsModal').style.display='none'">&times;</button>
+      </div>
       <div id="editPermissionsGrid" style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; padding: 15px;">
         <!-- Permissions checkboxes will be injected here -->
       </div>

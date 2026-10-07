@@ -4186,6 +4186,56 @@ body.dark-mode #reportOutput table tfoot tr {
   box-sizing: border-box;
 }
 
+.staff-permissions-modal-card {
+  max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.staff-permissions-modal-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 0 8px;
+  background: var(--card);
+}
+
+.staff-permissions-modal-header h3 {
+  margin: 0;
+}
+
+.staff-permissions-close {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.staff-permissions-modal-header,
+.staff-permissions-modal-card > .receipt-actions {
+  flex-shrink: 0;
+}
+
+.staff-permissions-modal-card > .receipt-actions {
+  position: sticky;
+  bottom: 0;
+  padding: 8px 0 0;
+  background: var(--card);
+}
+
+#editPermissionsGrid {
+  flex: none;
+}
+
 /* Success Celebration Modal Specifics */
 .sale-success-card {
   max-width: 400px;
