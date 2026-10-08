@@ -1015,6 +1015,11 @@
             <h4>Total Sales</h4>
             <p id="totalBills">0</p>
           </div>
+          <div class="dashboard-card" data-dashboard-card-key="totalInvoices">
+            <span class="dashboard-card-icon" aria-hidden="true">📄</span>
+            <h4>Total Invoices</h4>
+            <p id="totalInvoicesCount">0</p>
+          </div>
           <div class="dashboard-card" data-dashboard-card-key="revenue">
             <span class="dashboard-card-icon" aria-hidden="true">📈</span>
             <h4>Total Revenue</h4>
@@ -1673,6 +1678,14 @@
                 <input type="checkbox" id="serviceMode" onchange="toggleServiceMode()">
                 <span>Disable stock tracking and use service workflow states</span>
               </label>
+            </div>
+            <div class="dashboard-card-settings">
+              <h4>Dashboard Cards</h4>
+              <label class="dashboard-card-setting-option dashboard-card-setting-all">
+                <input id="dashboardCardsShowAll" type="checkbox" onchange="toggleAllDashboardCards(this.checked)">
+                <span>Show all cards</span>
+              </label>
+              <div id="dashboardCardVisibilityOptions" class="dashboard-card-visibility-options"></div>
             </div>
             <div class="input-row">
               <label for="promoMessage">Promo Message:</label>

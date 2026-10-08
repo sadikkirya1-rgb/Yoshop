@@ -12438,6 +12438,10 @@ function updateDashboard() {
 
   const totalRevenue = dashboardRevenueMetrics.totalRevenue;
   const totalCost = dashboardRevenueMetrics.totalCost;
+  const totalInvoices = buildInvoiceListItems({
+    customers: Array.isArray(customers) ? customers : [],
+    transactions: filteredTransactions
+  }).length;
 
   const operatingExpenses = calculateTotalExpenses(filteredExpenses);
   // Use date-filtered purchase list for purchaseSummary so service expense
@@ -12485,6 +12489,7 @@ function updateDashboard() {
   document.getElementById('amountPaidDigitally').textContent = formatCurrency(dashboardPaymentMethodTotals.digital);
   document.getElementById('amountPaidCash').textContent = formatCurrency(dashboardPaymentMethodTotals.cash);
   document.getElementById('totalBills').textContent = totalBills;
+  document.getElementById('totalInvoicesCount').textContent = totalInvoices;
   document.getElementById('totalPurchases').textContent = formatCurrency(filteredPurchasesTotal);
   document.getElementById('totalExpenses').textContent = formatCurrency(totalExpenseCardAmount);
   const totalCostEl = document.getElementById('totalCost');
@@ -12516,6 +12521,7 @@ window.updateDashboard = updateDashboard;
 window.clearAllAdjustments = clearAllAdjustments;
 window.setDashboardFilter = setDashboardFilter;
 window.applyDashboardDateFilter = applyDashboardDateFilter;
+window.toggleAllDashboardCards = toggleAllDashboardCards;
 
 function getModernDashboardChartOptions({ title = '', legend = false, indexAxis = 'x' } = {}) {
   return {
@@ -13104,6 +13110,8 @@ async function saveSettings() {
   const transactionWindow = parseInt(document.getElementById('transactionEditWindowMinutes')?.value, 10);
   settings.transactionEditWindowMinutes = Number.isFinite(transactionWindow) ? Math.max(0, transactionWindow) : 30;
   settings.serviceMode = Boolean(document.getElementById('serviceMode')?.checked);
+  settings.dashboardCardVisibility = readDashboardCardVisibilitySettings();
+  applyDashboardCardVisibility(settings.dashboardCardVisibility);
   settings.promoMessage = document.getElementById('promoMessage').value.trim();
   settings.ShopAdminPIN = pin;
   settings = touchSettingsRecord({ ...settings, serviceMode: settings.serviceMode }, 'settings');
@@ -13361,6 +13369,7 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('confirmShopAdminPIN', settings.ShopAdminPIN || "");
   const serviceModeCheckbox = document.getElementById('serviceMode');
   if (serviceModeCheckbox) serviceModeCheckbox.checked = settings.serviceMode === true;
+  renderDashboardCardSettings();
 
   const logoPreview = document.getElementById('logoPreview');
   const clearLogoBtn = document.getElementById('clearLogoBtn');
@@ -13376,7 +13385,70 @@ function showAdminNoticesOverlay(notices = []) {
   }
 
   applyServiceModeUI(settings.serviceMode === true);
+  applyDashboardCardVisibility();
   checkNotificationStatus();
+}
+
+function getDashboardCards() {
+  return Array.from(document.querySelectorAll('#dashboardTab [data-dashboard-card-key]'));
+}
+
+function readDashboardCardVisibilitySettings() {
+  return Object.fromEntries(
+    Array.from(document.querySelectorAll('[data-dashboard-card-setting]'))
+      .map(input => [input.dataset.dashboardCardSetting, input.checked])
+  );
+}
+
+function renderDashboardCardSettings() {
+  const container = document.getElementById('dashboardCardVisibilityOptions');
+  if (!container) return;
+
+  const visibility = settings.dashboardCardVisibility || {};
+  container.replaceChildren();
+  getDashboardCards().forEach(card => {
+    const key = card.dataset.dashboardCardKey;
+    const title = card.querySelector('h4')?.textContent?.trim() || key;
+    const label = document.createElement('label');
+    label.className = 'dashboard-card-setting-option';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.dataset.dashboardCardSetting = key;
+    checkbox.checked = visibility[key] !== false;
+    checkbox.addEventListener('change', () => {
+      updateDashboardCardSettingsMaster();
+      applyDashboardCardVisibility(readDashboardCardVisibilitySettings());
+    });
+    const text = document.createElement('span');
+    text.textContent = title;
+    label.append(checkbox, text);
+    container.appendChild(label);
+  });
+
+  updateDashboardCardSettingsMaster();
+}
+
+function updateDashboardCardSettingsMaster() {
+  const master = document.getElementById('dashboardCardsShowAll');
+  const cardSettings = Array.from(document.querySelectorAll('[data-dashboard-card-setting]'));
+  if (!master || cardSettings.length === 0) return;
+  const visibleCount = cardSettings.filter(input => input.checked).length;
+  master.checked = visibleCount === cardSettings.length;
+  master.indeterminate = visibleCount > 0 && visibleCount < cardSettings.length;
+}
+
+function toggleAllDashboardCards(showAll) {
+  document.querySelectorAll('[data-dashboard-card-setting]').forEach(input => {
+    input.checked = showAll;
+  });
+  updateDashboardCardSettingsMaster();
+  applyDashboardCardVisibility(readDashboardCardVisibilitySettings());
+}
+
+function applyDashboardCardVisibility(visibility = settings.dashboardCardVisibility || {}) {
+  getDashboardCards().forEach(card => {
+    card.style.display = visibility[card.dataset.dashboardCardKey] === false ? 'none' : '';
+  });
 }
 
 function applyServiceModeUI(enabled) {
