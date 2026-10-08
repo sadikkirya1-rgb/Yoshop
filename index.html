@@ -145,7 +145,77 @@
   <!-- Edit Sale Modal -->
   <div id="transactionEditModal" class="receipt-modal-overlay">
     <div class="custom-modal-card payment-modal-content transaction-edit-modal-content">
-      <h3>Edit Sale</h3>
+      <h3>Edit Invoice</h3>
+      <div class="transaction-edit-details">
+        <label>Invoice Date
+          <input id="transactionEditDate" type="datetime-local" onchange="updateTransactionEditDetails('date', this.value)">
+        </label>
+        <label>Customer
+          <select id="transactionEditCustomerName" onchange="updateTransactionEditDetails('customerId', this.value)">
+            <option value="">Walk-in Customer</option>
+          </select>
+        </label>
+        <label>Customer Phone
+          <input id="transactionEditCustomerPhone" type="tel" onchange="updateTransactionEditDetails('customerPhone', this.value)">
+        </label>
+        <label>Customer Address
+          <input id="transactionEditCustomerAddress" type="text" onchange="updateTransactionEditDetails('customerAddress', this.value)">
+        </label>
+        <label>Sales By
+          <select id="transactionEditServedBy" onchange="updateTransactionEditDetails('servedBy', this.value)">
+            <option value="">Select staff</option>
+          </select>
+        </label>
+        <label>Reference / Table
+          <input id="transactionEditTableNo" type="text" onchange="updateTransactionEditDetails('tableNo', this.value)">
+        </label>
+        <label>Payment Method
+          <input id="transactionEditPaymentMethod" type="text" onchange="updateTransactionEditDetails('paymentMethod', this.value)">
+        </label>
+        <label>Order Status
+          <select id="transactionEditStatus" onchange="updateTransactionEditDetails('orderStatus', this.value)">
+            <option value="draft">Draft</option>
+            <option value="pending">Pending</option>
+            <option value="in_progress">In Progress</option>
+            <option value="ready">Ready</option>
+            <option value="completed">Completed</option>
+            <option value="canceled">Canceled</option>
+          </select>
+        </label>
+        <label>Order Type
+          <select id="transactionEditOrderType" onchange="updateTransactionEditDetails('orderType', this.value)">
+            <option value="product">Product</option>
+            <option value="service">Service</option>
+          </select>
+        </label>
+        <label>Amount Paid
+          <input id="transactionEditAmountPaid" type="number" min="0" step="0.01" onchange="updateTransactionEditDetails('amountPaid', this.value)">
+        </label>
+        <label>Delivery Fee
+          <input id="transactionEditDeliveryFeeInput" type="number" min="0" step="0.01" onchange="updateTransactionEditDetails('deliveryFee', this.value)">
+        </label>
+        <label>Discount
+          <input id="transactionEditDiscountInput" type="number" min="0" step="0.01" onchange="updateTransactionEditDetails('discount', this.value)">
+        </label>
+        <label>Tax Rate (%)
+          <input id="transactionEditTaxRate" type="number" min="0" step="0.01" onchange="updateTransactionEditDetails('taxRate', this.value)">
+        </label>
+        <label>Pickup Date
+          <input id="transactionEditPickupDate" type="date" onchange="updateTransactionEditDetails('pickupDate', this.value)">
+        </label>
+        <label>Dropoff Date
+          <input id="transactionEditDropoffDate" type="date" onchange="updateTransactionEditDetails('dropoffDate', this.value)">
+        </label>
+        <label>Service Duration
+          <input id="transactionEditDuration" type="text" onchange="updateTransactionEditDetails('duration', this.value)">
+        </label>
+        <label class="transaction-edit-wide">Invoice Note
+          <textarea id="transactionEditNote" rows="2" onchange="updateTransactionEditDetails('note', this.value)"></textarea>
+        </label>
+        <label class="transaction-edit-wide">Service Notes
+          <textarea id="transactionEditServiceNotes" rows="2" onchange="updateTransactionEditDetails('serviceNotes', this.value)"></textarea>
+        </label>
+      </div>
       <div class="transaction-edit-product-toolbar">
         <button type="button" class="btn" onclick="toggleTransactionProductForm()">➕ Add Product</button>
         <div id="transactionEditProductForm" class="transaction-edit-product-form" hidden>
@@ -168,9 +238,9 @@
         <div class="transaction-edit-total-cell"><span>Delivery Fee</span><strong id="transactionEditDeliveryFee">$0.00</strong></div>
         <div class="transaction-edit-total-cell transaction-edit-total"><span>Total</span><strong id="transactionEditTotal">$0.00</strong></div>
       </div>
-      <div class="receipt-actions">
-        <button type="button" class="btn btn-success" onclick="saveTransactionEdit()">💾 Save Changes</button>
-        <button type="button" class="btn cancel-btn" onclick="closeTransactionEditModal()">❌ Cancel</button>
+      <div class="receipt-actions transaction-edit-actions">
+        <button type="button" class="btn cancel-btn" onclick="closeTransactionEditModal()">Cancel</button>
+        <button type="button" class="btn btn-success" onclick="saveTransactionEdit()">Save</button>
       </div>
     </div>
   </div>

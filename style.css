@@ -2797,8 +2797,58 @@ section#menuTab.active {
 }
 
 .transaction-edit-modal-content {
-  width: min(96vw, 980px);
-  max-width: min(96vw, 980px);
+  width: min(96vw, 1080px);
+  max-width: min(96vw, 1080px);
+  max-height: min(94vh, 980px);
+  overflow-y: auto;
+}
+
+.transaction-edit-actions {
+  position: sticky;
+  bottom: -1px;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 12px -12px -12px;
+  padding: 12px;
+  border-top: 1px solid var(--border-color);
+  background: var(--card);
+}
+
+.transaction-edit-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 12px 0 16px;
+}
+
+.transaction-edit-details label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.transaction-edit-details .transaction-edit-wide {
+  grid-column: 1 / -1;
+}
+
+.transaction-edit-details input,
+.transaction-edit-details select,
+.transaction-edit-details textarea {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 8px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
 }
 
 .transaction-edit-product-toolbar {
@@ -2823,10 +2873,10 @@ section#menuTab.active {
 .transaction-edit-header,
 .transaction-edit-row {
   display: grid;
-  grid-template-columns: minmax(150px, 2fr) minmax(80px, 1fr) minmax(70px, 0.75fr) minmax(100px, 1fr) minmax(90px, 1fr) minmax(90px, 1fr) 32px;
+  grid-template-columns: minmax(150px, 2fr) minmax(65px, 0.8fr) minmax(65px, 0.75fr) minmax(90px, 1fr) minmax(85px, 0.9fr) minmax(110px, 1.4fr) minmax(90px, 1fr) 32px;
   gap: 8px;
   align-items: center;
-  min-width: 700px;
+  min-width: 780px;
 }
 
 .transaction-edit-header {

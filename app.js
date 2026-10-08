@@ -6433,19 +6433,27 @@ function getActiveTabStorageKey() {
 
 function restoreActiveTab() {
   const storageKey = getActiveTabStorageKey();
-  if (!storageKey) return;
-
-  let savedTabId;
-  try {
-    savedTabId = localStorage.getItem(storageKey);
-  } catch (error) {
-    console.warn('Could not restore the last active screen:', error);
-    return;
+  let storedTabId = null;
+  if (storageKey) {
+    try {
+      storedTabId = localStorage.getItem(storageKey);
+    } catch (error) {
+      console.warn('Could not restore the last active screen:', error);
+    }
   }
 
-  const section = savedTabId && document.getElementById(savedTabId);
-  const hasAccess = isFullAccessRole() || currentUserPermissions.includes(savedTabId);
-  if (!section || section.tagName !== 'SECTION' || !hasAccess) return;
+  let hashTabId = window.location.hash.slice(1);
+  try {
+    hashTabId = decodeURIComponent(hashTabId);
+  } catch (error) {
+    console.warn('Could not decode the active screen in the URL:', error);
+  }
+  const savedTabId = [hashTabId, storedTabId].find(tabId => {
+    const section = tabId && document.getElementById(tabId);
+    const hasAccess = isFullAccessRole() || currentUserPermissions.includes(tabId);
+    return section?.tagName === 'SECTION' && hasAccess;
+  });
+  if (!savedTabId) return;
 
   const button = Array.from(document.querySelectorAll('nav button')).find((navButton) => (
     navButton.getAttribute('onclick')?.includes(`showTab('${savedTabId}'`)
@@ -6477,6 +6485,11 @@ function showTab(tabId, btn) {
       } catch (error) {
         console.warn('Could not save the active screen:', error);
       }
+    }
+    try {
+      window.history.replaceState(window.history.state, '', `${window.location.pathname}${window.location.search}#${encodeURIComponent(tabId)}`);
+    } catch (error) {
+      console.warn('Could not save the active screen in the URL:', error);
     }
   }
 
@@ -10192,7 +10205,13 @@ function resetTransactionProductForm() {
 }
 
 function getTransactionEditTotals(transaction) {
-  const totals = calculateTransactionTotals(transaction.items);
+  const itemTotals = calculateTransactionTotals(transaction.items);
+  const taxRate = Math.max(0, Number(transaction.taxRate ?? settings?.taxRate ?? 0) || 0);
+  const totals = {
+    subtotal: itemTotals.subtotal,
+    tax: itemTotals.subtotal * (taxRate / 100),
+    total: itemTotals.subtotal * (1 + taxRate / 100)
+  };
   const deliveryFee = Math.max(0, Number(transaction.deliveryFee || 0));
   const storedDiscount = transaction.discount && typeof transaction.discount === 'object'
     ? (transaction.discount.amount ?? transaction.discount.value)
@@ -10205,6 +10224,162 @@ function getTransactionEditTotals(transaction) {
     discountAmount: finalDiscount,
     finalTotal: Math.max(0, totals.total + deliveryFee - finalDiscount)
   };
+}
+
+function populateTransactionEditDetails(transaction) {
+  const linkedCustomer = transaction.customerId
+    ? customers.find(customer => customer && [customer.id, customer.recordId].some(id => id && String(id) === String(transaction.customerId)))
+    : Array.isArray(customers)
+      ? customers.find(customer => customer && String(customer.name || '').trim() === String(transaction.customerNameReal || transaction.customerName || '').trim())
+    : null;
+  const customerSelect = document.getElementById('transactionEditCustomerName');
+  if (customerSelect) {
+    customerSelect.replaceChildren(new Option('Walk-in Customer', ''));
+    (Array.isArray(customers) ? customers : []).forEach((customer, index) => {
+      if (!customer) return;
+      const option = new Option(customer.name || 'Unnamed Customer', String(index));
+      customerSelect.add(option);
+    });
+    const linkedIndex = linkedCustomer ? customers.indexOf(linkedCustomer) : -1;
+    if (linkedIndex >= 0) {
+      customerSelect.value = String(linkedIndex);
+    } else if (transaction.customerId || transaction.customerNameReal || transaction.customerName) {
+      const label = transaction.customerNameReal || transaction.customer?.name || transaction.customerName || 'Unknown Customer';
+      const missingCustomer = new Option(`${label} (not in Customers)`, 'missing-customer');
+      missingCustomer.disabled = true;
+      customerSelect.add(missingCustomer);
+      customerSelect.value = 'missing-customer';
+    } else {
+      customerSelect.value = '';
+    }
+  }
+  const staffSelect = document.getElementById('transactionEditServedBy');
+  if (staffSelect) {
+    const currentStaffName = getTransactionStaffName(transaction);
+    const staffNames = new Set(
+      (Array.isArray(staff) ? staff : [])
+        .filter(member => member && member.isActive !== false && member.name)
+        .map(member => String(member.name).trim())
+        .filter(Boolean)
+    );
+    if (currentStaffName && currentStaffName !== 'N/A') staffNames.add(currentStaffName);
+    staffSelect.replaceChildren(new Option('Select staff', ''));
+    [...staffNames].sort((a, b) => a.localeCompare(b)).forEach(name => {
+      staffSelect.add(new Option(name, name));
+    });
+    staffSelect.value = currentStaffName === 'N/A' ? '' : currentStaffName;
+  }
+  const values = {
+    transactionEditDate: toDateTimeLocalValue(getInvoiceEffectiveDate(transaction)),
+    transactionEditCustomerPhone: linkedCustomer?.contact || linkedCustomer?.phone || linkedCustomer?.mobile || linkedCustomer?.whatsapp || transaction.customerPhone || transaction.customerContact || transaction.customer?.phone || '',
+    transactionEditCustomerAddress: linkedCustomer?.address || transaction.customerAddress || transaction.customer?.address || '',
+    transactionEditServedBy: getTransactionStaffName(transaction) === 'N/A' ? '' : getTransactionStaffName(transaction),
+    transactionEditTableNo: transaction.tableNo || '',
+    transactionEditPaymentMethod: transaction.paymentMethod || transaction.payment?.method || 'Cash',
+    transactionEditAmountPaid: Number(transaction.amountPaid ?? transaction.totalPaid ?? 0) || 0,
+    transactionEditDeliveryFeeInput: Number(transaction.deliveryFee || 0) || 0,
+    transactionEditDiscountInput: Number(transaction.discount?.amount ?? transaction.discount?.value ?? transaction.discountAmount ?? 0) || 0,
+    transactionEditTaxRate: Number(transaction.taxRate ?? (
+      Number(transaction.subtotal) > 0 ? (Number(transaction.tax || transaction.taxAmount || 0) / Number(transaction.subtotal)) * 100 : settings?.taxRate
+    ) ?? 0) || 0,
+    transactionEditPickupDate: transaction.serviceOrder?.pickupDate || '',
+    transactionEditDropoffDate: transaction.serviceOrder?.dropoffDate || '',
+    transactionEditDuration: transaction.serviceOrder?.duration || '',
+    transactionEditNote: transaction.note || '',
+    transactionEditServiceNotes: transaction.serviceOrder?.notes || ''
+  };
+  Object.entries(values).forEach(([id, value]) => {
+    const input = document.getElementById(id);
+    if (input) input.value = String(value);
+  });
+
+  const statusSelect = document.getElementById('transactionEditStatus');
+  if (statusSelect) {
+    const status = String(transaction.orderStatus || transaction.status || 'pending').toLowerCase();
+    if (status === 'draft') {
+      if (!Array.from(statusSelect.options).some(option => option.value === 'draft')) {
+        statusSelect.add(new Option('Draft', 'draft'));
+      }
+      statusSelect.value = 'draft';
+      statusSelect.disabled = true;
+    } else {
+      statusSelect.disabled = false;
+      statusSelect.querySelector('option[value="draft"]')?.remove();
+      if (!Array.from(statusSelect.options).some(option => option.value === status)) {
+        statusSelect.add(new Option(status.replace(/_/g, ' '), status));
+      }
+      statusSelect.value = status;
+    }
+  }
+
+  const orderTypeSelect = document.getElementById('transactionEditOrderType');
+  if (orderTypeSelect) {
+    const orderType = transaction.orderType || 'product';
+    if (!Array.from(orderTypeSelect.options).some(option => option.value === orderType)) {
+      orderTypeSelect.add(new Option(String(orderType), String(orderType)));
+    }
+    orderTypeSelect.value = orderType;
+  }
+
+  const amountPaidInput = document.getElementById('transactionEditAmountPaid');
+  if (amountPaidInput) amountPaidInput.disabled = String(transaction.orderStatus || transaction.status || '').toLowerCase() === 'draft';
+}
+
+function updateTransactionEditDetails(field, value) {
+  const transaction = transactionEditState.transaction;
+  if (!transaction) return;
+
+  if (field === 'date') {
+    const parsedDate = value ? new Date(value) : null;
+    if (!parsedDate || !Number.isFinite(parsedDate.getTime())) {
+      showAppAlert('Enter a valid invoice date and time.', 'Invalid Invoice Date');
+      return;
+    }
+    transaction.date = parsedDate.toISOString();
+    transaction.invoiceDate = transaction.date;
+  } else if (field === 'customerId') {
+    const customer = value === '' ? null : customers[Number(value)];
+    if (value !== '' && !customer) {
+      showAppAlert('Select a customer from the Customers list.', 'Customer Not Found');
+      return;
+    }
+    transaction.customerId = customer?.id || customer?.recordId || null;
+    transaction.customerNameReal = customer?.name || 'Walk-in Customer';
+    transaction.customerPhone = customer?.contact || customer?.phone || customer?.mobile || customer?.whatsapp || '';
+    transaction.customerContact = transaction.customerPhone;
+    transaction.customerWhatsApp = customer?.whatsapp || '';
+    transaction.customerAddress = customer?.address || '';
+    const phoneInput = document.getElementById('transactionEditCustomerPhone');
+    const addressInput = document.getElementById('transactionEditCustomerAddress');
+    if (phoneInput) phoneInput.value = transaction.customerPhone;
+    if (addressInput) addressInput.value = transaction.customerAddress;
+  } else if (['amountPaid', 'deliveryFee', 'discount', 'taxRate'].includes(field)) {
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0) {
+      showAppAlert('Enter a valid non-negative amount.', 'Invalid Invoice Amount');
+      return;
+    }
+    if (field === 'discount') {
+      transaction.discount = { ...(transaction.discount || {}), value: amount, amount, type: 'fixed' };
+    } else {
+      transaction[field] = amount;
+    }
+    if (field === 'amountPaid') transaction.totalPaid = amount;
+    updateTransactionEditTotals();
+  } else if (field === 'customerNameReal') {
+    transaction.customerNameReal = value.trim();
+  } else if (field === 'customerPhone') {
+    transaction.customerPhone = value.trim();
+    transaction.customerContact = value.trim();
+  } else if (field === 'pickupDate' || field === 'dropoffDate' || field === 'duration' || field === 'serviceNotes') {
+    const serviceField = field === 'serviceNotes' ? 'notes' : field;
+    transaction.serviceOrder = { ...(transaction.serviceOrder || {}), [serviceField]: value.trim() };
+  } else if (field === 'orderStatus') {
+    transaction.orderStatus = value;
+    transaction.status = value;
+  } else {
+    transaction[field] = value.trim();
+  }
 }
 
 function renderTransactionEditItems() {
@@ -10224,14 +10399,15 @@ function renderTransactionEditItems() {
       <select aria-label="Product" onchange="updateTransactionEditItem(${index}, 'name', this.value)">${options}</select>
       <input type="text" aria-label="Unit" placeholder="Unit" value="${escapeHtml(item.unit || '')}" onchange="updateTransactionEditItem(${index}, 'unit', this.value)">
       <input type="number" aria-label="Quantity" min="0" step="1" value="${Math.max(0, parseInt(item.qty, 10) || 0)}" onchange="updateTransactionEditItem(${index}, 'qty', this.value)">
-      <input type="number" aria-label="Unit price" min="0" step="0.01" value="${Math.max(0, Number(item.price || 0)).toFixed(2)}" onchange="updateTransactionEditItem(${index}, 'price', this.value)">
+      <input type="number" aria-label="Unit price" min="0" step="0.01" value="${Math.max(0, Number(item.basePrice ?? item.price ?? 0)).toFixed(2)}" onchange="updateTransactionEditItem(${index}, 'price', this.value)">
       <input type="number" aria-label="Discount" min="0" step="0.01" value="${Math.max(0, Number(item.discountAmount || 0)).toFixed(2)}" onchange="updateTransactionEditItem(${index}, 'discountAmount', this.value)">
-      <strong>${getCurrencySymbol()}${formatCurrency(Math.max(0, (Number(item.qty || 0) * Number(item.price || 0)) - Number(item.discountAmount || 0)))}</strong>
+      <input type="text" aria-label="Item notes" placeholder="Notes" value="${escapeHtml(item.notes || '')}" onchange="updateTransactionEditItem(${index}, 'notes', this.value)">
+      <strong>${getCurrencySymbol()}${formatCurrency(Math.max(0, (Number(item.qty || 0) * Number(item.basePrice ?? item.price ?? 0)) - Number(item.discountAmount || 0)))}</strong>
       <button type="button" class="icon-btn" title="Remove item" onclick="removeTransactionEditItem(${index})">&times;</button>
     </div>`;
   }).join('');
 
-  container.innerHTML = `<div class="transaction-edit-header"><span>Product</span><span>Unit</span><span>Qty</span><span>Unit Price</span><span>Discount</span><span>Total</span><span></span></div>${rows || '<p class="u-text-muted">No items. Add an item before saving.</p>'}`;
+  container.innerHTML = `<div class="transaction-edit-header"><span>Product</span><span>Unit</span><span>Qty</span><span>Unit Price</span><span>Discount</span><span>Notes</span><span>Total</span><span></span></div>${rows || '<p class="u-text-muted">No items. Add an item before saving.</p>'}`;
   updateTransactionEditTotals();
 }
 
@@ -10256,12 +10432,16 @@ function updateTransactionEditItem(index, field, value) {
   const item = transactionEditState.transaction?.items?.[index];
   if (!item) return;
   if (field === 'qty') item.qty = Math.max(0, parseInt(value, 10) || 0);
-  else if (field === 'price' || field === 'discountAmount') item[field] = Math.max(0, Number(value) || 0);
+  else if (field === 'price') {
+    item.price = Math.max(0, Number(value) || 0);
+    if (item.basePrice !== undefined) item.basePrice = item.price;
+  } else if (field === 'discountAmount') item[field] = Math.max(0, Number(value) || 0);
   else if (field === 'name') {
     item.name = value;
     const product = Array.isArray(menu) ? menu.find(entry => entry?.name === value) : null;
     if (product) {
       item.price = Number(product.price || 0);
+      if (item.basePrice !== undefined) item.basePrice = item.price;
       item.unit = product.unit || '';
       item.productId = product.recordId || product.id || item.productId || '';
     }
@@ -10395,15 +10575,30 @@ function editTransaction(index, permission = 'sales.edit') {
     }
   }
 
+  const linkedCustomer = source.customerId
+    ? customers.find(customer => customer && [customer.id, customer.recordId].some(id => id && String(id) === String(source.customerId)))
+    : customers.find(customer => customer && String(customer.name || '').trim() === String(source.customerNameReal || '').trim());
   resetTransactionProductForm();
   transactionEditState = {
     index,
     permission,
     transaction: {
       ...source,
-      items: (Array.isArray(source.items) ? source.items : []).map(item => ({ ...item }))
+      customerId: source.customerId || linkedCustomer?.id || linkedCustomer?.recordId || null,
+      customerNameReal: linkedCustomer?.name || source.customerNameReal,
+      customerPhone: source.customerPhone ?? source.customerContact ?? linkedCustomer?.phone ?? linkedCustomer?.contact,
+      customerAddress: source.customerAddress ?? linkedCustomer?.address,
+      items: (Array.isArray(source.items) ? source.items : []).map(item => ({ ...item })),
+      serviceOrder: { ...(source.serviceOrder || {}) },
+      taxRate: source.taxRate ?? (
+        Number(source.subtotal) > 0
+          ? (Number(source.tax || source.taxAmount || 0) / Number(source.subtotal)) * 100
+          : Number(settings?.taxRate || 0)
+      ),
+      amountPaid: source.amountPaid ?? source.totalPaid ?? calculateInvoicePaymentSummary(source).amountPaid
     }
   };
+  populateTransactionEditDetails(transactionEditState.transaction);
   renderTransactionEditItems();
   const modal = document.getElementById('transactionEditModal');
   if (modal) modal.style.display = 'flex';
@@ -10417,7 +10612,16 @@ async function saveTransactionEdit() {
 
   const items = draft.items
     .filter(item => item && String(item.name || '').trim() && (parseInt(item.qty, 10) || 0) > 0)
-    .map(item => ({ ...item, qty: parseInt(item.qty, 10) || 0, price: Math.max(0, Number(item.price) || 0), discountAmount: Math.max(0, Number(item.discountAmount) || 0) }));
+    .map(item => {
+      const price = Math.max(0, Number(item.basePrice ?? item.price) || 0);
+      return {
+        ...item,
+        qty: parseInt(item.qty, 10) || 0,
+        price,
+        basePrice: price,
+        discountAmount: Math.max(0, Number(item.discountAmount) || 0)
+      };
+    });
   if (items.length === 0) {
     await showAppAlert('Add at least one item with a quantity greater than zero.', 'Cannot Save Sale');
     return;
@@ -10427,9 +10631,16 @@ async function saveTransactionEdit() {
   const totals = getTransactionEditTotals(updatedDraft);
   const isDraftOriginal = String(original.orderStatus || original.status || '').toLowerCase() === 'draft';
   const oldTotal = Number(original.total || 0);
-  const amountPaid = isDraftOriginal ? 0 : (Number(original.amountPaid ?? original.totalPaid ?? totals.finalTotal) || 0);
-  const oldBalanceChange = Number.isFinite(Number(original.balanceChange)) ? Number(original.balanceChange) : amountPaid - oldTotal;
+  const oldAmountPaid = Number(original.amountPaid ?? original.totalPaid ?? oldTotal) || 0;
+  const amountPaid = isDraftOriginal ? 0 : Math.max(0, Number(updatedDraft.amountPaid ?? oldAmountPaid) || 0);
+  const oldBalanceChange = Number.isFinite(Number(original.balanceChange)) ? Number(original.balanceChange) : oldAmountPaid - oldTotal;
   const balanceChange = isDraftOriginal ? 0 : amountPaid - totals.finalTotal;
+  const originalStatus = String(original.orderStatus || original.status || 'pending').toLowerCase();
+  const updatedStatus = String(updatedDraft.orderStatus || updatedDraft.status || 'pending').toLowerCase();
+  if (isDraftOriginal && updatedStatus !== 'draft') {
+    await showAppAlert('Use Confirm Draft to finalize a draft invoice.', 'Draft Invoice');
+    return;
+  }
   const updatedTransaction = buildTransactionSyncPayload({
     ...original,
     ...updatedDraft,
@@ -10446,18 +10657,52 @@ async function saveTransactionEdit() {
     syncStatus: 'pending'
   });
 
-  const isCanceled = String(original.orderStatus || original.status || '').toLowerCase() === 'canceled';
   const hasRestoredStock = original.inventoryRestored === true || Boolean(original.inventoryRestoredAt);
-  if (!isCanceled && !isDraftOriginal && !hasRestoredStock && isStockTrackingEnabled()) {
-    await restoreTransactionStock(original);
-    updatedTransaction.items = updatedTransaction.items.map(item => {
-      const product = Array.isArray(menu) ? menu.find(entry => entry?.name === item.name) : null;
-      return {
-        ...item,
-        stockBeforeSale: product && Number.isFinite(Number(product.stock)) ? Number(product.stock) : null
-      };
-    });
-    deductTransactionStock(updatedTransaction);
+  if (!isDraftOriginal && isStockTrackingEnabled()) {
+    const wasCanceled = originalStatus === 'canceled' || originalStatus === 'cancelled';
+    const isCanceled = updatedStatus === 'canceled' || updatedStatus === 'cancelled';
+    if (!wasCanceled && isCanceled) {
+      if (!hasRestoredStock) await restoreTransactionStock(original);
+      updatedTransaction.inventoryRestored = true;
+      updatedTransaction.inventoryRestoredAt = original.inventoryRestoredAt || new Date().toISOString();
+    } else if (wasCanceled && !isCanceled) {
+      if (hasRestoredStock) {
+        updatedTransaction.items = updatedTransaction.items.map(item => {
+          const product = Array.isArray(menu) ? menu.find(entry => entry?.name === item.name) : null;
+          return {
+            ...item,
+            stockBeforeSale: product && Number.isFinite(Number(product.stock)) ? Number(product.stock) : null
+          };
+        });
+        deductTransactionStock(updatedTransaction);
+      }
+      updatedTransaction.inventoryRestored = false;
+      updatedTransaction.inventoryRestoredAt = null;
+    } else if (!isCanceled && !hasRestoredStock) {
+      await restoreTransactionStock(original);
+      updatedTransaction.items = updatedTransaction.items.map(item => {
+        const product = Array.isArray(menu) ? menu.find(entry => entry?.name === item.name) : null;
+        return {
+          ...item,
+          stockBeforeSale: product && Number.isFinite(Number(product.stock)) ? Number(product.stock) : null
+        };
+      });
+      deductTransactionStock(updatedTransaction);
+    }
+  }
+
+  const linkedCustomer = updatedTransaction.customerId
+    ? customers.find(entry => entry && [entry.id, entry.recordId].some(id => id && String(id) === String(updatedTransaction.customerId)))
+    : null;
+  if (linkedCustomer) {
+    if (updatedTransaction.customerNameReal) linkedCustomer.name = updatedTransaction.customerNameReal;
+    if (updatedTransaction.customerPhone !== undefined) {
+      linkedCustomer.phone = updatedTransaction.customerPhone;
+      linkedCustomer.contact = updatedTransaction.customerPhone;
+    }
+    if (updatedTransaction.customerAddress !== undefined) linkedCustomer.address = updatedTransaction.customerAddress;
+    updatedTransaction.customerNameReal = linkedCustomer.name || updatedTransaction.customerNameReal;
+    enqueueEnterpriseRecordChange('customers', linkedCustomer, 'upsert').catch(console.warn);
   }
 
   transactions[index] = updatedTransaction;
@@ -10465,14 +10710,28 @@ async function saveTransactionEdit() {
     transactionId: updatedTransaction.id || updatedTransaction.recordId || updatedTransaction.date,
     total: updatedTransaction.total
   });
-  if (updatedTransaction.customerId && !isDraftOriginal) {
-    const customer = customers.find(entry => entry && String(entry.id) === String(updatedTransaction.customerId));
-    if (customer) {
-      customer.balance = (Number(customer.balance) || 0) + balanceChange - oldBalanceChange;
-      customer.totalSales = (Number(customer.totalSales) || 0) + totals.finalTotal - oldTotal;
-      customer.subtotalSales = (Number(customer.subtotalSales) || 0) + totals.subtotal - Number(original.subtotal || 0);
-      enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
+  const previousCustomer = original.customerId
+    ? customers.find(customer => customer && [customer.id, customer.recordId].some(id => id && String(id) === String(original.customerId)))
+    : customers.find(customer => customer && String(customer.name || '').trim() === String(original.customerNameReal || '').trim());
+  const currentCustomer = updatedTransaction.customerId
+    ? customers.find(customer => customer && [customer.id, customer.recordId].some(id => id && String(id) === String(updatedTransaction.customerId)))
+    : null;
+  if (!isDraftOriginal) {
+    if (previousCustomer) {
+      previousCustomer.balance = (Number(previousCustomer.balance) || 0) - oldBalanceChange;
+      previousCustomer.totalSales = (Number(previousCustomer.totalSales) || 0) - oldTotal;
+      previousCustomer.subtotalSales = (Number(previousCustomer.subtotalSales) || 0) - Number(original.subtotal || 0);
+      previousCustomer.totalPaid = (Number(previousCustomer.totalPaid) || 0) - oldAmountPaid;
     }
+    if (currentCustomer) {
+      currentCustomer.balance = (Number(currentCustomer.balance) || 0) + balanceChange;
+      currentCustomer.totalSales = (Number(currentCustomer.totalSales) || 0) + totals.finalTotal;
+      currentCustomer.subtotalSales = (Number(currentCustomer.subtotalSales) || 0) + totals.subtotal;
+      currentCustomer.totalPaid = (Number(currentCustomer.totalPaid) || 0) + amountPaid;
+    }
+    new Set([previousCustomer, currentCustomer].filter(Boolean)).forEach(customer => {
+      enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
+    });
   }
 
   await saveState('transactions', transactions, { enqueueSync: false });
@@ -10483,6 +10742,7 @@ async function saveTransactionEdit() {
   renderTransactions();
   renderInvoices();
   updateDashboard();
+  if (originalStatus !== updatedStatus) sendOrderStatusNotification(index, updatedStatus);
   await showAppAlert('Sale updated successfully.', 'Sale Updated');
 }
 
@@ -10495,6 +10755,7 @@ window.resetTransactionProductForm = resetTransactionProductForm;
 window.addTransactionEditItem = addTransactionEditItem;
 window.updateTransactionEditItem = updateTransactionEditItem;
 window.removeTransactionEditItem = removeTransactionEditItem;
+window.updateTransactionEditDetails = updateTransactionEditDetails;
 window.saveTransactionEdit = saveTransactionEdit;
 window.closeTransactionEditModal = closeTransactionEditModal;
 window.confirmDraftTransaction = confirmDraftTransaction;
