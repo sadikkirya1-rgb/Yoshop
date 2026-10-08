@@ -1,6 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from '../invoice-utils.mjs';
+
+test('A4 invoice total summary row uses green cell styling for all invoices', () => {
+  const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+
+  assert.match(appSource, /tr\.grand\s*td\s*\{/i, 'A4 invoice total summary row should style the total cells directly so the green background appears on every invoice.');
+  assert.match(appSource, /background:\s*linear-gradient\(135deg,#10b981,#059669\)/i, 'A4 invoice total summary row should use the green invoice total styling.');
+});
 
 test('paginateInvoiceItems uses one shared thirty-row A4 page limit', () => {
   const items = Array.from({ length: 61 }, (_, index) => ({ id: index + 1 }));

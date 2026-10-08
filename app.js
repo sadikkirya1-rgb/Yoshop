@@ -9133,7 +9133,10 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
     .summary td { padding:4px 6px; border:none; font-size:0.72rem; }
     .summary td:first-child { text-align:left; }
     .summary td:last-child { text-align:right; }
-    .grand { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:15px; font-weight:bold; border-radius:10px; }
+    .grand, .grand td { background:linear-gradient(135deg,#10b981,#059669); color:white; font-size:15px; font-weight:bold; }
+    tr.grand td { padding:8px 6px; border:none; }
+    tr.grand td:first-child { text-align:left; }
+    tr.grand td:last-child { text-align:right; }
     .digital-stamp-wrap { position:absolute; left:50%; top:50%; transform:translate(-50%, -50%); z-index:2; pointer-events:none; }
     .digital-stamp { position:relative; width:136px; height:136px; border:3px solid rgba(37, 99, 235, 0.78); border-radius:20px; background:rgba(239,246,255,0.26); display:flex; align-items:center; justify-content:center; box-shadow:inset 0 0 0 2px rgba(37,99,235,0.12), inset 0 0 18px rgba(30,64,175,0.16), inset 0 2px 2px rgba(255,255,255,0.78), 0 0 0 1px rgba(37,99,235,0.16), 0 2px 0 rgba(255,255,255,0.7), 2px 4px 0 rgba(30,64,175,0.22); backdrop-filter:blur(0.3px); }
     .digital-stamp::before { content:''; position:absolute; inset:5px; border:2px solid rgba(37,99,235,0.34); border-radius:15px; transform:rotate(-1deg); box-shadow:inset 0 1px 1px rgba(255,255,255,0.65), 0 1px 1px rgba(30,64,175,0.16); }
