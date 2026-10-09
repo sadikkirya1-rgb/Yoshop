@@ -4,7 +4,7 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, collectionGroup, query, orderBy, documentId, limit, startAfter, getDocs, deleteDoc, deleteField, where, arrayUnion, Timestamp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, collectionGroup, query, orderBy, documentId, limit, startAfter, getDocs, getCountFromServer, deleteDoc, deleteField, where, arrayUnion, Timestamp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-functions.js";
@@ -3088,8 +3088,13 @@ let transactionCloudPagination = {
   lastDocument: null,
   hasMore: false,
   isLoading: false,
+  loadFailed: false,
+  useDocumentOrderFallback: false,
   generation: 0
 };
+let transactionIndexRetryTimer = null;
+let transactionIndexRetryDelayMs = 15000;
+let transactionIndexRetryUid = null;
 let staff = [];
 let dishCategories = [];
 let customers = [];
@@ -3753,11 +3758,9 @@ async function fetchGlobalAnalytics() {
     usersSnap.docs.forEach((userDoc, index) => {
       const userData = userDoc.data() || {};
       const shopData = shopProfiles[index];
+      if (userDoc.id === MASTER_APP_ADMIN_UID) return;
       if (userData.status === 'pending') pendingCount++;
       if (!shopData) return;
-
-      const menuItems = shopData.menu || [];
-      if (userDoc.id === MASTER_APP_ADMIN_UID && menuItems.length === 0) return;
 
       const userEmail = (userData.email || '').toLowerCase().trim();
       const effectiveEmail = (userDoc.id.includes('@') && !userEmail) ? userDoc.id.toLowerCase().trim() : userEmail;
@@ -4403,11 +4406,7 @@ async function refreshAppAdminShops() {
       const uid = userDoc.id;
       const shopData = shopProfiles[userIndex];
       if (!shopData) continue;
-
-      // 1b. Filtering: If it's the Master Admin account, only show it if they actually have a menu
-      // This prevents the Admin's internal document from appearing as a "Shop".
-      const menuItems = shopData.menu || [];
-      if (uid === MASTER_APP_ADMIN_UID && menuItems.length === 0) continue;
+      if (uid === MASTER_APP_ADMIN_UID) continue;
 
       const shopSettings = shopData.settings || {};
       const shopName = (shopSettings.name || '').toLowerCase().trim();
@@ -4589,7 +4588,7 @@ async function refreshAppAdminShopsTable() {
       const userData = userDoc.data() || {};
       const shopData = shopProfiles[userIndex];
       if (!shopData) continue;
-      if (uid === MASTER_APP_ADMIN_UID && (shopData.menu || []).length === 0) continue;
+      if (uid === MASTER_APP_ADMIN_UID) continue;
 
       const userEmail = (userData.email || '').toLowerCase().trim();
       const whatsappNum = userData.whatsapp || 'N/A';
@@ -4699,19 +4698,50 @@ async function monitorShop(shopUid, shopName) {
   isMonitoringMode = true;
 
   // 1. Stop current listeners and CLEAR local state to prevent data mixing between shops
-  if (unsubscribeSync) unsubscribeSync();
+  if (unsubscribeSync) {
+    unsubscribeSync();
+    unsubscribeSync = null;
+  }
+  if (unsubscribeTransactionsSync) {
+    unsubscribeTransactionsSync();
+    unsubscribeTransactionsSync = null;
+  }
+  stopEnterpriseRecordSyncs();
   // IMPORTANT: Reset isInitialLoadComplete so the backgrounding sync doesn't fire with empty state
   // and overwrite the target shop's Firestore data before the real-time listener loads it
   isInitialLoadComplete = false;
-  menu = []; activeOrders = {}; transactions = []; staff = []; dishCategories = []; customers = []; units = []; restockHistory = [];
+  menu = [];
+  activeOrders = {};
+  transactions = [];
+  staff = [];
+  dishCategories = [];
+  customers = [];
+  units = [];
+  expenses = [];
+  supplierList = [];
+  purchaseHistory = [];
+  wastageLossHistory = [];
+  restockHistory = [];
+  auditTrail = [];
+  lastRemoteDataHash = '';
+  userMetadata = { ...(userMetadata || {}), uid: shopUid };
 
   // 2. Fetch and update local metadata to match the shop we are monitoring
-  getDoc(doc(dbFirestore, "users", shopUid)).then(userSnap => {
+  try {
+    const userSnap = await getDoc(doc(dbFirestore, "users", shopUid));
     if (userSnap.exists()) {
       userMetadata = { ...userSnap.data(), uid: shopUid };
-      updateAuthUI(currentUser);
     }
-  });
+  } catch (error) {
+    console.warn('[ADMIN] Could not load monitored shop metadata:', error);
+  }
+  updateAuthUI(currentUser);
+
+  try {
+    await loadLocalBusinessDataForUid(shopUid, { refresh: true });
+  } catch (error) {
+    console.warn('[ADMIN] Could not hydrate monitored shop local data:', error);
+  }
 
   // Setup real-time sync with the TARGET shop's UID instead of admin's UID
   setupRealTimeSync(shopUid);
@@ -5249,14 +5279,15 @@ async function syncOfflineTransactions() {
 async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, { append = false } = {}) {
   if (!dbFirestore) {
     console.warn("[TX_LOAD] Firestore not initialized, skipping cloud transaction load");
-    return;
+    return false;
   }
 
   let generation;
   if (append) {
-    if (!transactionCloudPagination.hasMore || transactionCloudPagination.isLoading) return;
+    if (!transactionCloudPagination.hasMore || transactionCloudPagination.isLoading) return false;
     generation = transactionCloudPagination.generation;
     transactionCloudPagination.isLoading = true;
+    transactionCloudPagination.loadFailed = false;
   } else {
     generation = transactionCloudPagination.generation + 1;
     transactionCloudPagination = {
@@ -5266,6 +5297,8 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, 
       lastDocument: null,
       hasMore: false,
       isLoading: true,
+      loadFailed: false,
+      useDocumentOrderFallback: false,
       generation
     };
   }
@@ -5274,7 +5307,9 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, 
 
   try {
     const txRef = collection(dbFirestore, "users", uid, "transactions");
-    const constraints = [orderBy("date", "desc")];
+    const constraints = transactionCloudPagination.useDocumentOrderFallback
+      ? []
+      : [orderBy("date", "desc")];
     if (startDate || endDate) {
       // Note: Range queries with OrderBy require a composite index in Firestore.
       // If you see an error in the console, click the provided link to create the index.
@@ -5286,12 +5321,25 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, 
     }
     constraints.push(limit(TRANSACTION_CLOUD_PAGE_SIZE));
 
-    const snap = await getDocs(query(txRef, ...constraints));
+    let snap;
+    try {
+      snap = await getDocs(query(txRef, ...constraints));
+    } catch (error) {
+      const canUseFallback = !append && !startDate && !endDate
+        && error.code === 'failed-precondition'
+        && /index is not ready yet/i.test(error.message || '');
+      if (!canUseFallback) throw error;
+
+      transactionCloudPagination.useDocumentOrderFallback = true;
+      console.warn('[TX_LOAD] Date index is building; loading transactions by document ID temporarily.');
+      snap = await getDocs(query(txRef, limit(TRANSACTION_CLOUD_PAGE_SIZE)));
+    }
     if (transactionCloudPagination.generation !== generation) return;
 
     transactionCloudPagination.lastDocument = snap.docs[snap.docs.length - 1] || transactionCloudPagination.lastDocument;
     transactionCloudPagination.hasMore = snap.docs.length === TRANSACTION_CLOUD_PAGE_SIZE;
     transactionCloudPagination.isLoading = false;
+    transactionCloudPagination.loadFailed = false;
 
     const cloudTransactions = [];
     snap.forEach(transactionDoc => {
@@ -5311,6 +5359,8 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, 
       ? localTransactions
       : (startDate || endDate)
         ? retainTransactionsOutsideDateRange(localTransactions, startDate, endDate)
+        : transactionCloudPagination.useDocumentOrderFallback
+          ? localTransactions
         : localTransactions.filter(transaction => {
         if (!transaction || transaction.synced !== true) return true;
         const transactionTime = new Date(transaction.date || 0).getTime();
@@ -5319,19 +5369,46 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, 
     transactions = deduplicateTransactions(
       mergeTransactionsPreservingDuplicates(mergeBase, cloudTransactions)
     );
+    if (transactionCloudPagination.useDocumentOrderFallback) {
+      transactions.sort((left, right) => {
+        const leftTime = new Date(left?.date || 0).getTime();
+        const rightTime = new Date(right?.date || 0).getTime();
+        return (Number.isFinite(rightTime) ? rightTime : 0) - (Number.isFinite(leftTime) ? leftTime : 0);
+      });
+    }
 
     console.log("[TX_LOAD] After merge/dedup:", transactions.length, "transactions in memory");
     await saveState('transactions', transactions.slice(0, 1000), { enqueueSync: false });
     renderTransactions();
     updateDashboard();
+    if (!append && transactionCloudPagination.hasMore) {
+      loadAllTransactionsFromCloud(uid, generation).catch(error => {
+        console.warn('[TX_LOAD] Background transaction paging failed:', error);
+      });
+    }
+    return true;
   } catch (e) {
     if (transactionCloudPagination.generation === generation) {
       transactionCloudPagination.isLoading = false;
+      transactionCloudPagination.loadFailed = true;
     }
     console.error("[TX_LOAD] Error loading transactions from cloud:", e.code, e.message);
     // Still attempt to render what we have locally
     if (typeof renderTransactions === 'function') renderTransactions();
     if (typeof updateDashboard === 'function') updateDashboard();
+    return false;
+  }
+}
+
+async function loadAllTransactionsFromCloud(uid, generation) {
+  while (
+    transactionCloudPagination.generation === generation &&
+    transactionCloudPagination.uid === uid &&
+    transactionCloudPagination.hasMore
+  ) {
+    const page = transactionCloudPagination;
+    const loaded = await loadTransactionsFromCloud(uid, page.startDate, page.endDate, { append: true });
+    if (!loaded) return;
   }
 }
 
@@ -12390,6 +12467,12 @@ let adminShopsStatusChartInstance;
 let staffRevenueChartInstance;
 let reportProfitChartInstance;
 let monthlyRevenueChartInstance;
+let dashboardRefreshDurationMs = null;
+let dashboardNetworkLatencyMs = null;
+let dashboardNetworkProbeAt = 0;
+let dashboardTransactionCountUid = null;
+let dashboardTransactionCountAttemptedUid = null;
+let dashboardTransactionTotalCount = null;
 
 let dashboardDateFilterMode = 'today';
 let presenceHeartbeat = null;
@@ -12666,6 +12749,7 @@ function initializeDashboardFilters() {
 }
 
 function updateDashboard() {
+  const dashboardRefreshStartedAt = performance.now();
   // Initialize with defaults even if data is not yet loaded
   // This ensures the dashboard always shows cards with 0 values
   if (!menu) menu = [];
@@ -12777,7 +12861,171 @@ function updateDashboard() {
   } catch (error) {
     console.error('Error rendering dashboard charts:', error);
   }
+
+  dashboardRefreshDurationMs = performance.now() - dashboardRefreshStartedAt;
+  updateDashboardHealthCards();
 }
+
+function setDashboardHealthMeter(cardId, scoreId, score, label) {
+  const card = document.getElementById(cardId);
+  const value = document.getElementById(scoreId);
+  if (!card || !value) return;
+
+  if (!Number.isFinite(score)) {
+    card.style.setProperty('--meter-value', '0%');
+    card.dataset.state = 'unknown';
+    value.textContent = 'N/A';
+    card.setAttribute('aria-label', `${label} unavailable`);
+    return;
+  }
+
+  const boundedScore = Math.max(0, Math.min(100, Math.round(score)));
+  card.style.setProperty('--meter-value', `${boundedScore}%`);
+  card.dataset.state = boundedScore >= 75 ? 'good' : boundedScore >= 45 ? 'fair' : 'poor';
+  value.textContent = `${boundedScore}%`;
+  card.setAttribute('aria-label', `${label}: ${boundedScore}%`);
+}
+
+function measureDashboardNetworkLatency() {
+  if (!navigator.onLine || Date.now() - dashboardNetworkProbeAt < 60000) return;
+  dashboardNetworkProbeAt = Date.now();
+  const probeId = dashboardNetworkProbeAt;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  const startedAt = performance.now();
+
+  fetch(new URL(`manifest.json?healthcheck=${probeId}`, window.location.href), {
+    cache: 'no-store',
+    credentials: 'same-origin',
+    signal: controller.signal
+  }).then(response => {
+    if (!response.ok) throw new Error(`Network probe returned ${response.status}`);
+    if (dashboardNetworkProbeAt === probeId) dashboardNetworkLatencyMs = performance.now() - startedAt;
+  }).catch(() => {
+    if (dashboardNetworkProbeAt === probeId) dashboardNetworkLatencyMs = null;
+  }).finally(() => {
+    clearTimeout(timeout);
+    if (dashboardNetworkProbeAt === probeId) updateDashboardHealthCards();
+  });
+}
+
+function refreshDashboardNetworkHealth() {
+  dashboardNetworkProbeAt = 0;
+  dashboardNetworkLatencyMs = null;
+  updateDashboardHealthCards();
+}
+
+function loadDashboardTransactionTotalCount(uid) {
+  if (dashboardTransactionCountUid !== uid) {
+    dashboardTransactionCountUid = uid;
+    dashboardTransactionCountAttemptedUid = null;
+    dashboardTransactionTotalCount = null;
+  }
+  if (!uid || !dbFirestore || !navigator.onLine || dashboardTransactionCountAttemptedUid === uid) return;
+
+  dashboardTransactionCountAttemptedUid = uid;
+  getCountFromServer(collection(dbFirestore, 'users', uid, 'transactions'))
+    .then(snapshot => {
+      if (dashboardTransactionCountUid !== uid || getEffectiveUid() !== uid) return;
+      dashboardTransactionTotalCount = snapshot.data().count;
+      updateDashboardHealthCards();
+    })
+    .catch(error => {
+      if (dashboardTransactionCountUid === uid) {
+        console.warn('[DASHBOARD] Could not count shop transactions:', error);
+      }
+    });
+}
+
+function updateDashboardHealthCards() {
+  const cpuThreads = Number(navigator.hardwareConcurrency) || null;
+  const memoryGb = Number(navigator.deviceMemory) || null;
+  const capabilityScores = [];
+  if (cpuThreads) capabilityScores.push(Math.min(100, cpuThreads / 8 * 100));
+  if (memoryGb) capabilityScores.push(Math.min(100, memoryGb / 8 * 100));
+  const deviceScore = capabilityScores.length
+    ? capabilityScores.reduce((sum, score) => sum + score, 0) / capabilityScores.length
+    : null;
+  const platform = navigator.userAgentData?.platform || navigator.platform || 'Unknown';
+  const display = window.screen?.width && window.screen?.height
+    ? `${window.screen.width} × ${window.screen.height}`
+    : 'Unavailable';
+
+  setDashboardHealthMeter('deviceHealthMeter', 'deviceHealthScore', deviceScore, 'Device capability');
+  document.getElementById('deviceHealthCpu').textContent = cpuThreads ? `${cpuThreads} threads` : 'Unavailable';
+  document.getElementById('deviceHealthMemory').textContent = memoryGb ? `At least ${memoryGb} GB` : 'Unavailable';
+  document.getElementById('deviceHealthDisplay').textContent = `${platform} · ${display}`;
+
+  const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+  const effectiveType = connection?.effectiveType;
+  const online = navigator.onLine;
+  const latencyMs = Number.isFinite(dashboardNetworkLatencyMs)
+    ? dashboardNetworkLatencyMs
+    : Number.isFinite(connection?.rtt) && connection.rtt > 0 ? connection.rtt : null;
+  let networkScore = null;
+  if (!online) networkScore = 0;
+  else if (latencyMs !== null) networkScore = Math.max(0, 100 - Math.max(0, latencyMs - 50) / 15);
+  else if (effectiveType) networkScore = ({ 'slow-2g': 15, '2g': 35, '3g': 65, '4g': 90 })[effectiveType] ?? null;
+
+  setDashboardHealthMeter('networkHealthMeter', 'networkHealthScore', networkScore, 'Network strength');
+  document.getElementById('networkHealthStatus').textContent = online ? 'Online' : 'Offline';
+  document.getElementById('networkHealthType').textContent = effectiveType
+    ? `${effectiveType}${Number.isFinite(connection?.downlink) ? ` · ${connection.downlink} Mbps` : ''}`
+    : 'Not reported';
+  document.getElementById('networkHealthLatency').textContent = latencyMs !== null
+    ? `${Math.round(latencyMs)} ms`
+    : online ? 'Measuring' : 'Unavailable';
+
+  const navigation = performance.getEntriesByType('navigation')[0];
+  const pageLoadMs = navigation?.loadEventEnd > 0 ? navigation.loadEventEnd - navigation.startTime : null;
+  const refreshScore = Number.isFinite(dashboardRefreshDurationMs)
+    ? Math.max(0, 100 - Math.max(0, dashboardRefreshDurationMs - 50) / 20)
+    : null;
+  setDashboardHealthMeter('appHealthMeter', 'appHealthScore', refreshScore, 'App performance');
+  document.getElementById('appHealthRefresh').textContent = Number.isFinite(dashboardRefreshDurationMs)
+    ? `${Math.round(dashboardRefreshDurationMs)} ms`
+    : 'Measuring';
+  document.getElementById('appHealthLoad').textContent = pageLoadMs !== null
+    ? `${(pageLoadMs / 1000).toFixed(2)} s`
+    : 'Unavailable';
+  const loadedRows = [
+    transactions,
+    menu,
+    customers,
+    expenses,
+    purchaseHistory,
+    wastageLossHistory,
+    staff,
+    dishCategories,
+    units
+  ].reduce(
+    (total, records) => total + (Array.isArray(records) ? records.length : 0), 0
+  );
+  const uid = getEffectiveUid();
+  loadDashboardTransactionTotalCount(uid);
+  const transactionRows = Array.isArray(transactions) ? transactions.length : 0;
+  const totalRows = Number.isFinite(dashboardTransactionTotalCount)
+    ? Math.max(loadedRows, loadedRows - transactionRows + dashboardTransactionTotalCount)
+    : null;
+  document.getElementById('appHealthRows').textContent = `${loadedRows.toLocaleString()} / ${Number.isFinite(totalRows) ? totalRows.toLocaleString() : '…'}`;
+
+  measureDashboardNetworkLatency();
+}
+
+window.addEventListener('online', () => {
+  dashboardTransactionCountAttemptedUid = null;
+  refreshDashboardNetworkHealth();
+  const page = transactionCloudPagination;
+  if (page.uid && page.loadFailed && !page.isLoading && getEffectiveUid() === page.uid) {
+    if (page.hasMore) {
+      loadAllTransactionsFromCloud(page.uid, page.generation);
+    } else {
+      loadTransactionsFromCloud(page.uid, page.startDate, page.endDate);
+    }
+  }
+});
+window.addEventListener('offline', refreshDashboardNetworkHealth);
+navigator.connection?.addEventListener('change', refreshDashboardNetworkHealth);
 
 window.updateDashboard = updateDashboard;
 window.clearAllAdjustments = clearAllAdjustments;
@@ -21083,6 +21331,37 @@ function notifyTransaction(tx, isFromOtherDevice = false) {
   playNotificationSound();
 }
 
+function scheduleTransactionIndexRetry(uid) {
+  if (transactionIndexRetryTimer && transactionIndexRetryUid === uid) return;
+  if (transactionIndexRetryTimer) clearTransactionIndexRetry();
+
+  const retryDelayMs = transactionIndexRetryDelayMs;
+  transactionIndexRetryUid = uid;
+  console.info(`[SYNC] Transaction index is still building; retrying in ${Math.round(retryDelayMs / 1000)} seconds.`);
+  transactionIndexRetryTimer = setTimeout(() => {
+    transactionIndexRetryTimer = null;
+    transactionIndexRetryUid = null;
+    if (getEffectiveUid() !== uid) {
+      transactionIndexRetryDelayMs = 15000;
+      return;
+    }
+
+    transactionIndexRetryDelayMs = Math.min(transactionIndexRetryDelayMs * 2, 120000);
+    if (!navigator.onLine) {
+      scheduleTransactionIndexRetry(uid);
+      return;
+    }
+    setupRealTimeTransactionsSync(uid);
+  }, retryDelayMs);
+}
+
+function clearTransactionIndexRetry() {
+  if (transactionIndexRetryTimer) clearTimeout(transactionIndexRetryTimer);
+  transactionIndexRetryTimer = null;
+  transactionIndexRetryDelayMs = 15000;
+  transactionIndexRetryUid = null;
+}
+
 function setupRealTimeTransactionsSync(uid) {
   if (!dbFirestore) return;
   if (unsubscribeTransactionsSync) unsubscribeTransactionsSync();
@@ -21103,6 +21382,12 @@ function setupRealTimeTransactionsSync(uid) {
       q,
       { includeMetadataChanges: true },
       async (snap) => {
+        clearTransactionIndexRetry();
+        if (transactionCloudPagination.uid === uid && transactionCloudPagination.useDocumentOrderFallback) {
+          loadTransactionsFromCloud(uid).catch(error => {
+            console.warn('[TX_LOAD] Failed to restore date ordering after index became ready:', error);
+          });
+        }
         let hasNewChanges = false;
         snap.docChanges().forEach((change) => {
           if (change.type === "added") {
@@ -21132,6 +21417,9 @@ function setupRealTimeTransactionsSync(uid) {
       (error) => {
         captureError('TX_SYNC_LISTENER', error, { uid });
         console.warn('[SYNC] Transaction listener error:', error.code, error.message);
+        if (error.code === 'failed-precondition' && /index is not ready yet/i.test(error.message || '')) {
+          scheduleTransactionIndexRetry(uid);
+        }
       }
     );
   } catch (error) {
