@@ -4,13 +4,13 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, query, orderBy, limit, getDocs, deleteDoc, where, arrayUnion } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, collectionGroup, query, orderBy, documentId, limit, startAfter, getDocs, deleteDoc, deleteField, where, arrayUnion, Timestamp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-functions.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail, pruneExpiredAuditEntries, acquireRecordLock, releaseRecordLock } from './audit-utils.mjs';
-import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity } from './admin-utils.mjs';
+import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity, mapWithConcurrency } from './admin-utils.mjs';
 import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField } from './sync-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
@@ -20,7 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, retainTransactionsOutsideDateRange } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -1364,13 +1364,8 @@ async function setupTenantShopParameters(uid) {
       });
     } else {
       const cloudData = snap.data() || {};
-      const recoveredMenu = getCloudMenuItems(cloudData);
       const recoveredCategories = getCloudCategoryList(cloudData);
       const compatibilityPatch = {};
-
-      if ((!Array.isArray(cloudData.menu) || cloudData.menu.length === 0) && recoveredMenu.length > 0) {
-        compatibilityPatch.menu = recoveredMenu;
-      }
 
       if ((!Array.isArray(cloudData.dishCategories) || cloudData.dishCategories.length === 0) && recoveredCategories.length > 0) {
         compatibilityPatch.dishCategories = recoveredCategories;
@@ -2150,7 +2145,7 @@ function getCloudPayloadForSyncAction(action) {
   if (!action || !action.entityType || !action.payload) return null;
   const value = action.payload.value ?? action.payload;
   switch (action.entityType) {
-    case 'products': return { menu: Array.isArray(value) ? value : [] };
+    case 'products': return null;
     case 'staff': return { staff: Array.isArray(value) ? value : [] };
     case 'categories': return { dishCategories: Array.isArray(value) ? value : [] };
     case 'brands': return { brands: Array.isArray(value) ? value : [] };
@@ -2510,6 +2505,7 @@ async function syncEnterpriseRecordAction(action) {
   if (!collectionName) return false;
 
   const payload = action.payload || {};
+  if (collectionName === 'products' && Array.isArray(payload.value)) return true;
   const recordId = payload.recordId || payload.id || action.recordId || action.id;
   if (!recordId) return true;
 
@@ -2618,18 +2614,33 @@ function getProductDuplicateKey(record = {}) {
   return '';
 }
 
-async function cleanupDuplicateProductRecordsInCloud(uid) {
+async function cleanupDuplicateProductRecordsInCloud(uid, recordsOverride = null) {
   if (!uid || !dbFirestore) return;
 
   try {
-    const productsRef = collection(dbFirestore, 'users', uid, 'products');
-    const snapshot = await getDocs(productsRef);
-    const documents = snapshot.docs.map(docSnapshot => ({
-      id: docSnapshot.id,
-      ...docSnapshot.data()
-    }));
+    const cleanupMetadataKey = `productDuplicateCleanup:${uid}`;
+    if (localRepository && typeof localRepository.getMetadata === 'function'
+      && await localRepository.getMetadata(cleanupMetadataKey)) return;
 
-    if (!Array.isArray(documents) || documents.length < 2) return;
+    const documents = Array.isArray(recordsOverride) ? recordsOverride : [];
+    if (!Array.isArray(recordsOverride)) {
+      const productsRef = collection(dbFirestore, 'users', uid, 'products');
+      let lastDocument = null;
+      while (true) {
+        const constraints = [orderBy(documentId(), 'asc'), ...(lastDocument ? [startAfter(lastDocument)] : []), limit(PRODUCT_CLOUD_PAGE_SIZE)];
+        const snapshot = await getDocs(query(productsRef, ...constraints));
+        documents.push(...snapshot.docs.map(docSnapshot => ({id: docSnapshot.id, ...docSnapshot.data()})));
+        if (snapshot.size < PRODUCT_CLOUD_PAGE_SIZE) break;
+        lastDocument = snapshot.docs[snapshot.docs.length - 1];
+      }
+    }
+
+    if (!Array.isArray(documents) || documents.length < 2) {
+      if (localRepository && typeof localRepository.setMetadata === 'function') {
+        await localRepository.setMetadata(cleanupMetadataKey, new Date().toISOString());
+      }
+      return;
+    }
 
     const groups = new Map();
     documents.forEach(record => {
@@ -2639,7 +2650,12 @@ async function cleanupDuplicateProductRecordsInCloud(uid) {
     });
 
     const duplicates = [...groups.values()].filter(group => group.length > 1);
-    if (duplicates.length === 0) return;
+    if (duplicates.length === 0) {
+      if (localRepository && typeof localRepository.setMetadata === 'function') {
+        await localRepository.setMetadata(cleanupMetadataKey, new Date().toISOString());
+      }
+      return;
+    }
 
     for (const group of duplicates) {
       const canonicalRecord = getCanonicalProductCatalog(group, { includeOnlySellable: false })[0] || group[0];
@@ -2662,23 +2678,67 @@ async function cleanupDuplicateProductRecordsInCloud(uid) {
       await Promise.allSettled(duplicatesToDelete.map(record => deleteDoc(doc(dbFirestore, 'users', uid, 'products', String(record?.id || record?.recordId || '')))));
     }
 
+    if (localRepository && typeof localRepository.setMetadata === 'function') {
+      await localRepository.setMetadata(cleanupMetadataKey, new Date().toISOString());
+    }
     console.info('[DB_CLEANUP] Consolidated duplicate product records in Firestore.');
   } catch (error) {
     console.warn('[DB_CLEANUP] Duplicate product cleanup failed:', error);
   }
 }
 
+async function compactLegacyProductProfile(uid) {
+  if (!uid || !dbFirestore) return;
+  const profileRef = doc(dbFirestore, 'users', uid, 'data', 'shop_profile');
+  const profileSnapshot = await getDoc(profileRef);
+  if (!profileSnapshot.exists()) return;
+  const profile = profileSnapshot.data() || {};
+  const legacyFields = ['menu', 'products', 'productList', 'items'];
+  if (!legacyFields.some(field => Array.isArray(profile[field]))) return;
+  await setDoc(profileRef, Object.fromEntries(legacyFields.map(field => [field, deleteField()])), {merge: true});
+}
+
+async function backfillProductRecords(uid, records = []) {
+  const products = normalizeProductCatalog(Array.isArray(records) ? records : []);
+  await mapWithConcurrency(products, 10, async record => {
+    const hydratedRecord = hydrateEnterpriseRecord('products', record);
+    const recordId = String(hydratedRecord.recordId || hydratedRecord.id || '').trim();
+    if (!recordId) return;
+    const productRef = doc(dbFirestore, 'users', uid, 'products', recordId);
+    await setDoc(productRef, sanitizeForFirestore({
+      ...hydratedRecord,
+      id: recordId,
+      recordId,
+      deleted: false,
+      deletedAt: null,
+      operation: null,
+      syncStatus: 'synced',
+      lastSyncedAt: new Date().toISOString(),
+      lastSyncAt: new Date().toISOString()
+    }), {merge: true});
+  });
+}
+
 async function backfillEnterpriseRecordCollectionsOnce(uid) {
   if (!uid || !dbFirestore || !localRepositoryReady || !localRepository) return;
 
+  const profileSnapshot = await getDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'));
+  const legacyProducts = profileSnapshot.exists() ? getCloudMenuItems(profileSnapshot.data() || {}) : [];
   const metadataKey = `enterpriseRecordBackfill:${uid}`;
   if (typeof localRepository.getMetadata === 'function') {
     const alreadyBackfilled = await localRepository.getMetadata(metadataKey);
-    if (alreadyBackfilled) return;
+    if (alreadyBackfilled) {
+      if (legacyProducts.length) {
+        const productProbe = await getDocs(query(collection(dbFirestore, 'users', uid, 'products'), limit(1)));
+        if (productProbe.empty) await backfillProductRecords(uid, legacyProducts);
+      }
+      await compactLegacyProductProfile(uid);
+      return;
+    }
   }
 
   const backfillGroups = [
-    { collectionName: 'products', entityType: 'products', records: menu },
+    { collectionName: 'products', entityType: 'products', records: [...legacyProducts, ...(Array.isArray(menu) ? menu : [])] },
     { collectionName: 'categories', entityType: 'categories', records: getCategoryRecordsFromList(dishCategories) },
     { collectionName: 'customers', entityType: 'customers', records: customers },
     { collectionName: 'staff', entityType: 'staff', records: staff },
@@ -2730,6 +2790,7 @@ async function backfillEnterpriseRecordCollectionsOnce(uid) {
   if (typeof localRepository.setMetadata === 'function') {
     await localRepository.setMetadata(metadataKey, new Date().toISOString());
   }
+  await compactLegacyProductProfile(uid);
 }
 
 
@@ -3013,6 +3074,22 @@ let stockTablePage = 1;
 let stockTableSearchTerm = '';
 let activeOrders = {};
 let transactions = [];
+const TRANSACTION_CLOUD_PAGE_SIZE = 200;
+let transactionVisibleRowCount = 50;
+const PRODUCT_RENDER_PAGE_SIZE = 100;
+const PRODUCT_CLOUD_PAGE_SIZE = 200;
+let menuVisibleCountsByCategory = new Map();
+let menuRenderFilterKey = '';
+let productTableVisibleRowCount = PRODUCT_RENDER_PAGE_SIZE;
+let transactionCloudPagination = {
+  uid: null,
+  startDate: null,
+  endDate: null,
+  lastDocument: null,
+  hasMore: false,
+  isLoading: false,
+  generation: 0
+};
 let staff = [];
 let dishCategories = [];
 let customers = [];
@@ -3269,7 +3346,11 @@ function initAppAdminDashboardLayout() {
       
       <!-- Dashboard View -->
       <div id="admin-dashboard-view">
-        <h3 class="u-mb-20">📊 App Admin Dashboard</h3>
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+          <h3 class="u-mb-20">📊 App Admin Dashboard</h3>
+          <button id="adminAnalyticsBackfillButton" class="btn btn-secondary" onclick="runAdminSalesAnalyticsBackfill()">Build historical analytics</button>
+        </div>
+        <p id="adminAnalyticsBackfillStatus" role="status" style="min-height:1.25em;"></p>
         <div class="dashboard-grid u-mb-20">
           <div class="dashboard-card">
             <h4>Total Global Revenue</h4>
@@ -3572,7 +3653,7 @@ function switchAppAdminView(view) {
 }
 
 /**
- * Aggregates sales and data across all registered shops
+ * Aggregates sales and data across all registered shops without downloading full sales histories.
  */
 async function fetchGlobalAnalytics() {
   if (currentUserRole !== 'appAdmin') return;
@@ -3585,103 +3666,145 @@ async function fetchGlobalAnalytics() {
   if (displayRevenue) displayRevenue.textContent = 'Calculating...';
 
   try {
-    const usersSnap = await getDocs(collection(dbFirestore, "users"));
-    let totalRevenue = 0;
-    let totalTxCount = 0;
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const chartStart = new Date(todayStart);
+    chartStart.setDate(chartStart.getDate() - 29);
+    const todayKey = now.toISOString().slice(0, 10);
+    const chartStartKey = chartStart.toISOString().slice(0, 10);
+    const salesCollection = collectionGroup(dbFirestore, 'transactions');
+    const recentSalesQuery = query(
+      salesCollection,
+      where('date', '>=', chartStart.toISOString()),
+      orderBy('date', 'desc'),
+      limit(2000)
+    );
+
+    const backfillMetadataRef = doc(dbFirestore, 'system', 'admin_analytics', 'metadata', 'sales_backfill');
+    const [globalShardsSnap, dailyShardsSnap, recentSalesSnap, usersSnap, backfillMetadataSnap] = await Promise.all([
+      getDocs(collection(dbFirestore, 'system', 'admin_analytics', 'global_shards')).catch(error => {
+        console.warn('[ADMIN_ANALYTICS] Lifetime summary read failed:', error);
+        return { forEach: () => {} };
+      }),
+      getDocs(query(
+        collection(dbFirestore, 'system', 'admin_analytics', 'daily_shards'),
+        where('date', '>=', chartStartKey),
+        where('date', '<=', todayKey)
+      )).catch(error => {
+        console.warn('[ADMIN_ANALYTICS] Daily summary read failed:', error);
+        return { forEach: () => {} };
+      }),
+      getDocs(recentSalesQuery).catch(error => {
+        console.warn('[ADMIN_ANALYTICS] Recent sales chart read failed:', error);
+        return { forEach: () => {} };
+      }),
+      getDocs(collection(dbFirestore, 'users')),
+      getDoc(backfillMetadataRef).catch(error => {
+        console.warn('[ADMIN_ANALYTICS] Backfill status read failed:', error);
+        return { data: () => ({}) };
+      })
+    ]);
+    const backfillComplete = backfillMetadataSnap.data()?.complete === true;
+    const backfillButton = document.getElementById('adminAnalyticsBackfillButton');
+    const backfillStatus = document.getElementById('adminAnalyticsBackfillStatus');
+    if (backfillComplete && backfillButton) backfillButton.hidden = true;
+    if (!backfillComplete && backfillStatus && !isAdminSalesAnalyticsBackfillRunning) {
+      backfillStatus.textContent = 'Historical totals are being prepared. Use the button to process the next page.';
+    }
+
+    const allSales = {revenue: 0, transactionCount: 0};
+    globalShardsSnap.forEach(shardDoc => {
+      const shard = shardDoc.data();
+      allSales.revenue += Number(shard.revenue || 0);
+      allSales.transactionCount += Number(shard.transactionCount || 0);
+    });
+
+    const revenuePerDay = {};
+    let todaySales = 0;
+    dailyShardsSnap.forEach(shardDoc => {
+      const shard = shardDoc.data();
+      if (!shard.date) return;
+      revenuePerDay[shard.date] = (revenuePerDay[shard.date] || 0) + Number(shard.revenue || 0);
+      if (shard.date === todayKey) todaySales += Number(shard.revenue || 0);
+    });
+
+    const shopProfiles = await mapWithConcurrency(usersSnap.docs, 10, async userDoc => {
+      try {
+        const profileSnap = await getDoc(doc(dbFirestore, 'users', userDoc.id, 'data', 'shop_profile'));
+        return profileSnap.exists() ? profileSnap.data() : null;
+      } catch (error) {
+        console.warn('[ADMIN_ANALYTICS] Shop profile read failed:', userDoc.id, error);
+        return null;
+      }
+    });
+
     let validShopCount = 0;
     let pendingCount = 0;
+    let newShopsThisWeek = 0;
     const seenEmails = new Set();
-
+    const shopNamesByUid = new Map();
     const revenuePerShop = {};
-    const revenuePerDay = {};
     const paymentMethodsTotals = {};
     const statusCounts = {};
-    let salesToday = 0;
-    let newShopsThisWeek = 0;
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    for (const userDoc of usersSnap.docs) {
-      const uid = userDoc.id;
-      const userData = userDoc.data();
+    usersSnap.docs.forEach((userDoc, index) => {
+      const userData = userDoc.data() || {};
+      const shopData = shopProfiles[index];
+      if (userData.status === 'pending') pendingCount++;
+      if (!shopData) return;
 
-      if (userData.status === 'pending') {
-        pendingCount++;
-      }
-
-      // 1. Fetch the specific shop data first to verify existence
-      const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "shop_profile"));
-      if (!dataDoc.exists()) continue;
-
-      const shopData = dataDoc.data();
-      const shopName = (shopData.settings && shopData.settings.name) || 'Unnamed Shop';
       const menuItems = shopData.menu || [];
-      if (uid === MASTER_APP_ADMIN_UID && menuItems.length === 0) continue;
+      if (userDoc.id === MASTER_APP_ADMIN_UID && menuItems.length === 0) return;
 
-      // 2. Enforce email deduplication to match Directory logic
       const userEmail = (userData.email || '').toLowerCase().trim();
-      const effectiveEmail = (uid.includes('@') && !userEmail) ? uid.toLowerCase().trim() : userEmail;
-
-      if (effectiveEmail && seenEmails.has(effectiveEmail)) continue;
+      const effectiveEmail = (userDoc.id.includes('@') && !userEmail) ? userDoc.id.toLowerCase().trim() : userEmail;
+      if (effectiveEmail && seenEmails.has(effectiveEmail)) return;
       if (effectiveEmail) seenEmails.add(effectiveEmail);
 
+      const shopName = (shopData.settings && shopData.settings.name) || 'Unnamed Shop';
       validShopCount++;
+      shopNamesByUid.set(userDoc.id, shopName);
 
-      const txSnap = await getDocs(collection(dbFirestore, "users", uid, "transactions"));
-      let shopRevenue = 0;
-      txSnap.forEach(doc => {
-        const t = doc.data();
-        const amount = (t.total || 0);
-        totalRevenue += amount;
-        shopRevenue += amount;
-        totalTxCount++;
+      const status = userData.status || shopData.status || 'active';
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
 
-        // revenue per day
-        if (t.date) {
-          const date = new Date(t.date).toLocaleDateString();
-          revenuePerDay[date] = (revenuePerDay[date] || 0) + amount;
-
-          // sales today
-          const txDate = new Date(t.date);
-          const today = new Date();
-          if (txDate.toDateString() === today.toDateString()) salesToday += amount;
-        }
-
-        // payment methods aggregation
-        const pm = (t.paymentMethod || 'Unknown');
-        paymentMethodsTotals[pm] = (paymentMethodsTotals[pm] || 0) + amount;
-      });
-
-      revenuePerShop[shopName] = (revenuePerShop[shopName] || 0) + shopRevenue;
-
-      // status counts
-      const st = userData.status || (shopData.status) || 'active';
-      statusCounts[st] = (statusCounts[st] || 0) + 1;
-
-      // new shops this week (best-effort using createdAt fields)
-      try {
-        const createdRaw = userData.createdAt || userData.joinedAt || shopData.createdAt || userDoc.createTime && userDoc.createTime.toDate && userDoc.createTime.toDate();
-        if (createdRaw) {
-          const createdDate = (typeof createdRaw === 'string') ? new Date(createdRaw) : (createdRaw instanceof Date ? createdRaw : new Date(createdRaw));
-          const sevenDaysAgo = new Date();
-          sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-          if (createdDate >= sevenDaysAgo) newShopsThisWeek++;
-        }
-      } catch (e) {
-        // ignore parsing errors
+      const createdRaw = userData.createdAt || userData.joinedAt || shopData.createdAt
+        || (userDoc.createTime && userDoc.createTime.toDate && userDoc.createTime.toDate());
+      if (createdRaw) {
+        const createdDate = createdRaw instanceof Date ? createdRaw : new Date(createdRaw);
+        if (!Number.isNaN(createdDate.getTime()) && createdDate >= sevenDaysAgo) newShopsThisWeek++;
       }
-    }
+    });
+
+    recentSalesSnap.forEach(saleDoc => {
+      const sale = saleDoc.data();
+      const amount = Number(sale.total || 0);
+      const shopUid = saleDoc.ref.parent.parent && saleDoc.ref.parent.parent.id;
+      const shopName = shopNamesByUid.get(shopUid);
+
+      if (shopName) revenuePerShop[shopName] = (revenuePerShop[shopName] || 0) + amount;
+
+      const paymentMethod = sale.paymentMethod || 'Unknown';
+      paymentMethodsTotals[paymentMethod] = (paymentMethodsTotals[paymentMethod] || 0) + amount;
+    });
+
+    const totalRevenue = Number(allSales.revenue || 0);
+    const totalTxCount = Number(allSales.transactionCount || 0);
 
     if (displayShops) displayShops.textContent = validShopCount;
     if (displayRevenue) displayRevenue.textContent = formatCurrency(totalRevenue);
     if (displayTx) displayTx.textContent = totalTxCount;
     if (displayPending) displayPending.textContent = pendingCount;
 
-    // update new small cards
     const avgOrderEl = document.getElementById('adminAvgOrderValue');
     const salesTodayEl = document.getElementById('adminTotalSalesToday');
     const newShopsEl = document.getElementById('adminNewShopsThisWeek');
     const avgOrder = totalTxCount ? (totalRevenue / totalTxCount) : 0;
     if (avgOrderEl) avgOrderEl.textContent = formatCurrency(avgOrder);
-    if (salesTodayEl) salesTodayEl.textContent = formatCurrency(salesToday);
+    if (salesTodayEl) salesTodayEl.textContent = formatCurrency(todaySales);
     if (newShopsEl) newShopsEl.textContent = newShopsThisWeek;
 
     renderAdminGlobalRevenueChart(revenuePerDay);
@@ -3689,9 +3812,47 @@ async function fetchGlobalAnalytics() {
     renderAdminPaymentMethodsChart(paymentMethodsTotals);
     renderAdminShopsStatusChart(statusCounts);
   } catch (error) {
-    handleFirebaseError(error, "Global Analytics", "users (collection level)");
+    handleFirebaseError(error, 'Global Analytics', 'system/admin_analytics');
   }
 }
+
+let isAdminSalesAnalyticsBackfillRunning = false;
+async function runAdminSalesAnalyticsBackfill() {
+  if (currentUserRole !== 'appAdmin' || isAdminSalesAnalyticsBackfillRunning) return;
+  const button = document.getElementById('adminAnalyticsBackfillButton');
+  const status = document.getElementById('adminAnalyticsBackfillStatus');
+  isAdminSalesAnalyticsBackfillRunning = true;
+  if (button) button.disabled = true;
+  if (status) status.textContent = 'Preparing historical sales summaries...';
+
+  try {
+    const backfill = httpsCallable(functions, 'scalingBackfillAdminSalesAnalytics');
+    let complete = false;
+    let processedTotal = 0;
+    while (!complete) {
+      const response = await backfill({});
+      const result = response.data || {};
+      complete = result.complete === true;
+      processedTotal += Number(result.processed || 0);
+      if (status) {
+        status.textContent = complete
+          ? `Historical sales summaries are ready (${processedTotal.toLocaleString()} sales processed).`
+          : `Building historical summaries... ${processedTotal.toLocaleString()} sales processed.`;
+      }
+      if (!complete) await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    if (button) button.hidden = true;
+    await fetchGlobalAnalytics();
+  } catch (error) {
+    console.error('[ANALYTICS_BACKFILL] Failed:', error);
+    if (status) status.textContent = 'Backfill paused. Press the button to resume.';
+    if (button) button.disabled = false;
+  } finally {
+    isAdminSalesAnalyticsBackfillRunning = false;
+  }
+}
+
+window.runAdminSalesAnalyticsBackfill = runAdminSalesAnalyticsBackfill;
 
 /**
  * Permanently removes a shop and all its associated data
@@ -3944,17 +4105,21 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
 
   try {
     const usersSnap = await getDocs(collection(dbFirestore, 'users'));
-    const rows = [];
     const today = new Date();
     const sevenDaysAgo = new Date();
     sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-    for (const userDoc of usersSnap.docs) {
+    const rows = (await mapWithConcurrency(usersSnap.docs, 10, async userDoc => {
       const uid = userDoc.id;
       const userData = userDoc.data() || {};
-      const resolvedBusinessId = await ensureTenantBusinessId(uid) || userData.businessId || userData.shopId || 'N/A';
-      const dataDoc = await getDoc(doc(dbFirestore, 'users', uid, 'data', 'shop_profile'));
-      if (!dataDoc.exists()) continue;
+      const resolvedBusinessId = userData.businessId || userData.shopId || 'N/A';
+      const profileRef = doc(dbFirestore, 'users', uid, 'data', 'shop_profile');
+      const txRef = collection(dbFirestore, 'users', uid, 'transactions');
+      const [dataDoc, txSnap] = await Promise.all([
+        getDoc(profileRef),
+        getDocs(query(txRef, orderBy('date', 'desc'), limit(1))).catch(() => null)
+      ]);
+      if (!dataDoc.exists()) return null;
 
       const shopData = dataDoc.data();
       const shopName = (shopData.settings && shopData.settings.name) || 'Unnamed Shop';
@@ -3974,24 +4139,16 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
       const isTrial = planType === 'trial' || planType === 'trialing' || userData?.isTrial === true;
       const isFree = planType === 'promo' || planType === 'demo' || planType === 'free' || (!userData?.subscriptionExpires && !userData?.subscriptionStartedAt && !userData?.subscriptionStartDate && !userData?.startedAt);
 
-      // check recent transactions (lightweight: fetch latest tx date)
       let hasRecentSales = false;
-      try {
-        const txRef = collection(dbFirestore, 'users', uid, 'transactions');
-        const q = query(txRef, orderBy('date', 'desc'), limit(1));
-        const txSnap = await getDocs(q);
-        if (!txSnap.empty) {
-          const lastTx = txSnap.docs[0].data();
-          if (lastTx && lastTx.date) {
-            const lastDate = new Date(lastTx.date);
-            if (!Number.isNaN(lastDate.getTime()) && lastDate >= sevenDaysAgo) hasRecentSales = true;
-          }
+      if (txSnap && !txSnap.empty) {
+        const lastTx = txSnap.docs[0].data();
+        if (lastTx && lastTx.date) {
+          const lastDate = new Date(lastTx.date);
+          if (!Number.isNaN(lastDate.getTime()) && lastDate >= sevenDaysAgo) hasRecentSales = true;
         }
-      } catch (e) {
-        // ignore failures to avoid blocking subscription view
       }
 
-      rows.push({
+      return {
         uid,
         shopName,
         businessId: resolvedBusinessId,
@@ -4012,8 +4169,8 @@ tbody.innerHTML = '<tr><td colspan="13" class="u-text-center"><span class="spinn
         isFree,
         hasRecentSales,
         visible: true
-      });
-    }
+      };
+    })).filter(Boolean);
 
     const stats = { active: 0, expired: 0, 'expiring-soon': 0, pending: 0, suspended: 0, trialing: 0, free: 0, 'no-sales-7d': 0 };
     const filteredRows = rows.filter(row => {
@@ -4231,19 +4388,21 @@ async function refreshAppAdminShops() {
       return;
     }
 
+    const shopProfiles = await mapWithConcurrency(usersSnap.docs, 10, async userDoc => {
+      if (currentRefreshId !== lastShopsRefreshId) return null;
+      const dataDoc = await getDoc(doc(dbFirestore, 'users', userDoc.id, 'data', 'shop_profile'));
+      return dataDoc.exists() ? dataDoc.data() : null;
+    });
     const shopCards = [];
 
-    for (const userDoc of usersSnap.docs) {
+    for (let userIndex = 0; userIndex < usersSnap.docs.length; userIndex++) {
       // Abort this execution if a newer refresh request has started
       if (currentRefreshId !== lastShopsRefreshId) return;
 
+      const userDoc = usersSnap.docs[userIndex];
       const uid = userDoc.id;
-
-      // 1. Fetch the specific shop data first to verify existence and name
-      const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "shop_profile"));
-      if (!dataDoc.exists()) continue; // Skip accounts that haven't initialized shop data
-
-      const shopData = dataDoc.data();
+      const shopData = shopProfiles[userIndex];
+      if (!shopData) continue;
 
       // 1b. Filtering: If it's the Master Admin account, only show it if they actually have a menu
       // This prevents the Admin's internal document from appearing as a "Shop".
@@ -4416,16 +4575,20 @@ async function refreshAppAdminShopsTable() {
       return;
     }
 
-    for (const userDoc of usersSnap.docs) {
+    const shopProfiles = await mapWithConcurrency(usersSnap.docs, 10, async userDoc => {
+      if (currentRefreshId !== lastShopsTableRefreshId) return null;
+      const dataDoc = await getDoc(doc(dbFirestore, 'users', userDoc.id, 'data', 'shop_profile'));
+      return dataDoc.exists() ? dataDoc.data() : null;
+    });
+
+    for (let userIndex = 0; userIndex < usersSnap.docs.length; userIndex++) {
       if (currentRefreshId !== lastShopsTableRefreshId) return;
 
+      const userDoc = usersSnap.docs[userIndex];
       const uid = userDoc.id;
       const userData = userDoc.data() || {};
-      const resolvedBusinessId = await ensureTenantBusinessId(uid) || userData.businessId || userData.shopId || 'N/A';
-      const dataDoc = await getDoc(doc(dbFirestore, "users", uid, "data", "shop_profile"));
-      if (!dataDoc.exists()) continue;
-
-      const shopData = dataDoc.data();
+      const shopData = shopProfiles[userIndex];
+      if (!shopData) continue;
       if (uid === MASTER_APP_ADMIN_UID && (shopData.menu || []).length === 0) continue;
 
       const userEmail = (userData.email || '').toLowerCase().trim();
@@ -4436,7 +4599,7 @@ async function refreshAppAdminShopsTable() {
       if (effectiveEmail) seenEmails.add(effectiveEmail);
 
       const shopSettings = shopData.settings || {};
-      const businessId = resolvedBusinessId;
+      const businessId = userData.businessId || userData.shopId || shopData.businessId || shopData.shopId || shopSettings.businessId || 'N/A';
       const logoUrl = sanitizeLogoUrl(shopSettings.logo) || 'assets/icons/icon.png';
       const userStatus = userData.status || 'active';
       const shopStatus = (shopData.appAdminSettings && shopData.appAdminSettings.shopStatus) || 'active';
@@ -4810,7 +4973,7 @@ async function saveDataNow(syncToCloud = true, options = {}) {
     // Use Promise.allSettled instead of Promise.all to handle individual errors gracefully
     await Promise.allSettled([
       saveState('menu', menu || [], {
-        enqueueSync: syncToCloud,
+        enqueueSync: false,
         allowEmptyOverwriteFields: options.allowEmptyOverwriteFields || []
       }),
       saveState('activeOrders', activeOrders || {}, {
@@ -5083,67 +5246,103 @@ async function syncOfflineTransactions() {
 /**
  * Loads the latest transactions from the cloud collection
  */
-async function loadTransactionsFromCloud(uid, startDate = null, endDate = null) {
+async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, { append = false } = {}) {
   if (!dbFirestore) {
     console.warn("[TX_LOAD] Firestore not initialized, skipping cloud transaction load");
     return;
   }
-  try {
-    let txRef = collection(dbFirestore, "users", uid, "transactions");
-    let q;
 
+  let generation;
+  if (append) {
+    if (!transactionCloudPagination.hasMore || transactionCloudPagination.isLoading) return;
+    generation = transactionCloudPagination.generation;
+    transactionCloudPagination.isLoading = true;
+  } else {
+    generation = transactionCloudPagination.generation + 1;
+    transactionCloudPagination = {
+      uid,
+      startDate,
+      endDate,
+      lastDocument: null,
+      hasMore: false,
+      isLoading: true,
+      generation
+    };
+  }
+
+  renderTransactions();
+
+  try {
+    const txRef = collection(dbFirestore, "users", uid, "transactions");
+    const constraints = [orderBy("date", "desc")];
     if (startDate || endDate) {
       // Note: Range queries with OrderBy require a composite index in Firestore.
       // If you see an error in the console, click the provided link to create the index.
-      const constraints = [orderBy("date", "desc")];
       if (startDate) constraints.push(where("date", ">=", startDate));
       if (endDate) constraints.push(where("date", "<=", endDate + "T23:59:59Z"));
-      q = query(txRef, ...constraints);
-    } else {
-      // Increased limit from 200 to 1000 to ensure "last week" sales appear in Dashboard and Reports for busy shops
-      q = query(txRef, orderBy("date", "desc"), limit(1000));
     }
+    if (append && transactionCloudPagination.lastDocument) {
+      constraints.push(startAfter(transactionCloudPagination.lastDocument));
+    }
+    constraints.push(limit(TRANSACTION_CLOUD_PAGE_SIZE));
 
-    const snap = await getDocs(q);
+    const snap = await getDocs(query(txRef, ...constraints));
+    if (transactionCloudPagination.generation !== generation) return;
+
+    transactionCloudPagination.lastDocument = snap.docs[snap.docs.length - 1] || transactionCloudPagination.lastDocument;
+    transactionCloudPagination.hasMore = snap.docs.length === TRANSACTION_CLOUD_PAGE_SIZE;
+    transactionCloudPagination.isLoading = false;
+
     const cloudTransactions = [];
-    snap.forEach(doc => {
-      const data = doc.data();
+    snap.forEach(transactionDoc => {
+      const data = transactionDoc.data();
+      data.id = data.id || transactionDoc.id;
       data.synced = true;
       cloudTransactions.push(data);
     });
 
     console.log("[TX_LOAD] Cloud query returned:", cloudTransactions.length, "transactions. Local had:", Array.isArray(transactions) ? transactions.length : 0);
 
-    // Always process the result, even if empty, to ensure UI stays consistent
-    if (cloudTransactions.length > 0 || (Array.isArray(transactions) && transactions.length > 0)) {
-      const pendingLocalTransactions = (Array.isArray(transactions) ? transactions : [])
-        .filter(transaction => transaction && transaction.synced !== true);
-      const mergedTransactions = cloudTransactions.length > 0
-        ? mergeTransactionsPreservingDuplicates(pendingLocalTransactions, cloudTransactions.map(t => ({ ...t, synced: true })))
-        : pendingLocalTransactions;
+    const localTransactions = Array.isArray(transactions) ? transactions : [];
+    const oldestLoadedTime = cloudTransactions.length
+      ? new Date(cloudTransactions[cloudTransactions.length - 1].date || 0).getTime()
+      : 0;
+    const mergeBase = append
+      ? localTransactions
+      : (startDate || endDate)
+        ? retainTransactionsOutsideDateRange(localTransactions, startDate, endDate)
+        : localTransactions.filter(transaction => {
+        if (!transaction || transaction.synced !== true) return true;
+        const transactionTime = new Date(transaction.date || 0).getTime();
+        return !oldestLoadedTime || transactionTime < oldestLoadedTime;
+      });
+    transactions = deduplicateTransactions(
+      mergeTransactionsPreservingDuplicates(mergeBase, cloudTransactions)
+    );
 
-      // 2. Keep a healthy local archive for offline reports
-      transactions = deduplicateTransactions(mergedTransactions.slice(0, 1000));
-
-      console.log("[TX_LOAD] After merge/dedup:", transactions.length, "transactions in memory");
-
-      await saveState('transactions', transactions, { enqueueSync: false });
-      renderTransactions();
-      updateDashboard();
-    } else {
-      // Fresh accounts and newly reset shops legitimately have no transactions yet.
-      console.info("[TX_LOAD] No transactions found in cloud or local storage yet.");
-      // Still render empty state to show dashboard
-      if (typeof renderTransactions === 'function') renderTransactions();
-      if (typeof updateDashboard === 'function') updateDashboard();
-    }
+    console.log("[TX_LOAD] After merge/dedup:", transactions.length, "transactions in memory");
+    await saveState('transactions', transactions.slice(0, 1000), { enqueueSync: false });
+    renderTransactions();
+    updateDashboard();
   } catch (e) {
+    if (transactionCloudPagination.generation === generation) {
+      transactionCloudPagination.isLoading = false;
+    }
     console.error("[TX_LOAD] Error loading transactions from cloud:", e.code, e.message);
     // Still attempt to render what we have locally
     if (typeof renderTransactions === 'function') renderTransactions();
     if (typeof updateDashboard === 'function') updateDashboard();
   }
 }
+
+async function loadMoreTransactionsFromCloud() {
+  const page = transactionCloudPagination;
+  if (!page.uid || !page.hasMore || page.isLoading) return;
+  if (getEffectiveUid() && getEffectiveUid() !== page.uid) return;
+  return loadTransactionsFromCloud(page.uid, page.startDate, page.endDate, { append: true });
+}
+
+window.loadMoreTransactionsFromCloud = loadMoreTransactionsFromCloud;
 
 async function getPendingSyncSummary() {
   let queue = Array.isArray(pendingSyncQueue) ? pendingSyncQueue : [];
@@ -5507,6 +5706,7 @@ function renderAdminPaymentMethodsChart(paymentMethodsTotals) {
   const entries = Object.entries(paymentMethodsTotals || {});
   const labels = entries.map(([k]) => k);
   const data = entries.map(([, v]) => v);
+  const chartTitle = 'Payment Methods (Recent 30 Days, Up to 2,000 Sales)';
 
   if (adminPaymentMethodsChartInstance) adminPaymentMethodsChartInstance.destroy();
 
@@ -5518,7 +5718,7 @@ function renderAdminPaymentMethodsChart(paymentMethodsTotals) {
       maintainAspectRatio: true,
       aspectRatio: 1,
       plugins: {
-        title: { display: true, text: 'Payment Methods', font: { size: 14 } },
+        title: { display: true, text: chartTitle, font: { size: 14 } },
         legend: { position: 'bottom', labels: { boxWidth: 12, usePointStyle: true, font: { size: 12 } } },
         tooltip: { enabled: true }
       },
@@ -6621,6 +6821,11 @@ function renderMenu() {
   const sellableMenu = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
   const searchTerm = String(document.getElementById('menuSearch')?.value || '').trim().toLowerCase();
   const categoryFilter = document.getElementById('categoryFilter')?.value || '';
+  const filterKey = `${searchTerm}\u0000${categoryFilter}`;
+  if (filterKey !== menuRenderFilterKey) {
+    menuRenderFilterKey = filterKey;
+    menuVisibleCountsByCategory = new Map();
+  }
   renderPickedItems();
 
   // Filter for the search term AND ensure the item is a sellable dish (has a recipe).
@@ -6632,7 +6837,25 @@ function renderMenu() {
     return matchesSearch && matchesCategory && isSellable;
   });
 
-  const categories = [...new Set(filteredMenu.map(d => d.category || "Uncategorized"))];
+  const productsByCategory = new Map();
+  filteredMenu.forEach(dish => {
+    const category = dish.category || 'Uncategorized';
+    if (!productsByCategory.has(category)) productsByCategory.set(category, []);
+    productsByCategory.get(category).push(dish);
+  });
+  const categories = [...productsByCategory.keys()];
+  const totalInCartsByProduct = new Map();
+  const currentCartQuantityByProduct = new Map();
+  Object.entries(activeOrders || {}).forEach(([orderId, order]) => {
+    (Array.isArray(order?.items) ? order.items : []).forEach(orderItem => {
+      const productName = orderItem?.name;
+      if (!productName) return;
+      totalInCartsByProduct.set(productName, (totalInCartsByProduct.get(productName) || 0) + (Number(orderItem.qty) || 0));
+      if (orderId === CART_ID && !orderItem.notes && !currentCartQuantityByProduct.has(productName)) {
+        currentCartQuantityByProduct.set(productName, Number(orderItem.qty) || 0);
+      }
+    });
+  });
 
   if (searchTerm && filteredMenu.length === 0) {
     const emptyMessage = document.createElement('p');
@@ -6642,25 +6865,20 @@ function renderMenu() {
   }
 
   categories.forEach(cat => {
+    const categoryProducts = productsByCategory.get(cat) || [];
+    const visibleCount = menuVisibleCountsByCategory.get(cat) || PRODUCT_RENDER_PAGE_SIZE;
     const catDiv = document.createElement('div');
     if (cat !== "Uncategorized") {
       catDiv.innerHTML = `<h4>${cat}</h4>`;
     }
     const grid = document.createElement('div');
     grid.className = 'menu-grid' + (window.productViewMode === 'list' ? ' list-view' : '');
-    filteredMenu
-      .filter(d => (d.category || "Uncategorized") === cat)
+    categoryProducts
+      .slice(0, visibleCount)
       .forEach((dish, i) => {
         const item = document.createElement('div');
-        const currentOrder = activeOrders[CART_ID] || { items: [] };
-
-        // Calculate available stock by subtracting what is already in all open carts
-        const totalInCarts = Object.values(activeOrders)
-          .flatMap(order => order.items || [])
-          .filter(item => item.name === dish.name)
-          .reduce((sum, item) => sum + item.qty, 0);
-
-        const quantity = currentOrder.items.find(o => o.name === dish.name && !o.notes)?.qty || 0;
+        const totalInCarts = totalInCartsByProduct.get(dish.name) || 0;
+        const quantity = currentCartQuantityByProduct.get(dish.name) || 0;
         const totalStock = calculateDishStock(dish, true);
         const availableStock = isStockTrackingEnabled() ? Math.max(0, totalStock - totalInCarts) : Infinity;
         const isOutOfStock = isStockTrackingEnabled() ? (totalStock <= 0 || availableStock <= 0) : false;
@@ -6729,6 +6947,16 @@ function renderMenu() {
         } catch (e) { console.warn('Failed to attach img diagnostics', e); }
       });
     catDiv.appendChild(grid);
+    if (categoryProducts.length > visibleCount) {
+      const showMoreButton = document.createElement('button');
+      showMoreButton.className = 'btn btn-secondary';
+      showMoreButton.textContent = `Show ${Math.min(PRODUCT_RENDER_PAGE_SIZE, categoryProducts.length - visibleCount)} more products (${categoryProducts.length - visibleCount} remaining)`;
+      showMoreButton.onclick = () => {
+        menuVisibleCountsByCategory.set(cat, visibleCount + PRODUCT_RENDER_PAGE_SIZE);
+        renderMenu();
+      };
+      catDiv.appendChild(showMoreButton);
+    }
     container.appendChild(catDiv);
   });
 
@@ -8744,7 +8972,8 @@ function renderDishesTable() {
   const productsForTable = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true })
     .filter(isProductListedInProductsSection);
   // Show only products/sellable items in the Products table
-  productsForTable.forEach((dish, rowIndex) => {
+  const visibleProducts = productsForTable.slice(0, productTableVisibleRowCount);
+  visibleProducts.forEach((dish, rowIndex) => {
     const i = menu.indexOf(dish); // Get the original index for edit/delete functions
     const stock = calculateDishStock(dish);
     const costPrice = calculateDishCost(dish);
@@ -8770,6 +8999,17 @@ function renderDishesTable() {
         </td>`;
     tbody.appendChild(tr);
   });
+
+  if (productsForTable.length > visibleProducts.length) {
+    const showMoreRow = document.createElement('tr');
+    const remainingCount = productsForTable.length - visibleProducts.length;
+    showMoreRow.innerHTML = `<td colspan="9" style="text-align:center; padding:16px;"><button class="btn btn-secondary">Show ${Math.min(PRODUCT_RENDER_PAGE_SIZE, remainingCount)} more products (${remainingCount} remaining)</button></td>`;
+    showMoreRow.querySelector('button').onclick = () => {
+      productTableVisibleRowCount += PRODUCT_RENDER_PAGE_SIZE;
+      renderDishesTable();
+    };
+    tbody.appendChild(showMoreRow);
+  }
 }
 
 // Adjust dishes table header
@@ -10853,10 +11093,12 @@ function renderTransactions() {
   const serviceOrderCount = sourceArray.filter(tx => String(tx.orderType || '').toLowerCase() === 'service').length;
   const transactionCountInfo = document.getElementById('transactionCountInfo');
   if (transactionCountInfo) {
-    transactionCountInfo.textContent = `Showing ${sourceArray.length} bill${sourceArray.length === 1 ? '' : 's'}${serviceOrderCount ? ` · Service orders: ${serviceOrderCount}` : ''}`;
+    const visibleCount = Math.min(sourceArray.length, transactionVisibleRowCount);
+    transactionCountInfo.textContent = `Showing ${visibleCount} of ${sourceArray.length} loaded bill${sourceArray.length === 1 ? '' : 's'}${transactionCloudPagination.hasMore ? ' · More available' : ''}${serviceOrderCount ? ` · Service orders: ${serviceOrderCount}` : ''}`;
   }
 
-  const tableRows = sourceArray.map((t, i) => {
+  const visibleTransactions = sourceArray.slice(0, transactionVisibleRowCount);
+  const tableRows = visibleTransactions.map((t, i) => {
     const txIndex = normalizedTransactions.indexOf(t);
     const tr = document.createElement('tr');
     tr.className = `u-cursor-pointer${(t.duplicateCount || 0) > 0 ? ' duplicate-sale-row' : ''}`;
@@ -10941,38 +11183,55 @@ function renderTransactions() {
         </td>
       </tr>
     `;
+    if (transactionCloudPagination.hasMore) {
+      const loadOlderRow = document.createElement('tr');
+      loadOlderRow.innerHTML = `
+        <td colspan="9" style="text-align: center; padding: 16px;">
+          <button class="btn btn-secondary" onclick="loadMoreTransactionsFromCloud()" ${transactionCloudPagination.isLoading ? 'disabled' : ''}>
+            ${transactionCloudPagination.isLoading ? 'Loading older sales...' : 'Load older sales'}
+          </button>
+        </td>
+      `;
+      tbody.appendChild(loadOlderRow);
+    }
     return;
   }
 
-  // Show first 50 transactions, add "Show More" button if needed
-  const txnPerPage = 50;
-  const initialRows = tableRows.slice(0, txnPerPage);
-  const remainingRows = tableRows.slice(txnPerPage);
+  tableRows.forEach(row => tbody.appendChild(row));
 
-  initialRows.forEach(row => tbody.appendChild(row));
-
-  if (remainingRows.length > 0) {
+  const remainingRows = Math.max(0, sourceArray.length - visibleTransactions.length);
+  if (remainingRows > 0) {
     const showMoreRow = document.createElement('tr');
-    // Use an IIFE in the onclick to safely reveal hidden rows regardless of class removal order
     showMoreRow.innerHTML = `
-        <td colspan="8" style="text-align: center; padding: 20px;">
-          <button class="btn btn-info" onclick="(function(btn){ const tbody = btn.closest('tbody'); const hidden = Array.from(tbody.querySelectorAll('tr.txn-row-hidden')); hidden.forEach(r => { r.classList.remove('txn-row-hidden'); r.style.display = ''; }); btn.closest('tr').style.display = 'none'; })(this);" style="padding: 8px 20px;">
-            Show ${remainingRows.length} More Transactions
+        <td colspan="9" style="text-align: center; padding: 20px;">
+          <button class="btn btn-info" onclick="showMoreTransactions()" style="padding: 8px 20px;">
+            Show ${Math.min(50, remainingRows)} More Transactions
           </button>
         </td>
       `;
     tbody.appendChild(showMoreRow);
+  }
 
-    // Add hidden class to remaining rows and keep them appended after the show-more row
-    remainingRows.forEach(row => {
-      row.classList.add('txn-row-hidden');
-      row.style.display = 'none';
-      tbody.appendChild(row);
-    });
+  if (transactionCloudPagination.hasMore) {
+    const loadOlderRow = document.createElement('tr');
+    loadOlderRow.innerHTML = `
+      <td colspan="9" style="text-align: center; padding: 16px;">
+        <button class="btn btn-secondary" onclick="loadMoreTransactionsFromCloud()" ${transactionCloudPagination.isLoading ? 'disabled' : ''}>
+          ${transactionCloudPagination.isLoading ? 'Loading older sales...' : 'Load older sales'}
+        </button>
+      </td>
+    `;
+    tbody.appendChild(loadOlderRow);
   }
 }
 
+function showMoreTransactions() {
+  transactionVisibleRowCount += 50;
+  renderTransactions();
+}
+
 window.renderTransactions = renderTransactions;
+window.showMoreTransactions = showMoreTransactions;
 
 /**
  * Triggers a cloud search for transactions within the specified date range
@@ -12995,6 +13254,7 @@ function renderAdminGlobalRevenueChart(revenuePerDay) {
 
   const labels = Object.keys(revenuePerDay).sort((a, b) => new Date(a) - new Date(b));
   const data = labels.map(label => revenuePerDay[label]);
+  const chartTitle = 'Daily Revenue (Recent 30 Days, Up to 2,000 Sales)';
 
   if (adminGlobalRevenueChartInstance) adminGlobalRevenueChartInstance.destroy();
 
@@ -13003,7 +13263,7 @@ function renderAdminGlobalRevenueChart(revenuePerDay) {
     data: {
       labels: labels,
       datasets: [{
-        label: 'Global Daily Revenue',
+        label: chartTitle,
         data: data,
         borderColor: '#2563eb',
         backgroundColor: 'rgba(37, 99, 235, 0.12)',
@@ -13016,7 +13276,7 @@ function renderAdminGlobalRevenueChart(revenuePerDay) {
       }]
     },
     options: {
-      ...getModernDashboardChartOptions({ title: 'Global Daily Revenue' }),
+      ...getModernDashboardChartOptions({ title: chartTitle }),
       scales: {
         x: {
           grid: { display: false, drawBorder: false },
@@ -13043,6 +13303,7 @@ function renderAdminShopsComparisonChart(revenuePerShop) {
   const sorted = Object.entries(revenuePerShop).sort(([, a], [, b]) => b - a).slice(0, 10);
   const labels = sorted.map(([name]) => name);
   const data = sorted.map(([, revenue]) => revenue);
+  const chartTitle = 'Top Shops (Recent 30 Days, Up to 2,000 Sales)';
 
   if (adminShopsComparisonChartInstance) adminShopsComparisonChartInstance.destroy();
 
@@ -13051,7 +13312,7 @@ function renderAdminShopsComparisonChart(revenuePerShop) {
     data: {
       labels: labels,
       datasets: [{
-        label: 'Revenue per Shop',
+        label: chartTitle,
         data: data,
         backgroundColor: ['#2563eb', '#4f46e5', '#0ea5e9', '#14b8a6', '#f59e0b', '#8b5cf6', '#10b981', '#ef4444', '#f97316', '#84cc16'],
         borderRadius: 8,
@@ -13060,7 +13321,7 @@ function renderAdminShopsComparisonChart(revenuePerShop) {
       }]
     },
     options: {
-      ...getModernDashboardChartOptions({ title: 'Top 10 Shops by Revenue', indexAxis: 'y' }),
+      ...getModernDashboardChartOptions({ title: chartTitle, indexAxis: 'y' }),
       scales: {
         x: {
           beginAtZero: true,
@@ -17516,6 +17777,8 @@ function notifyOtherTabsAboutCloudChange(targetUid) {
 let unsubscribeEnterpriseRecordSyncs = [];
 // Track recent locally-added product IDs for debugging sync merges
 const lastLocallyAddedProductIds = new Set();
+let productSyncGeneration = 0;
+let productCursorSaveQueue = Promise.resolve();
 
 function stopEnterpriseRecordSyncs() {
   unsubscribeEnterpriseRecordSyncs.forEach(unsubscribe => {
@@ -17615,6 +17878,212 @@ function isDeletedEnterpriseRecord(record = {}) {
   );
 }
 
+function getProductSyncMetadataKey(uid, key) {
+  return `productSync:${uid}:${key}`;
+}
+
+function normalizeCloudProductRecord(record, id, updatedAt = null) {
+  const normalized = {
+    ...record,
+    id: record.id || id,
+    recordId: record.recordId || record.id || id
+  };
+  if (updatedAt && (!normalized.updatedAt || new Date(updatedAt).getTime() > new Date(normalized.updatedAt).getTime())) {
+    normalized.updatedAt = updatedAt;
+  }
+  return normalized;
+}
+
+function getProductRecordFromChange(changeDoc) {
+  const {changedAt, changeVersion, changeSignature, ...record} = changeDoc.data();
+  const changeTime = new Date(Number(changeVersion?.seconds || 0) * 1000 + Number(changeVersion?.nanoseconds || 0) / 1e6).toISOString();
+  return normalizeCloudProductRecord(record, changeDoc.id, changeTime);
+}
+
+function mergeRemoteProducts(records = [], remoteRecords = []) {
+  const byId = new Map((Array.isArray(records) ? records : [])
+    .map(record => [String(getEnterpriseRecordId(record)), record])
+    .filter(([id]) => id));
+
+  remoteRecords.forEach(remoteRecord => {
+    const id = String(getEnterpriseRecordId(remoteRecord));
+    if (!id) return;
+    const localRecord = byId.get(id);
+    if (isDeletedEnterpriseRecord(remoteRecord)) {
+      if (!localRecord || shouldAcceptIncomingRecord(localRecord, remoteRecord)) byId.delete(id);
+      return;
+    }
+    if (!localRecord || shouldAcceptIncomingRecord(localRecord, remoteRecord)) {
+      byId.set(id, localRecord ? {...localRecord, ...remoteRecord} : remoteRecord);
+    }
+  });
+
+  return normalizeProductCatalog([...byId.values()]);
+}
+
+async function saveProductSyncCursor(uid, cursor) {
+  if (!localRepository || typeof localRepository.setMetadata !== 'function' || !cursor) return;
+  const saveOperation = productCursorSaveQueue.then(async () => {
+    const key = getProductSyncMetadataKey(uid, 'cursor');
+    const existing = typeof localRepository.getMetadata === 'function' ? await localRepository.getMetadata(key) : null;
+    if (existing) {
+      const timeDifference = Number(cursor.seconds) - Number(existing.seconds);
+      if (timeDifference < 0 || (timeDifference === 0 && Number(cursor.nanoseconds || 0) < Number(existing.nanoseconds || 0))) return;
+      if (timeDifference === 0 && Number(cursor.nanoseconds || 0) === Number(existing.nanoseconds || 0)
+        && String(cursor.id || '').localeCompare(String(existing.id || '')) < 0) return;
+    }
+    await localRepository.setMetadata(key, cursor);
+  });
+  productCursorSaveQueue = saveOperation.catch(() => {});
+  return saveOperation;
+}
+
+async function applyProductChangeSnapshot(uid, snapshot, generation) {
+  if (snapshot.metadata.hasPendingWrites || generation !== productSyncGeneration) return;
+  const updates = [];
+  snapshot.docChanges().forEach(change => {
+    if (change.type === 'removed') return;
+    updates.push(getProductRecordFromChange(change.doc));
+  });
+  if (updates.length > 0) {
+    menu = mergeRemoteProducts(menu, updates);
+    renderMenu();
+    renderDishesTable();
+    renderStockListTable();
+    renderInventoryReport();
+    populateCategoryFilter();
+    updateDashboard();
+    await saveState('menu', menu, {enqueueSync: false});
+  }
+
+  const lastChange = snapshot.docs[snapshot.docs.length - 1];
+  if (lastChange) {
+    const changedAt = lastChange.data().changedAt;
+    if (changedAt && typeof changedAt.seconds === 'number') {
+      await saveProductSyncCursor(uid, {
+        seconds: changedAt.seconds,
+        nanoseconds: changedAt.nanoseconds || 0,
+        id: lastChange.id
+      });
+    }
+  }
+}
+
+async function syncProductChangesInPages(uid, generation, cursor) {
+  const changesRef = collection(dbFirestore, 'users', uid, 'product_changes');
+  let pageCursor = cursor || null;
+
+  while (generation === productSyncGeneration) {
+    const constraints = [
+      orderBy('changedAt', 'asc'),
+      orderBy(documentId(), 'asc'),
+      ...(pageCursor ? [startAfter(new Timestamp(pageCursor.seconds, pageCursor.nanoseconds || 0), pageCursor.id)] : []),
+      limit(PRODUCT_CLOUD_PAGE_SIZE)
+    ];
+    const page = await getDocs(query(changesRef, ...constraints));
+    if (generation !== productSyncGeneration || page.empty) return;
+
+    const remoteRecords = page.docs.map(getProductRecordFromChange);
+    menu = mergeRemoteProducts(menu, remoteRecords);
+    await saveState('menu', menu, {enqueueSync: false});
+
+    const lastDocument = page.docs[page.docs.length - 1];
+    const changedAt = lastDocument.data().changedAt;
+    if (changedAt && typeof changedAt.seconds === 'number') {
+      pageCursor = {seconds: changedAt.seconds, nanoseconds: changedAt.nanoseconds || 0, id: lastDocument.id};
+      await saveProductSyncCursor(uid, pageCursor);
+    }
+    if (page.size < PRODUCT_CLOUD_PAGE_SIZE) break;
+  }
+
+  if (generation === productSyncGeneration) {
+    renderMenu();
+    renderDishesTable();
+    renderStockListTable();
+    renderInventoryReport();
+    populateCategoryFilter();
+    updateDashboard();
+  }
+}
+
+async function hydrateProductsInPages(uid, generation) {
+  if (!localRepository || typeof localRepository.getMetadata !== 'function') return;
+  const hydratedKey = getProductSyncMetadataKey(uid, 'hydrated');
+  if (await localRepository.getMetadata(hydratedKey)) return;
+
+  const productsRef = collection(dbFirestore, 'users', uid, 'products');
+  let lastDocument = null;
+  while (generation === productSyncGeneration) {
+    const constraints = [orderBy(documentId(), 'asc'), ...(lastDocument ? [startAfter(lastDocument)] : []), limit(PRODUCT_CLOUD_PAGE_SIZE)];
+    const page = await getDocs(query(productsRef, ...constraints));
+    if (generation !== productSyncGeneration) return;
+
+    const remoteRecords = page.docs.map(productDoc => {
+      const data = productDoc.data();
+      const updatedAt = productDoc.updateTime?.toDate?.().toISOString();
+      return normalizeCloudProductRecord(data, productDoc.id, updatedAt);
+    });
+    menu = mergeRemoteProducts(menu, remoteRecords);
+    renderMenu();
+    renderDishesTable();
+    renderStockListTable();
+    renderInventoryReport();
+    populateCategoryFilter();
+    await saveState('menu', menu, {enqueueSync: false});
+    lastDocument = page.docs[page.docs.length - 1] || lastDocument;
+    if (page.size < PRODUCT_CLOUD_PAGE_SIZE) break;
+    await new Promise(resolve => setTimeout(resolve, 0));
+  }
+
+  if (generation === productSyncGeneration) {
+    await localRepository.setMetadata(hydratedKey, new Date().toISOString());
+    updateDashboard();
+  }
+}
+
+function setupPagedProductSync(uid) {
+  const generation = ++productSyncGeneration;
+  const sessionStart = Timestamp.fromDate(new Date());
+  const changesRef = collection(dbFirestore, 'users', uid, 'product_changes');
+  const listenerQuery = query(
+    changesRef,
+    where('changedAt', '>=', sessionStart),
+    orderBy('changedAt', 'desc'),
+    orderBy(documentId(), 'desc'),
+    limit(PRODUCT_CLOUD_PAGE_SIZE)
+  );
+
+  const unsubscribe = onSnapshot(listenerQuery, snapshot => {
+    applyProductChangeSnapshot(uid, snapshot, generation).catch(error => {
+      console.warn('[SYNC] Product change feed processing failed:', error);
+    });
+  }, error => {
+    console.warn('[SYNC] Product change feed listener failed:', error);
+  });
+
+  (async () => {
+    try {
+      const cursor = localRepository && typeof localRepository.getMetadata === 'function'
+        ? await localRepository.getMetadata(getProductSyncMetadataKey(uid, 'cursor'))
+        : null;
+      await Promise.all([
+        syncProductChangesInPages(uid, generation, cursor),
+        hydrateProductsInPages(uid, generation)
+      ]);
+      if (generation === productSyncGeneration) {
+        await cleanupDuplicateProductRecordsInCloud(uid, menu);
+      }
+    } catch (error) {
+      console.warn('[SYNC] Paged product hydration failed:', error);
+    }
+  })();
+
+  return () => {
+    if (productSyncGeneration === generation) productSyncGeneration++;
+    unsubscribe();
+  };
+}
+
 function setupEnterpriseRecordCollectionSync(uid) {
   if (!dbFirestore || !uid) return;
 
@@ -17682,7 +18151,7 @@ function setupEnterpriseRecordCollectionSync(uid) {
     }
   ];
 
-  unsubscribeEnterpriseRecordSyncs = collectionConfigs.map(config => {
+  unsubscribeEnterpriseRecordSyncs = collectionConfigs.filter(config => config.collectionName !== 'products').map(config => {
     const recordRef = collection(dbFirestore, 'users', uid, config.collectionName);
 
     return onSnapshot(
@@ -17737,6 +18206,7 @@ function setupEnterpriseRecordCollectionSync(uid) {
       }
     );
   });
+  unsubscribeEnterpriseRecordSyncs.push(setupPagedProductSync(uid));
 }
 function setupRealTimeSync(uid) {
   // Skip cloud sync on first load after reset
@@ -17781,9 +18251,6 @@ function setupRealTimeSync(uid) {
     console.log('🟢 [SYNC] Setting up real-time listener for cross-device sync...');
     setupRealTimeTransactionsSync(uid);
     setupEnterpriseRecordCollectionSync(uid);
-    cleanupDuplicateProductRecordsInCloud(uid).catch(error => {
-      console.warn('[DB_CLEANUP] Duplicate product cleanup skipped:', error);
-    });
     backfillEnterpriseRecordCollectionsOnce(uid).catch(error => {
       console.warn('[MIGRATION] Enterprise record backfill skipped:', error);
     });

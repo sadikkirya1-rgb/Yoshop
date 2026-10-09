@@ -28,7 +28,6 @@ const callableOptions = {
 	// Callable handlers still enforce Firebase Auth and operation-level permissions.
 	cors: true
 };
-
 function isAppAdmin(request) {
 	const auth = request.auth;
 	return Boolean(auth && (
@@ -174,7 +173,7 @@ exports.sendCustomerNotificationEmail = onCall({
 
 // Also clean tenant data when an administrator deletes a user directly in Firebase Auth.
 exports.cleanupDeletedUserData = functionsV1.runWith({
-	runtime: "nodejs20",
+	runtime: "nodejs22",
 	region: "us-central1",
 }).auth.user().onDelete(async (user) => {
 	const businessId = await deleteTenantData(user.uid);

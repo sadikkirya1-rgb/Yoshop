@@ -1,7 +1,21 @@
 {
-  "functions": {
-    "source": "functions"
-  },
+  "firestore": [
+    {
+      "database": "yoshop",
+      "rules": "firestore.rules",
+      "indexes": "firestore.indexes.json"
+    }
+  ],
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "default"
+    },
+    {
+      "source": "scaling-functions",
+      "codebase": "scaling"
+    }
+  ],
   "hosting": {
     "target": "main-site",
     "public": ".",
@@ -9,7 +23,8 @@
       "firebase.json",
       "**/.*",
       "**/node_modules/**",
-      "functions/**"
+        "functions/**",
+        "scaling-functions/**"
     ],
     "headers": [
       {

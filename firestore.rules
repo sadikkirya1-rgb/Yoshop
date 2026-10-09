@@ -34,6 +34,15 @@ service cloud.firestore {
       }
     }
 
+    match /system/admin_analytics/{document=**} {
+      allow read: if isAdmin();
+    }
+
+    // Collection-group analytics are available only to the app administrator.
+    match /{path=**}/transactions/{transactionId} {
+      allow read: if isAdmin();
+    }
+
     // Protect everything else by default
     match /{document=**} {
       allow read, write: if false;

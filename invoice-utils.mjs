@@ -280,6 +280,15 @@ export function mergeTransactionsPreservingDuplicates(existingTransactions = [],
   return deduplicateTransactions(merged);
 }
 
+export function retainTransactionsOutsideDateRange(transactions = [], startDate = null, endDate = null) {
+  return (Array.isArray(transactions) ? transactions : []).filter(transaction => {
+    if (!transaction || transaction.synced !== true) return true;
+    const transactionDate = String(transaction.date || '').split('T')[0];
+    if (!transactionDate) return true;
+    return (startDate && transactionDate < startDate) || (endDate && transactionDate > endDate);
+  });
+}
+
 export function filterInvoiceRowsByStatus(rows = [], status = 'all') {
   const invoiceRows = Array.isArray(rows) ? rows : [];
   const normalizedStatus = String(status || 'all').toLowerCase();

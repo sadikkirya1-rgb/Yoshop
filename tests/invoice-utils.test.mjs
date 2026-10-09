@@ -1,13 +1,57 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, retainTransactionsOutsideDateRange } from '../invoice-utils.mjs';
 
 test('A4 invoice total summary row uses green cell styling for all invoices', () => {
   const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 
   assert.match(appSource, /tr\.grand\s*td\s*\{/i, 'A4 invoice total summary row should style the total cells directly so the green background appears on every invoice.');
   assert.match(appSource, /background:\s*linear-gradient\(135deg,#10b981,#059669\)/i, 'A4 invoice total summary row should use the green invoice total styling.');
+});
+
+test('tenant sales load in cursor pages and render only expanded rows', () => {
+  const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+
+  assert.match(appSource, /const TRANSACTION_CLOUD_PAGE_SIZE = 200/);
+  assert.match(appSource, /startAfter\(transactionCloudPagination\.lastDocument\)/);
+  assert.match(appSource, /constraints\.push\(limit\(TRANSACTION_CLOUD_PAGE_SIZE\)\)/);
+  assert.match(appSource, /sourceArray\.slice\(0, transactionVisibleRowCount\)/);
+});
+
+test('historical sales queries preserve cached records outside the requested range and pending sales', () => {
+  const transactions = [
+    { id: 'recent', date: '2026-10-09T10:00:00.000Z', synced: true },
+    { id: 'in-range', date: '2026-10-05T10:00:00.000Z', synced: true },
+    { id: 'older', date: '2026-09-20T10:00:00.000Z', synced: true },
+    { id: 'pending', date: '2026-10-05T11:00:00.000Z', synced: false }
+  ];
+
+  assert.deepEqual(
+    retainTransactionsOutsideDateRange(transactions, '2026-10-01', '2026-10-07').map(transaction => transaction.id),
+    ['recent', 'older', 'pending']
+  );
+});
+
+test('large product catalogs render progressively and precompute cart quantities once', () => {
+  const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+
+  assert.match(appSource, /const PRODUCT_RENDER_PAGE_SIZE = 100/);
+  assert.match(appSource, /categoryProducts\s*\.slice\(0, visibleCount\)/);
+  assert.match(appSource, /productsForTable\.slice\(0, productTableVisibleRowCount\)/);
+  assert.match(appSource, /totalInCartsByProduct\.set\(/);
+});
+
+test('product cloud sync hydrates in pages and uses a bounded realtime change feed', () => {
+  const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const indexConfig = JSON.parse(fs.readFileSync(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
+
+  assert.match(appSource, /const PRODUCT_CLOUD_PAGE_SIZE = 200/);
+  assert.match(appSource, /function setupPagedProductSync\(uid\)/);
+  assert.match(appSource, /collectionConfigs\.filter\(config => config\.collectionName !== 'products'\)/);
+  assert.match(appSource, /limit\(PRODUCT_CLOUD_PAGE_SIZE\)/);
+  assert.match(appSource, /enqueueSync: false,[\s\S]*?saveState\('activeOrders'/);
+  assert.ok(Array.isArray(indexConfig.indexes));
 });
 
 test('paginateInvoiceItems uses one shared thirty-row A4 page limit', () => {

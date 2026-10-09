@@ -19,6 +19,24 @@ function normalizeAdminEntry(entry) {
   };
 }
 
+export async function mapWithConcurrency(items = [], concurrency = 1, mapper = value => value) {
+  if (!Array.isArray(items)) return [];
+  if (typeof mapper !== 'function') throw new TypeError('A mapper function is required');
+
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  const workerCount = Math.min(items.length, Math.max(1, Math.floor(Number(concurrency) || 1)));
+
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      results[index] = await mapper(items[index], index);
+    }
+  }));
+
+  return results;
+}
+
 export function getConfiguredAdminEntries({ configuredEntries = [], currentEmail = '', includeCurrentEmail = false } = {}) {
   const normalizedEntries = Array.isArray(configuredEntries)
     ? configuredEntries.map((entry) => normalizeAdminEntry(entry)).filter(Boolean)
