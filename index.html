@@ -45,7 +45,7 @@
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script type="module" src="app.js?v=20261009-v5"></script>
+  <script type="module" src="app.js?v=20261009-v8"></script>
   <script>
     // Safety stubs to prevent ReferenceError from inline onclicks
     window.loginWithPIN = window.loginWithPIN || function() { console.warn('loginWithPIN called before app module loaded'); };
@@ -1122,7 +1122,7 @@
         <div class="dashboard-health-grid" aria-label="Shop device and app health">
           <article class="dashboard-health-card" data-dashboard-card-key="deviceHealth">
             <div class="dashboard-health-heading">
-              <div><span class="dashboard-health-kicker">THIS DEVICE</span><h4>Device capability</h4></div>
+              <div><span class="dashboard-health-kicker">THIS DEVICE</span><h4>Device capability</h4><span id="deviceHealthGrade" class="dashboard-health-grade">Measuring</span></div>
               <span class="dashboard-health-icon" aria-hidden="true">▦</span>
             </div>
             <div class="dashboard-health-content">
@@ -1136,7 +1136,7 @@
           </article>
           <article class="dashboard-health-card" data-dashboard-card-key="networkHealth">
             <div class="dashboard-health-heading">
-              <div><span class="dashboard-health-kicker">CONNECTION</span><h4>Network strength</h4></div>
+              <div><span class="dashboard-health-kicker">CONNECTION</span><h4>Network strength</h4><span id="networkHealthGrade" class="dashboard-health-grade">Measuring</span></div>
               <span class="dashboard-health-icon" aria-hidden="true">⌁</span>
             </div>
             <div class="dashboard-health-content">
@@ -1150,7 +1150,7 @@
           </article>
           <article class="dashboard-health-card" data-dashboard-card-key="appHealth">
             <div class="dashboard-health-heading">
-              <div><span class="dashboard-health-kicker">THIS SHOP</span><h4>App performance</h4></div>
+              <div><span class="dashboard-health-kicker">THIS SHOP</span><h4>App performance</h4><span id="appHealthGrade" class="dashboard-health-grade">Measuring</span></div>
               <span class="dashboard-health-icon" aria-hidden="true">◷</span>
             </div>
             <div class="dashboard-health-content">

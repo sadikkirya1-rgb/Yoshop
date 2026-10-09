@@ -12866,24 +12866,28 @@ function updateDashboard() {
   updateDashboardHealthCards();
 }
 
-function setDashboardHealthMeter(cardId, scoreId, score, label) {
-  const card = document.getElementById(cardId);
+function setDashboardHealthMeter(cardId, scoreId, gradeId, score, label) {
+  const meter = document.getElementById(cardId);
+  const card = meter?.closest('.dashboard-health-card');
   const value = document.getElementById(scoreId);
-  if (!card || !value) return;
+  const grade = document.getElementById(gradeId);
+  if (!meter || !card || !value || !grade) return;
 
   if (!Number.isFinite(score)) {
-    card.style.setProperty('--meter-value', '0%');
+    meter.style.setProperty('--meter-value', '0%');
     card.dataset.state = 'unknown';
     value.textContent = 'N/A';
-    card.setAttribute('aria-label', `${label} unavailable`);
+    grade.textContent = 'Unavailable';
+    meter.setAttribute('aria-label', `${label} unavailable`);
     return;
   }
 
   const boundedScore = Math.max(0, Math.min(100, Math.round(score)));
-  card.style.setProperty('--meter-value', `${boundedScore}%`);
-  card.dataset.state = boundedScore >= 75 ? 'good' : boundedScore >= 45 ? 'fair' : 'poor';
+  meter.style.setProperty('--meter-value', `${boundedScore}%`);
+  card.dataset.state = boundedScore >= 70 ? 'good' : boundedScore >= 40 ? 'fair' : 'poor';
   value.textContent = `${boundedScore}%`;
-  card.setAttribute('aria-label', `${label}: ${boundedScore}%`);
+  grade.textContent = card.dataset.state === 'good' ? 'Stable' : card.dataset.state === 'fair' ? 'Weak' : 'Poor';
+  meter.setAttribute('aria-label', `${label}: ${boundedScore}%, ${grade.textContent}`);
 }
 
 function measureDashboardNetworkLatency() {
@@ -12951,7 +12955,7 @@ function updateDashboardHealthCards() {
     ? `${window.screen.width} × ${window.screen.height}`
     : 'Unavailable';
 
-  setDashboardHealthMeter('deviceHealthMeter', 'deviceHealthScore', deviceScore, 'Device capability');
+  setDashboardHealthMeter('deviceHealthMeter', 'deviceHealthScore', 'deviceHealthGrade', deviceScore, 'Device capability');
   document.getElementById('deviceHealthCpu').textContent = cpuThreads ? `${cpuThreads} threads` : 'Unavailable';
   document.getElementById('deviceHealthMemory').textContent = memoryGb ? `At least ${memoryGb} GB` : 'Unavailable';
   document.getElementById('deviceHealthDisplay').textContent = `${platform} · ${display}`;
@@ -12967,7 +12971,7 @@ function updateDashboardHealthCards() {
   else if (latencyMs !== null) networkScore = Math.max(0, 100 - Math.max(0, latencyMs - 50) / 15);
   else if (effectiveType) networkScore = ({ 'slow-2g': 15, '2g': 35, '3g': 65, '4g': 90 })[effectiveType] ?? null;
 
-  setDashboardHealthMeter('networkHealthMeter', 'networkHealthScore', networkScore, 'Network strength');
+  setDashboardHealthMeter('networkHealthMeter', 'networkHealthScore', 'networkHealthGrade', networkScore, 'Network strength');
   document.getElementById('networkHealthStatus').textContent = online ? 'Online' : 'Offline';
   document.getElementById('networkHealthType').textContent = effectiveType
     ? `${effectiveType}${Number.isFinite(connection?.downlink) ? ` · ${connection.downlink} Mbps` : ''}`
@@ -12981,7 +12985,7 @@ function updateDashboardHealthCards() {
   const refreshScore = Number.isFinite(dashboardRefreshDurationMs)
     ? Math.max(0, 100 - Math.max(0, dashboardRefreshDurationMs - 50) / 20)
     : null;
-  setDashboardHealthMeter('appHealthMeter', 'appHealthScore', refreshScore, 'App performance');
+  setDashboardHealthMeter('appHealthMeter', 'appHealthScore', 'appHealthGrade', refreshScore, 'App performance');
   document.getElementById('appHealthRefresh').textContent = Number.isFinite(dashboardRefreshDurationMs)
     ? `${Math.round(dashboardRefreshDurationMs)} ms`
     : 'Measuring';

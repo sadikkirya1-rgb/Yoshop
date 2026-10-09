@@ -506,11 +506,13 @@ section>h3 {
 .dashboard-health-card {
   --health-meter: #228b5a;
   --health-track: #e3ece7;
+  --health-surface: #eef8f1;
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--border-color);
+  border-top: 4px solid var(--health-meter);
   border-radius: 8px;
-  background: var(--card);
+  background: var(--health-surface);
   color: var(--text);
 }
 
@@ -525,6 +527,14 @@ section>h3 {
 .dashboard-health-heading h4 {
   margin: 2px 0 0;
   font-size: 0.95rem;
+}
+
+.dashboard-health-grade {
+  display: inline-block;
+  margin-top: 4px;
+  color: var(--health-meter);
+  font-size: 0.72rem;
+  font-weight: 750;
 }
 
 .dashboard-health-kicker {
@@ -569,19 +579,28 @@ section>h3 {
   position: relative;
 }
 
+.dashboard-health-card[data-state="good"] {
+  --health-meter: #21865b;
+  --health-track: #d8eee2;
+  --health-surface: #eef8f1;
+}
+
 .dashboard-health-card[data-state="fair"] {
-  --health-meter: #d89b18;
-  --health-track: #f3ead4;
+  --health-meter: #bb8500;
+  --health-track: #faecc1;
+  --health-surface: #fff8e3;
 }
 
 .dashboard-health-card[data-state="poor"] {
-  --health-meter: #d64545;
-  --health-track: #f2dddd;
+  --health-meter: #c63737;
+  --health-track: #f4dada;
+  --health-surface: #fff0f0;
 }
 
 .dashboard-health-card[data-state="unknown"] {
   --health-meter: #89939e;
   --health-track: #e5e8eb;
+  --health-surface: #f1f3f5;
 }
 
 .dashboard-health-details {
@@ -617,16 +636,23 @@ body.dark-mode .dashboard-health-card {
   --health-track: #414943;
 }
 
+body.dark-mode .dashboard-health-card[data-state="good"] {
+  --health-surface: #1d3026;
+}
+
 body.dark-mode .dashboard-health-card[data-state="fair"] {
   --health-track: #50472f;
+  --health-surface: #382f18;
 }
 
 body.dark-mode .dashboard-health-card[data-state="poor"] {
   --health-track: #503737;
+  --health-surface: #3a2020;
 }
 
 body.dark-mode .dashboard-health-card[data-state="unknown"] {
   --health-track: #41464b;
+  --health-surface: #272d32;
 }
 
 @media (max-width: 480px) {
