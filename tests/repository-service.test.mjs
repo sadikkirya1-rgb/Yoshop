@@ -98,6 +98,30 @@ test('createRepositoryService flushes independent queued actions concurrently', 
   assert.equal(maxActiveWrites, 3);
 });
 
+test('createRepositoryService processes a larger sync backlog with increased default concurrency', async () => {
+  const fakeRepository = createFakeRepository();
+  let activeWrites = 0;
+  let maxActiveWrites = 0;
+  const service = createRepositoryService({
+    repository: fakeRepository,
+    cloudSyncHandler: async () => {
+      activeWrites += 1;
+      maxActiveWrites = Math.max(maxActiveWrites, activeWrites);
+      await new Promise(resolve => setTimeout(resolve, 5));
+      activeWrites -= 1;
+    }
+  });
+
+  await Promise.all(Array.from({ length: 12 }, (_, index) => (
+    service.enqueueSyncAction({ id: `sync-${index}`, entityType: 'products', payload: { id: `p-${index}` } })
+  )));
+  const results = await service.flushSyncQueue();
+
+  assert.equal(results.length, 12);
+  assert.equal(results.every(result => result.status === 'processed'), true);
+  assert.equal(maxActiveWrites, 8);
+});
+
 test('createRepositoryService keeps transient sync errors pending so they can retry without getting stuck', async () => {
   const fakeRepository = createFakeRepository();
   const service = createRepositoryService({

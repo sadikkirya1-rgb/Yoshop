@@ -8,6 +8,7 @@ const DEFAULT_PERMISSION_TOKENS = [
   'customerTab',
   'stockTab',
   'transactionsTab',
+  'invoicesTab',
   'reportsTab',
   'auditReportTab',
   'settingsTab',
@@ -54,6 +55,8 @@ const FEATURE_ALIASES = {
   customers: 'customerTab',
   stock: 'stockTab',
   sales: 'transactionsTab',
+  invoice: 'invoicesTab',
+  invoices: 'invoicesTab',
   reports: 'reportsTab',
   audit: 'auditReportTab',
   auditreport: 'auditReportTab',
@@ -121,6 +124,11 @@ function hasPermission(role, permissions = [], feature = '') {
     return false;
   }
 
+  if (featureParts.length === 1) {
+    return normalizedPermissions.includes(`${section}.read`) ||
+      normalizedPermissions.includes(`${section}.write`);
+  }
+
   if (featureParts.length > 2 && normalizedPermissions.includes(`${permissionPath}.write`)) {
     return true;
   }
@@ -143,7 +151,7 @@ function getFirstAllowedTab(role, permissions = [], fallback = 'menuTab') {
     dashboard: 'dashboardTab', sales: 'menuTab', products: 'addDishTab', categories: 'categoryTab',
     units: 'unitTab', staff: 'staffTab', customers: 'customerTab', inventory: 'stockTab',
     reports: 'reportsTab', audit: 'auditReportTab', auditreport: 'auditReportTab',
-    settings: 'settingsTab', invoices: 'invoicesTab'
+    settings: 'settingsTab', invoice: 'invoicesTab', invoices: 'invoicesTab'
   };
   const directTab = normalizedPermissions.find(permission => permission.endsWith('Tab'));
   if (directTab) return directTab;

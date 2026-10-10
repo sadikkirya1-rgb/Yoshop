@@ -166,7 +166,7 @@ export function createRepositoryService(options = {}) {
         }
       };
 
-      const requestedConcurrency = Math.floor(Number(options.concurrency) || 4);
+      const requestedConcurrency = Math.floor(Number(options.concurrency) || 8);
       const concurrency = Math.min(queue.length, Math.max(1, requestedConcurrency));
       await Promise.all(Array.from({ length: concurrency }, processActions));
 

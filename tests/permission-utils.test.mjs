@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from '../permission-utils.mjs';
+import { DEFAULT_PERMISSION_TOKENS, normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from '../permission-utils.mjs';
 
 test('normalizePermissions collapses duplicates and filters empty values', () => {
   assert.deepEqual(normalizePermissions(['menuTab', '', 'menuTab', 'reportsTab']), ['menuTab', 'reportsTab']);
@@ -40,6 +40,15 @@ test('section read and write permissions are distinct and write implies actions'
   assert.equal(hasPermission('staff', ['products.read'], 'products.edit'), false);
   assert.equal(hasPermission('staff', ['products.write'], 'products.read'), true);
   assert.equal(hasPermission('staff', ['products.write'], 'products.edit'), true);
+});
+
+test('invoice section access accepts invoice read/write permissions and legacy tab grants', () => {
+  assert.equal(hasPermission('staff', ['invoices.read'], 'invoices'), true);
+  assert.equal(hasPermission('staff', ['invoices.write'], 'invoices'), true);
+  assert.equal(hasPermission('staff', ['invoices.edit'], 'invoices'), false);
+  assert.equal(hasPermission('staff', ['invoicesTab'], 'invoices'), true);
+  assert.ok(DEFAULT_PERMISSION_TOKENS.includes('invoicesTab'));
+  assert.equal(getFirstAllowedTab('staff', ['invoices.read']), 'invoicesTab');
 });
 
 test('audit-only permissions resolve to the audit report tab and stay visible to permitted staff', () => {

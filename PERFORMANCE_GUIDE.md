@@ -211,6 +211,13 @@ See `FIREBASE_SECURITY.md` for exact configuration.
 
 ## 🔄 Sync Performance
 
+### Queued Cloud Sync
+
+Queued changes are flushed with up to 8 concurrent cloud-sync workers by default,
+so independent changes can finish sooner when a backlog has built up. Callers may
+pass a lower `concurrency` option to `flushSyncQueue` when a device or connection
+needs a smaller workload.
+
 ### Real-Time Sync Optimization
 
 **Debounce System:**
