@@ -4187,11 +4187,11 @@ table:not(.payment-modal-content table) td.u-text-break {
 
 /* Panel Entrance Animations */
 .animate-panel-left {
-  animation: panelSlideInLeft 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: panelSlideInLeft 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-panel-right {
-  animation: panelSlideInRight 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: panelSlideInRight 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes panelSlideInLeft {

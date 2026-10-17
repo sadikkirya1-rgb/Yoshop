@@ -5893,9 +5893,7 @@ function getLoginFeedbackHtml() {
 }
 
 const LOGIN_FEEDBACK_DISPLAY_MS = 3000;
-const LOGIN_LOADING_MINIMUM_MS = LOGIN_FEEDBACK_DISPLAY_MS;
-const LOGIN_SUCCESS_DISPLAY_MS = 5000;
-let loginFeedbackStartedAt = 0;
+const LOGIN_SUCCESS_DISPLAY_MS = 700;
 let loginFeedbackTimer = null;
 
 function showLoginFeedback(state, message = '') {
@@ -5924,19 +5922,12 @@ function showLoginFeedback(state, message = '') {
   messageEl.textContent = nextState.message;
   messageEl.style.color = state === 'error' ? '#ffd7d7' : 'white';
   feedback.style.display = 'block';
-  if (state === 'loading') loginFeedbackStartedAt = Date.now();
   if (state === 'error') {
     loginFeedbackTimer = window.setTimeout(() => {
       if (feedback) feedback.style.display = 'none';
       loginFeedbackTimer = null;
     }, LOGIN_FEEDBACK_DISPLAY_MS);
   }
-}
-
-async function waitForLoginLoadingMinimum() {
-  const elapsed = Date.now() - loginFeedbackStartedAt;
-  const remaining = Math.max(0, LOGIN_LOADING_MINIMUM_MS - elapsed);
-  if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining));
 }
 
 function showAuthLoginError(message = 'Invalid email or password') {
@@ -19126,7 +19117,6 @@ async function mainInit() {
       if (user) console.log("Your Firebase UID is:", user.uid);
       if (user && emailLoginSuccessFeedbackPending) {
         showLoginFeedback('success');
-        await new Promise(resolve => window.setTimeout(resolve, LOGIN_SUCCESS_DISPLAY_MS));
         emailLoginSuccessFeedbackPending = false;
       }
       updateAuthUI(user);
@@ -19803,7 +19793,6 @@ async function loginWithPIN() {
   const pinInput = document.getElementById('loginPIN');
   const enteredPin = pinInput?.value || '';
   showLoginFeedback('loading', 'Unlocking...');
-  await waitForLoginLoadingMinimum();
 
   if (loginSubStage === 'admin') {
     const shopAdminPin = settings.ShopAdminPIN || settings.managerPIN || settings.ShopAdmin;
