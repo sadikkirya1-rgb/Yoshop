@@ -3069,7 +3069,7 @@ const PLACEHOLDER_IMAGE = '/assets/icons/android192x192.png';
 let defaultMenu = [];
 let menu = [];
 let stockTableFilter = 'all';
-let stockTablePageSize = 5;
+let stockTablePageSize = 10;
 let stockTablePage = 1;
 let stockTableSearchTerm = '';
 let activeOrders = {};
@@ -6709,6 +6709,16 @@ function getActiveTabStorageKey() {
 }
 
 function restoreActiveTab() {
+  const savedTabId = getRestorableActiveTabId();
+  if (!savedTabId) return;
+
+  const button = Array.from(document.querySelectorAll('nav button')).find((navButton) => (
+    navButton.getAttribute('onclick')?.includes(`showTab('${savedTabId}'`)
+  ));
+  showTab(savedTabId, button);
+}
+
+function getRestorableActiveTabId() {
   const storageKey = getActiveTabStorageKey();
   let storedTabId = null;
   if (storageKey) {
@@ -6725,17 +6735,11 @@ function restoreActiveTab() {
   } catch (error) {
     console.warn('Could not decode the active screen in the URL:', error);
   }
-  const savedTabId = [hashTabId, storedTabId].find(tabId => {
+  return [storedTabId, hashTabId].find(tabId => {
     const section = tabId && document.getElementById(tabId);
     const hasAccess = isFullAccessRole() || currentUserPermissions.includes(tabId);
     return section?.tagName === 'SECTION' && hasAccess;
   });
-  if (!savedTabId) return;
-
-  const button = Array.from(document.querySelectorAll('nav button')).find((navButton) => (
-    navButton.getAttribute('onclick')?.includes(`showTab('${savedTabId}'`)
-  ));
-  showTab(savedTabId, button);
 }
 
 function showTab(tabId, btn) {
@@ -16463,16 +16467,23 @@ function setStockTableFilter(filterName = 'all') {
   renderStockListTable();
 }
 
-function setStockTablePageSize(pageSize = 5) {
-  stockTablePageSize = pageSize === 'all' ? 'all' : Number(pageSize) || 5;
+function setStockTablePageSize(pageSize = 10) {
+  stockTablePageSize = Number(pageSize) || 10;
   stockTablePage = 1;
-  document.querySelectorAll('.stock-page-size-btn').forEach(button => {
-    button.classList.toggle('active', String(button.dataset.pageSize) === String(stockTablePageSize));
-  });
   renderStockListTable();
 }
 
 window.setStockTablePageSize = setStockTablePageSize;
+
+function setStockTablePage(page) {
+  if (page === 'previous') stockTablePage -= 1;
+  else if (page === 'next') stockTablePage += 1;
+  else stockTablePage = Number(page) || 1;
+  stockTablePage = Math.max(1, stockTablePage);
+  renderStockListTable();
+}
+
+window.setStockTablePage = setStockTablePage;
 
 function renderStockListTable() {
   const searchTerm = String(document.getElementById('stockSearchInput')?.value || '').trim().toLowerCase();
@@ -16509,12 +16520,11 @@ function renderStockListTable() {
     tbody.appendChild(emptyRow);
   }
 
-  const pageSize = stockTablePageSize === 'all' ? stockItems.length || 1 : stockTablePageSize;
+  const pageSize = stockTablePageSize;
   const totalPages = Math.max(1, Math.ceil(stockItems.length / pageSize));
   stockTablePage = Math.min(stockTablePage, totalPages);
-  const visibleStockItems = stockTablePageSize === 'all'
-    ? stockItems
-    : stockItems.slice((stockTablePage - 1) * pageSize, stockTablePage * pageSize);
+  const firstVisibleIndex = (stockTablePage - 1) * pageSize;
+  const visibleStockItems = stockItems.slice(firstVisibleIndex, firstVisibleIndex + pageSize);
 
   visibleStockItems.forEach((item, rowIndex) => {
     const index = menu.indexOf(item);
@@ -16533,7 +16543,7 @@ function renderStockListTable() {
 
     tr.innerHTML = `
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('stockListBody','selectAllStock')"></td>
-        <td>${stockTablePageSize === 'all' ? rowIndex + 1 : ((stockTablePage - 1) * pageSize) + rowIndex + 1}</td>
+        <td>${firstVisibleIndex + rowIndex + 1}</td>
         <td class="u-fs-08 u-text-break">
           <div style="display:flex; align-items:center; gap:8px;">
             <img src="${item.image || 'https://placehold.co/40x40?text=No+Image'}" alt="${escapeHtml(item.name || 'Stock item')}" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #d9d9d9; background:#f7f7f7;">
@@ -16567,10 +16577,15 @@ function renderStockListTable() {
 
   const pageStatus = document.getElementById('stockTablePageStatus');
   if (pageStatus) {
-    pageStatus.textContent = stockTablePageSize === 'all' || stockItems.length === 0
-      ? `${stockItems.length} item${stockItems.length === 1 ? '' : 's'}`
-      : `Page ${stockTablePage} of ${totalPages} (${stockItems.length} items)`;
+    const endVisibleIndex = Math.min(firstVisibleIndex + visibleStockItems.length, stockItems.length);
+    pageStatus.textContent = stockItems.length === 0
+      ? 'Showing 0 of 0'
+      : `Showing ${firstVisibleIndex + 1}-${endVisibleIndex} of ${stockItems.length}`;
   }
+  const previousButton = document.getElementById('stockTablePreviousPage');
+  const nextButton = document.getElementById('stockTableNextPage');
+  if (previousButton) previousButton.disabled = stockTablePage <= 1;
+  if (nextButton) nextButton.disabled = stockTablePage >= totalPages;
 }
 
 function editStockItem(index) {
@@ -17748,7 +17763,7 @@ function deleteSupplierEntry(id) {
   showAppAlert('Supplier deleted.', 'Deleted');
 }
 
-function applyDataTableControls(toolbar) {
+function applyDataTableControls(toolbar, resetPage = false) {
   if (!toolbar) return;
   const body = document.getElementById(toolbar.dataset.tableControls);
   if (!body) return;
@@ -17757,6 +17772,10 @@ function applyDataTableControls(toolbar) {
   const filter = toolbar.querySelector('[data-table-filter]');
   const searchValue = String(search?.value || '').trim().toLowerCase();
   const filterValue = String(filter?.value || 'all').toLowerCase();
+  if (resetPage) {
+    const pageState = dataTablePagination.get(body.id);
+    if (pageState) pageState.page = 1;
+  }
 
   const rows = Array.from(body.querySelectorAll(':scope > tr:not([data-search-empty-row])'));
   const customerNameRows = toolbar.dataset.tableSearchPriority === 'customer-name' && searchValue
@@ -17796,38 +17815,38 @@ function applyDataTableControls(toolbar) {
   }
 }
 
-const dataTablePageSizes = new Map();
+const dataTablePagination = new Map();
 
 function applyDataTablePagination(body) {
   if (!body) return;
   const controls = document.querySelector(`[data-row-controls="${body.id}"]`);
   if (!controls) return;
 
-  const pageSize = dataTablePageSizes.get(body.id) || 5;
+  const pageState = dataTablePagination.get(body.id) || { page: 1, pageSize: 10 };
   const rows = Array.from(body.querySelectorAll(':scope > tr:not([data-search-empty-row])'));
+  const visibleRows = rows.filter(row => row.dataset.dataTableFilterHidden !== 'true');
+  const totalPages = Math.max(1, Math.ceil(visibleRows.length / pageState.pageSize));
+  pageState.page = Math.min(pageState.page, totalPages);
+  const firstVisibleIndex = (pageState.page - 1) * pageState.pageSize;
+  const endVisibleIndex = Math.min(firstVisibleIndex + pageState.pageSize, visibleRows.length);
+  const visibleRowSet = new Set(visibleRows.slice(firstVisibleIndex, endVisibleIndex));
   rows.forEach(row => {
-    if (row.dataset.dataTablePageHidden === 'true') {
-      row.hidden = row.dataset.dataTableFilterHidden === 'true';
-      delete row.dataset.dataTablePageHidden;
-    }
+    row.hidden = row.dataset.dataTableFilterHidden === 'true' || !visibleRowSet.has(row);
   });
-  const visibleRows = rows.filter(row => !row.hidden);
-  visibleRows.forEach((row, index) => {
-    if (pageSize !== 'all' && index >= pageSize) {
-      row.hidden = true;
-      row.dataset.dataTablePageHidden = 'true';
-    }
-  });
+  dataTablePagination.set(body.id, pageState);
 
-  controls.querySelectorAll('[data-row-page-size]').forEach(button => {
-    button.classList.toggle('active', Number(button.dataset.rowPageSize) === pageSize);
-  });
-  const allButton = controls.querySelector('[data-row-page-size="all"]');
-  if (allButton) allButton.classList.toggle('active', pageSize === 'all');
+  const pageSizeSelect = controls.querySelector('[data-row-page-size]');
+  if (pageSizeSelect) pageSizeSelect.value = String(pageState.pageSize);
   const status = controls.querySelector('[data-row-status]');
   if (status) {
-    status.textContent = `${visibleRows.length} item${visibleRows.length === 1 ? '' : 's'}`;
+    status.textContent = visibleRows.length === 0
+      ? 'Showing 0 of 0'
+      : `Showing ${firstVisibleIndex + 1}-${endVisibleIndex} of ${visibleRows.length}`;
   }
+  const previousButton = controls.querySelector('[data-row-previous]');
+  const nextButton = controls.querySelector('[data-row-next]');
+  if (previousButton) previousButton.disabled = pageState.page <= 1;
+  if (nextButton) nextButton.disabled = pageState.page >= totalPages;
 }
 
 function initializeDataTablePagination() {
@@ -17837,15 +17856,19 @@ function initializeDataTablePagination() {
 
     const controls = document.createElement('div');
     controls.dataset.rowControls = body.id;
-    controls.style.cssText = 'display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; margin:10px 0 0;';
+    controls.className = 'table-pagination-controls';
     controls.innerHTML = `
-      <span>Show rows:</span>
-      <button type="button" class="btn btn-secondary active" data-row-page-size="5">5</button>
-      <button type="button" class="btn btn-secondary" data-row-page-size="10">10</button>
-      <button type="button" class="btn btn-secondary" data-row-page-size="50">50</button>
-      <button type="button" class="btn btn-secondary" data-row-page-size="100">100</button>
-      <button type="button" class="btn btn-secondary" data-row-page-size="all">All</button>
-      <span data-row-status aria-live="polite"></span>`;
+      <label>Rows per page
+        <select data-row-page-size aria-label="Rows per page">
+          <option value="10" selected>10</option>
+          <option value="25">25</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </label>
+      <span data-row-status aria-live="polite"></span>
+      <button type="button" class="btn btn-secondary" data-row-previous aria-label="Previous page">Previous</button>
+      <button type="button" class="btn btn-secondary" data-row-next aria-label="Next page">Next</button>`;
 
     const table = body.closest('table');
     const tableWrapper = table?.parentElement?.classList.contains('u-overflow-x-auto')
@@ -17854,14 +17877,25 @@ function initializeDataTablePagination() {
     if (!tableWrapper) return;
     tableWrapper.insertAdjacentElement('afterend', controls);
 
-    controls.querySelectorAll('[data-row-page-size]').forEach(button => {
-      button.addEventListener('click', () => {
-        dataTablePageSizes.set(body.id, button.dataset.rowPageSize === 'all' ? 'all' : Number(button.dataset.rowPageSize));
+    const pageState = { page: 1, pageSize: 10 };
+    dataTablePagination.set(body.id, pageState);
+    controls.querySelector('[data-row-page-size]')?.addEventListener('change', event => {
+        pageState.pageSize = Number(event.target.value) || 10;
+        pageState.page = 1;
         applyDataTablePagination(body);
-      });
+    });
+    controls.querySelector('[data-row-previous]')?.addEventListener('click', () => {
+      pageState.page = Math.max(1, pageState.page - 1);
+      applyDataTablePagination(body);
+    });
+    controls.querySelector('[data-row-next]')?.addEventListener('click', () => {
+      pageState.page += 1;
+      applyDataTablePagination(body);
     });
 
-    new MutationObserver(() => applyDataTablePagination(body)).observe(body, { childList: true });
+    if (!document.querySelector(`[data-table-controls="${body.id}"]`)) {
+      new MutationObserver(() => applyDataTablePagination(body)).observe(body, { childList: true });
+    }
     applyDataTablePagination(body);
   });
 }
@@ -17880,15 +17914,15 @@ function initializeDataTableControls() {
 
     const search = toolbar.querySelector('[data-table-search]');
     const filter = toolbar.querySelector('[data-table-filter]');
-    search?.addEventListener('input', () => applyDataTableControls(toolbar));
-    filter?.addEventListener('change', () => applyDataTableControls(toolbar));
+    search?.addEventListener('input', () => applyDataTableControls(toolbar, true));
+    filter?.addEventListener('change', () => applyDataTableControls(toolbar, true));
     toolbar.querySelector('[data-table-filter-toggle]')?.addEventListener('click', () => {
       panel?.classList.toggle('is-open');
     });
     toolbar.querySelector('[data-table-reset]')?.addEventListener('click', () => {
       if (search) search.value = '';
       if (filter) filter.value = 'all';
-      applyDataTableControls(toolbar);
+      applyDataTableControls(toolbar, true);
     });
 
     const body = document.getElementById(toolbar.dataset.tableControls);
@@ -19078,7 +19112,7 @@ async function mainInit() {
         // Small delay to ensure Firestore rules pick up the auth token identity
         setTimeout(() => {
           const adminTabBtn = document.getElementById('nav-app-admin-btn');
-          if (adminTabBtn) showTab('appAdminTab', adminTabBtn);
+          if (adminTabBtn && !getRestorableActiveTabId()) showTab('appAdminTab', adminTabBtn);
         }, 500);
       } else if (user) {
         currentUserRole = null;

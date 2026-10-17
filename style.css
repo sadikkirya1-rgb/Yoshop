@@ -1600,6 +1600,32 @@ select option:checked {
 .data-table-filter-panel.is-open {
   display: flex;
 }
+.table-pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+.table-pagination-controls select {
+  min-height: 36px;
+  min-width: 72px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--card);
+  color: var(--text);
+}
+.table-pagination-controls .btn {
+  margin: 0;
+}
+.table-pagination-controls [aria-live] {
+  margin-right: auto;
+  opacity: 0.78;
+}
 .data-table-filter-panel select {
   min-height: 36px;
   min-width: 170px;
@@ -1611,6 +1637,10 @@ select option:checked {
 }
 
 @media (max-width: 768px) {
+  .table-pagination-controls {
+    justify-content: flex-start;
+  }
+
   .sales-history-controls {
     align-items: stretch;
   }

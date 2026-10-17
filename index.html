@@ -1302,14 +1302,17 @@
           </thead>
           <tbody id="stockListBody"></tbody>
         </table>
-        <div class="stock-pagination-controls" style="display:flex; justify-content:center; align-items:center; gap:8px; flex-wrap:wrap; margin-top:10px;">
-          <span>Show rows:</span>
-          <button type="button" class="btn btn-secondary stock-page-size-btn active" data-page-size="5" onclick="setStockTablePageSize(5)">5</button>
-          <button type="button" class="btn btn-secondary stock-page-size-btn" data-page-size="10" onclick="setStockTablePageSize(10)">10</button>
-          <button type="button" class="btn btn-secondary stock-page-size-btn" data-page-size="50" onclick="setStockTablePageSize(50)">50</button>
-          <button type="button" class="btn btn-secondary stock-page-size-btn" data-page-size="100" onclick="setStockTablePageSize(100)">100</button>
-          <button type="button" class="btn btn-secondary stock-page-size-btn" data-page-size="all" onclick="setStockTablePageSize('all')">All</button>
+        <div class="table-pagination-controls stock-pagination-controls">
+          <label for="stockTablePageSize">Rows per page</label>
+          <select id="stockTablePageSize" onchange="setStockTablePageSize(this.value)">
+            <option value="10" selected>10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
           <span id="stockTablePageStatus" aria-live="polite"></span>
+          <button type="button" class="btn btn-secondary" id="stockTablePreviousPage" onclick="setStockTablePage('previous')" aria-label="Previous stock page">Previous</button>
+          <button type="button" class="btn btn-secondary" id="stockTableNextPage" onclick="setStockTablePage('next')" aria-label="Next stock page">Next</button>
         </div>
       </section>
 
