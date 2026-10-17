@@ -200,21 +200,29 @@ function getTransactionMatchKeys(transaction = {}) {
 export function deduplicateTransactions(transactions = []) {
   const source = Array.isArray(transactions) ? transactions : [];
   const deduped = [];
+  const indexByMatchKey = new Map();
+  const matchKeysByIndex = [];
 
   source.forEach(transaction => {
     if (!transaction || typeof transaction !== 'object') return;
 
     const matchKeys = getTransactionMatchKeys(transaction);
-    const existingIndex = matchKeys.length > 0
-      ? deduped.findIndex(existing => {
-          if (!existing || typeof existing !== 'object') return false;
-          const existingKeys = getTransactionMatchKeys(existing);
-          return matchKeys.some(key => existingKeys.includes(key));
-        })
-      : -1;
+    let existingIndex = -1;
+    matchKeys.forEach(key => {
+      const candidateIndex = indexByMatchKey.get(key);
+      if (candidateIndex !== undefined && (existingIndex === -1 || candidateIndex < existingIndex)) {
+        existingIndex = candidateIndex;
+      }
+    });
 
     if (existingIndex < 0) {
       deduped.push({ ...transaction, duplicateCount: 0 });
+      const newIndex = deduped.length - 1;
+      const newKeys = getTransactionMatchKeys(deduped[newIndex]);
+      matchKeysByIndex[newIndex] = new Set(newKeys);
+      newKeys.forEach(key => {
+        if (!indexByMatchKey.has(key)) indexByMatchKey.set(key, newIndex);
+      });
       return;
     }
 
@@ -227,6 +235,17 @@ export function deduplicateTransactions(transactions = []) {
     const mergedRecord = shouldReplace ? { ...currentRecord, ...transaction } : { ...transaction, ...currentRecord };
     mergedRecord.duplicateCount = (currentRecord.duplicateCount || 0) + 1;
     deduped[existingIndex] = mergedRecord;
+    matchKeysByIndex[existingIndex].forEach(key => {
+      if (indexByMatchKey.get(key) === existingIndex) indexByMatchKey.delete(key);
+    });
+    const mergedKeys = getTransactionMatchKeys(mergedRecord);
+    matchKeysByIndex[existingIndex] = new Set(mergedKeys);
+    mergedKeys.forEach(key => {
+      const mappedIndex = indexByMatchKey.get(key);
+      if (mappedIndex === undefined || mappedIndex > existingIndex) {
+        indexByMatchKey.set(key, existingIndex);
+      }
+    });
   });
 
   return deduped.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

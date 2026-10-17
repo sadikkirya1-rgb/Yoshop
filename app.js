@@ -776,6 +776,7 @@ let currentLoggedInStaffName = sessionStorage.getItem('currentLoggedInStaffName'
 const sharedRecordLocks = new Map();
 const SHARED_RECORD_LOCK_TTL_MS = 60000;
 let actionPermissionObserver = null;
+let rolePermissionCacheKey = null;
 
 function getCurrentLockingStaffId() {
   return currentLoggedInStaffName || currentUser?.displayName || currentUser?.email || 'system';
@@ -12468,6 +12469,7 @@ let dashboardNetworkProbeAt = 0;
 let dashboardTransactionCountUid = null;
 let dashboardTransactionCountAttemptedUid = null;
 let dashboardTransactionTotalCount = null;
+let dashboardRefreshTimer = null;
 
 let dashboardDateFilterMode = 'today';
 let presenceHeartbeat = null;
@@ -12476,6 +12478,14 @@ function updateQuickFilterButtons(selected) {
   document.querySelectorAll('.dashboard-filter-buttons button').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.filter === selected);
   });
+}
+
+function scheduleDashboardUpdate() {
+  if (dashboardRefreshTimer) window.clearTimeout(dashboardRefreshTimer);
+  dashboardRefreshTimer = window.setTimeout(() => {
+    dashboardRefreshTimer = null;
+    updateDashboard();
+  }, 0);
 }
 
 function setDashboardFilter(filter) {
@@ -12510,13 +12520,13 @@ function setDashboardFilter(filter) {
   }
 
   updateQuickFilterButtons(filter);
-  updateDashboard();
+  scheduleDashboardUpdate();
 }
 
 function applyDashboardDateFilter() {
   dashboardDateFilterMode = 'custom';
   updateQuickFilterButtons('custom');
-  updateDashboard();
+  scheduleDashboardUpdate();
 }
 
 function getDashboardDateRange() {
@@ -12621,9 +12631,12 @@ function getFilteredWastageLossHistory() {
   });
 }
 
-function getFilteredDashboardAdjustments() {
+function getFilteredDashboardAdjustments(sourceTransactions = null) {
   const { startDate, endDate } = getDashboardDateRange();
-  const srcTransactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
+  const hasDateFilteredTransactions = Array.isArray(sourceTransactions);
+  const srcTransactions = hasDateFilteredTransactions
+    ? sourceTransactions
+    : deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
   let adjustmentList = [];
 
   srcTransactions.forEach(tx => {
@@ -12633,6 +12646,10 @@ function getFilteredDashboardAdjustments() {
     }
     txAdjustments.forEach(adj => {
       if (!adj || !adj.date) return;
+      if (hasDateFilteredTransactions) {
+        adjustmentList.push(adj);
+        return;
+      }
       const d = new Date(adj.date);
       if (Number.isNaN(d.getTime())) return;
       if (startDate && d < startDate) return;
@@ -12738,9 +12755,13 @@ async function clearAllAdjustments() {
 }
 
 function initializeDashboardFilters() {
-
-  // Always default to today on app load
-  setDashboardFilter('today');
+  dashboardDateFilterMode = 'today';
+  const todayValue = new Date().toISOString().split('T')[0];
+  const fromInput = document.getElementById('dashboardFromDate');
+  const toInput = document.getElementById('dashboardToDate');
+  if (fromInput) fromInput.value = todayValue;
+  if (toInput) toInput.value = todayValue;
+  updateQuickFilterButtons('today');
 }
 
 function updateDashboard() {
@@ -12752,9 +12773,10 @@ function updateDashboard() {
   if (!expenses) expenses = [];
 
   menu = normalizeProductCatalog(Array.isArray(menu) ? menu : []);
-  transactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
   const filteredTransactions = getFilteredDashboardTransactions();
   const filteredExpenses = getFilteredDashboardExpenses();
+  const filteredDashboardAdjustments = getFilteredDashboardAdjustments(filteredTransactions);
+  const filteredPurchaseList = getFilteredPurchaseHistory();
   const allProducts = getCanonicalProductCatalog(Array.isArray(menu) ? menu : [], { includeOnlySellable: true });
   const categoriesForDashboard = new Set(
     normalizeCategoryList(Array.isArray(dishCategories) ? dishCategories : [])
@@ -12774,7 +12796,7 @@ function updateDashboard() {
   });
   const dashboardPaymentMethodTotals = calculateDashboardPaymentMethodTotals({
     transactions: filteredTransactions,
-    adjustments: getFilteredDashboardAdjustments()
+    adjustments: filteredDashboardAdjustments
   });
 
   const totalRevenue = dashboardRevenueMetrics.totalRevenue;
@@ -12787,7 +12809,7 @@ function updateDashboard() {
   const operatingExpenses = calculateTotalExpenses(filteredExpenses);
   // Use date-filtered purchase list for purchaseSummary so service expense
   // and internalRevenueDeduction are scoped to the selected date range
-  const purchaseSummary = summarizePurchaseImpact(getFilteredPurchaseHistory());
+  const purchaseSummary = summarizePurchaseImpact(filteredPurchaseList);
   const effectiveRevenue = totalRevenue - purchaseSummary.internalRevenueDeduction;
   const netProfit = effectiveRevenue - totalCost - operatingExpenses;
   const totalExpenseCardAmount = purchaseSummary.totalPurchases + operatingExpenses;
@@ -12803,7 +12825,6 @@ function updateDashboard() {
   const totalServiceExpense = purchaseSummary.serviceExpense;
   // Use date-filtered wastage/purchase for dashboard cards
   const filteredWastage = getFilteredWastageLossHistory();
-  const filteredPurchaseList = getFilteredPurchaseHistory();
   const totalWastageLoss = calculateTotalWastageLoss(filteredWastage);
   const filteredPurchasesTotal = filteredPurchaseList.reduce((sum, e) => {
     return sum + Number(e.purchaseAmount ?? e.amount ?? e.cost ?? e.totalCost ?? e.total ?? e.value ?? 0);
@@ -12817,7 +12838,6 @@ function updateDashboard() {
     .reduce((sum, item) => sum + Number(item.stock || 0), 0);
 
   // Adjusted Amounts = total of debt/payment adjustments within the selected dashboard date range
-  const filteredDashboardAdjustments = getFilteredDashboardAdjustments();
   const adjustedAmounts = filteredDashboardAdjustments.reduce((sum, adj) => {
     return sum + Number(adj.amount || 0);
   }, 0);
@@ -16294,7 +16314,7 @@ function handleSplashScreen() {
   if (window._splashStarted) return;
   window._splashStarted = true;
 
-  setTimeout(() => {
+  window.requestAnimationFrame(() => {
     const splash = document.getElementById('splash-screen');
     const header = document.querySelector('header');
     const appLayout = document.querySelector('.app-layout');
@@ -16312,9 +16332,9 @@ function handleSplashScreen() {
           appLayout.style.visibility = 'visible';
           appLayout.style.opacity = '1';
         }
-      }, 800);
+      }, 180);
     }
-  }, 3000);
+  });
 }
 
 // ===== Settings Accordion =====
@@ -19683,6 +19703,25 @@ function closeLoginOverlay() {
   }
 }
 
+function applyActionPermissionVisibility(roots, normalizedPermissions, hasFullAccess) {
+  if (hasFullAccess) return;
+  const actionControls = new Set();
+  const selector = 'button, input[type="button"], input[type="submit"]';
+  roots.forEach(root => {
+    if (root.matches(selector)) actionControls.add(root);
+    root.querySelectorAll(selector).forEach(button => actionControls.add(button));
+  });
+
+  actionControls.forEach(button => {
+    const permission = getButtonActionPermission(button);
+    if (!permission) return;
+    const allowed = permission === 'deleteTab'
+      ? normalizedPermissions.includes('deleteTab')
+      : canPerformAction(permission);
+    button.style.display = allowed ? '' : 'none';
+  });
+}
+
 function applyRolePermissions() {
   const isShopAdmin = isShopAdminRole();
   const isAppAdmin = isAppAdminRole();
@@ -19693,12 +19732,29 @@ function applyRolePermissions() {
 
   if (!actionPermissionObserver && document.body) {
     let permissionRefreshQueued = false;
-    actionPermissionObserver = new MutationObserver(() => {
+    const pendingPermissionNodes = new Set();
+    actionPermissionObserver = new MutationObserver(records => {
+      let permissionControlsAdded = false;
+      records.forEach(record => Array.from(record.addedNodes).forEach(node => {
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        if (node.matches('button, input[type="button"], input[type="submit"]')
+          || node.querySelector('button, input[type="button"], input[type="submit"]')) {
+          pendingPermissionNodes.add(node);
+          permissionControlsAdded = true;
+        }
+      }));
+      if (!permissionControlsAdded) return;
       if (permissionRefreshQueued) return;
       permissionRefreshQueued = true;
       window.requestAnimationFrame(() => {
         permissionRefreshQueued = false;
-        applyRolePermissions();
+        const nodes = Array.from(pendingPermissionNodes);
+        pendingPermissionNodes.clear();
+        applyActionPermissionVisibility(
+          nodes,
+          getEffectivePermissions(currentUserRole, currentUserPermissions),
+          isShopAdminRole() || isAppAdminRole()
+        );
       });
     });
     actionPermissionObserver.observe(document.body, { childList: true, subtree: true });
@@ -19706,6 +19762,18 @@ function applyRolePermissions() {
 
   const activeTab = document.querySelector('section.active');
   const isInAdminTab = activeTab && activeTab.id === 'appAdminTab';
+  const permissionStateKey = JSON.stringify([
+    currentUserRole,
+    normalizedPermissions,
+    activeTab?.id || '',
+    isMonitoringMode,
+    nav.querySelectorAll('button').length
+  ]);
+  if (permissionStateKey === rolePermissionCacheKey) {
+    checkShopStatus();
+    return;
+  }
+  rolePermissionCacheKey = permissionStateKey;
 
   nav.querySelectorAll('button').forEach(btn => {
     const isAdminSpecific = btn.id === 'nav-app-admin-btn' || btn.id === 'nav-admin-shops' || btn.id === 'nav-admin-subscriptions' || btn.id === 'nav-admin-shops-list' || btn.id === 'nav-admin-audit-report' || btn.id === 'nav-admin-settings';
@@ -19758,14 +19826,11 @@ function applyRolePermissions() {
     }
   });
 
-  document.querySelectorAll('section button, section input[type="button"], section input[type="submit"]').forEach(button => {
-    const permission = getButtonActionPermission(button);
-    if (!permission || hasFullAccess) return;
-    const allowed = permission === 'deleteTab'
-      ? normalizedPermissions.includes('deleteTab')
-      : canPerformAction(permission);
-    button.style.display = allowed ? '' : 'none';
-  });
+  applyActionPermissionVisibility(
+    Array.from(document.querySelectorAll('section')),
+    normalizedPermissions,
+    hasFullAccess
+  );
 
   const securityGroup = document.getElementById('securitySettingsGroup');
   if (securityGroup) securityGroup.style.display = isShopAdmin ? 'block' : 'none';
