@@ -12802,7 +12802,8 @@ function updateDashboard() {
   });
   const dashboardPaymentMethodTotals = calculateDashboardPaymentMethodTotals({
     transactions: filteredTransactions,
-    adjustments: filteredDashboardAdjustments
+    adjustments: filteredDashboardAdjustments,
+    purchases: filteredPurchaseList
   });
 
   const totalRevenue = dashboardRevenueMetrics.totalRevenue;
@@ -13154,6 +13155,8 @@ window.clearPurchaseForm = clearPurchaseForm;
 window.renderPurchaseHistory = renderPurchaseHistory;
 window.populatePurchaseFormOptions = populatePurchaseFormOptions;
 window.populatePurchaseCost = populatePurchaseCost;
+window.updatePurchaseTotals = updatePurchaseTotals;
+window.togglePurchasePaymentMode = togglePurchasePaymentMode;
 window.togglePurchaseTypeFields = togglePurchaseTypeFields;
 window.saveWastageLossEntry = saveWastageLossEntry;
 window.clearWastageLossForm = clearWastageLossForm;
@@ -17281,6 +17284,28 @@ function populatePurchaseCost() {
   const selectedOption = itemSelect.options[itemSelect.selectedIndex];
   const defaultCost = Number(selectedOption?.dataset.cost || 0);
   costInput.value = defaultCost.toFixed(2);
+  updatePurchaseTotals();
+}
+
+function updatePurchaseTotals() {
+  const stockQty = Number(document.getElementById('purchaseQty')?.value || 0);
+  const stockCost = Number(document.getElementById('purchaseCost')?.value || 0);
+  const stockTotal = document.getElementById('purchaseTotal');
+  if (stockTotal) stockTotal.value = (stockQty * stockCost).toFixed(2);
+
+  const personalQty = Number(document.getElementById('purchasePersonalExpQty')?.value || 0);
+  const personalUnitCost = Number(document.getElementById('purchasePersonalExpUnitCost')?.value || 0);
+  const personalTotal = document.getElementById('purchasePersonalExpTotal');
+  if (personalTotal) personalTotal.value = (personalQty * personalUnitCost).toFixed(2);
+}
+
+function togglePurchasePaymentMode() {
+  const purchaseType = document.getElementById('purchaseType')?.value || '';
+  const purchaseSource = purchaseType === 'personal-exp'
+    ? 'internal'
+    : (document.getElementById('purchaseSource')?.value || 'external');
+  const paymentModeRow = document.getElementById('purchasePaymentModeRow');
+  if (paymentModeRow) paymentModeRow.style.display = purchaseSource === 'internal' ? 'flex' : 'none';
 }
 
 function togglePurchaseTypeFields() {
@@ -17299,10 +17324,11 @@ function togglePurchaseTypeFields() {
     sourceSelect.disabled = purchaseType === 'personal-exp';
     if (purchaseType === 'personal-exp') sourceSelect.value = 'internal';
   }
+  togglePurchasePaymentMode();
 }
 
 function clearPurchaseForm() {
-  const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseType', 'purchaseSource', 'purchaseItem', 'purchaseQty', 'purchaseCost', 'purchaseServiceName', 'purchaseServiceCost', 'purchasePersonalExpItem', 'purchasePersonalExpDescription', 'purchasePersonalExpQty', 'purchasePersonalExpUnit', 'purchasePersonalExpTotal', 'purchaseNewItemName', 'purchaseNewItemCategory', 'purchaseNewItemCost', 'purchaseNewItemQty'];
+  const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseType', 'purchaseSource', 'purchaseItem', 'purchaseQty', 'purchaseCost', 'purchaseTotal', 'purchaseServiceName', 'purchaseServiceCost', 'purchasePersonalExpItem', 'purchasePersonalExpDescription', 'purchasePersonalExpQty', 'purchasePersonalExpUnit', 'purchasePersonalExpUnitCost', 'purchasePersonalExpTotal', 'purchaseNewItemName', 'purchaseNewItemCategory', 'purchaseNewItemCost', 'purchaseNewItemQty'];
   formFields.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -17319,6 +17345,8 @@ function clearPurchaseForm() {
   if (purchaseType) purchaseType.value = '';
   const purchaseSource = document.getElementById('purchaseSource');
   if (purchaseSource) purchaseSource.value = 'external';
+  const paymentMethod = document.getElementById('purchasePaymentMethod');
+  if (paymentMethod) paymentMethod.value = 'Cash';
   togglePurchaseTypeFields();
   populatePurchaseFormOptions();
 }
@@ -17339,6 +17367,7 @@ function renderPurchaseHistory() {
         <td>${entry.supplier || '—'}</td>
         <td>${entry.item || entry.itemName || '—'}</td>
         <td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td>
+        <td>${escapeHtml(entry.paymentMethod || (entry.purchaseSource === 'internal' ? 'Cash' : 'External'))}</td>
         <td class="u-text-right">${formatCurrency(amount)}</td>
         <td class="u-nowrap" style="text-align:center;">
           <button class="icon-btn" onclick="editPurchaseEntry('${entry.id}')" title="Edit">✏️</button>
@@ -17365,7 +17394,11 @@ function savePurchaseEntry() {
   const personalExpDescription = document.getElementById('purchasePersonalExpDescription')?.value?.trim();
   const personalExpQty = Number(document.getElementById('purchasePersonalExpQty')?.value || 0);
   const personalExpUnit = document.getElementById('purchasePersonalExpUnit')?.value?.trim();
-  const personalExpTotal = Number(document.getElementById('purchasePersonalExpTotal')?.value || 0);
+  const personalExpUnitCost = Number(document.getElementById('purchasePersonalExpUnitCost')?.value || 0);
+  const personalExpTotal = personalExpQty * personalExpUnitCost;
+  const paymentMethod = purchaseSource === 'internal'
+    ? (document.getElementById('purchasePaymentMethod')?.value || 'Cash')
+    : '';
   const newItemName = document.getElementById('purchaseNewItemName')?.value?.trim();
   const newItemCategory = document.getElementById('purchaseNewItemCategory')?.value?.trim();
   const newItemCost = Number(document.getElementById('purchaseNewItemCost')?.value || 0);
@@ -17394,7 +17427,7 @@ function savePurchaseEntry() {
     purchaseAmount = Number.isFinite(serviceCost) && serviceCost >= 0 ? serviceCost : 0;
     displayItem = serviceName;
   } else if (purchaseType === 'personal-exp') {
-    if (!personalExpItem || !personalExpDescription || !Number.isFinite(personalExpQty) || personalExpQty <= 0 || !personalExpUnit || !Number.isFinite(personalExpTotal) || personalExpTotal <= 0) {
+    if (!personalExpItem || !personalExpDescription || !Number.isFinite(personalExpQty) || personalExpQty <= 0 || !personalExpUnit || !Number.isFinite(personalExpUnitCost) || personalExpUnitCost < 0 || !Number.isFinite(personalExpTotal) || personalExpTotal <= 0) {
       showAppAlert('Please complete the Personal Exp item, description, quantity, unit, and total price.', 'Personal Exp Required');
       return;
     }
@@ -17459,11 +17492,12 @@ function savePurchaseEntry() {
     qty: purchaseType === 'stock' ? Number(document.getElementById('purchaseQty')?.value || 0) : (purchaseType === 'new-item' ? Number(document.getElementById('purchaseNewItemQty')?.value || 0) : (purchaseType === 'personal-exp' ? personalExpQty : 0)),
     unit: purchaseType === 'personal-exp' ? personalExpUnit : '',
     description: purchaseType === 'personal-exp' ? personalExpDescription : '',
-    cost: purchaseType === 'service' ? serviceCost : (purchaseType === 'new-item' ? newItemCost : (purchaseType === 'personal-exp' ? personalExpTotal : cost)),
+    cost: purchaseType === 'service' ? serviceCost : (purchaseType === 'new-item' ? newItemCost : (purchaseType === 'personal-exp' ? personalExpUnitCost : cost)),
     purchaseAmount,
     amount: purchaseAmount,
     purchaseType,
     purchaseSource,
+    paymentMethod,
     stockUpdated,
     stockValueImpact
   };

@@ -466,6 +466,24 @@ test('calculateDashboardPaymentMethodTotals separates cash and digital collectio
   assert.equal(summary.digital, 195);
 });
 
+test('calculateDashboardPaymentMethodTotals deducts internal purchases by payment mode only', () => {
+  const summary = calculateDashboardPaymentMethodTotals({
+    transactions: [
+      { total: 100, amountPaid: 100, paymentMethod: 'Cash' },
+      { total: 200, amountPaid: 200, paymentMethod: 'Digital Pay' }
+    ],
+    purchases: [
+      { purchaseSource: 'internal', paymentMethod: 'Cash', purchaseAmount: 25 },
+      { purchaseSource: 'internal', paymentMethod: 'Digital Pay', purchaseAmount: 40 },
+      { purchaseSource: 'internal', purchaseAmount: 5 },
+      { purchaseSource: 'external', paymentMethod: 'Cash', purchaseAmount: 15 }
+    ]
+  });
+
+  assert.equal(summary.cash, 70);
+  assert.equal(summary.digital, 160);
+});
+
 test('calculateDashboardPaymentMethodTotals assigns transaction adjustments to their own payment method', () => {
   const summary = calculateDashboardPaymentMethodTotals({
     transactions: [{

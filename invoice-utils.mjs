@@ -537,9 +537,10 @@ export function calculateDashboardRevenueMetrics({ transactions = [], menu = [] 
   };
 }
 
-export function calculateDashboardPaymentMethodTotals({ transactions = [], adjustments = [] } = {}) {
+export function calculateDashboardPaymentMethodTotals({ transactions = [], adjustments = [], purchases = [] } = {}) {
   const transactionList = Array.isArray(transactions) ? transactions : [];
   const adjustmentList = Array.isArray(adjustments) ? adjustments : [];
+  const purchaseList = Array.isArray(purchases) ? purchases : [];
 
   const getPaymentBucket = paymentMethod => {
     const normalizedMethod = typeof paymentMethod === 'string'
@@ -547,7 +548,10 @@ export function calculateDashboardPaymentMethodTotals({ transactions = [], adjus
       : '';
 
     if (normalizedMethod === 'cash') return 'cash';
-    if (normalizedMethod.includes('card')
+    if (normalizedMethod.includes('digital')
+      || normalizedMethod.includes('transfer')
+      || normalizedMethod.includes('bank')
+      || normalizedMethod.includes('card')
       || normalizedMethod.includes('debit')
       || normalizedMethod.includes('credit')
       || normalizedMethod.includes('mobile')
@@ -591,6 +595,14 @@ export function calculateDashboardPaymentMethodTotals({ transactions = [], adjus
   }, { cash: 0, digital: 0 });
 
   adjustmentList.forEach(adjustment => addAdjustment(totals, adjustment));
+  purchaseList.forEach(purchase => {
+    if (!purchase || purchase.purchaseSource !== 'internal') return;
+    const bucket = getPaymentBucket(purchase.paymentMethod || 'Cash');
+    if (!bucket) return;
+
+    const amount = Number(purchase.purchaseAmount ?? purchase.amount ?? purchase.total ?? 0);
+    if (Number.isFinite(amount)) totals[bucket] -= Math.max(0, amount);
+  });
   return totals;
 }
 
