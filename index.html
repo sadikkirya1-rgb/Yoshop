@@ -285,9 +285,16 @@
             <option value="Mobile">Mobile Payment</option>
           </select>
         </div>
-        <div class="input-row">
-          <label for="paymentCustomerSelect">Customer Account:</label>
-          <select id="paymentCustomerSelect" onchange="onPaymentCustomerChange()" class="payment-customer-select">
+        <div class="input-row payment-customer-row">
+          <label for="paymentCustomerTrigger">Customer Account:</label>
+          <div class="payment-customer-picker" id="paymentCustomerPicker">
+            <button type="button" id="paymentCustomerTrigger" class="payment-customer-trigger" aria-haspopup="listbox" aria-expanded="false" aria-controls="paymentCustomerOptions" onclick="togglePaymentCustomerMenu()">Walk-in Customer</button>
+            <div id="paymentCustomerMenu" class="payment-customer-menu" hidden>
+              <input type="search" id="paymentCustomerSearch" class="payment-customer-search" placeholder="Search customers" aria-label="Search customers" oninput="filterPaymentCustomers(this.value)" onkeydown="handlePaymentCustomerSearchKeydown(event)">
+              <div id="paymentCustomerOptions" class="payment-customer-options" role="listbox" aria-label="Customers"></div>
+            </div>
+          </div>
+          <select id="paymentCustomerSelect" onchange="onPaymentCustomerChange()" class="payment-customer-select payment-customer-select-native" aria-hidden="true" tabindex="-1">
             <option value="">Walk-in Customer</option>
           </select>
         </div>

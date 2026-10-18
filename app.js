@@ -16149,7 +16149,111 @@ function populateCustomerDropdowns() {
     const currentVal = paymentSelect.value;
     paymentSelect.innerHTML = optionsHtml;
     paymentSelect.value = currentVal;
+    initializePaymentCustomerPicker();
+    filterPaymentCustomers(document.getElementById('paymentCustomerSearch')?.value || '');
+    syncPaymentCustomerTrigger();
   }
+}
+
+function initializePaymentCustomerPicker() {
+  const picker = document.getElementById('paymentCustomerPicker');
+  if (!picker || picker.dataset.initialized === 'true') return;
+
+  picker.dataset.initialized = 'true';
+  picker.addEventListener('click', event => {
+    const option = event.target.closest('[data-payment-customer-id]');
+    if (option) selectPaymentCustomer(option.dataset.paymentCustomerId);
+  });
+  document.addEventListener('click', event => {
+    if (!picker.contains(event.target)) setPaymentCustomerMenuOpen(false);
+  });
+}
+
+function filterPaymentCustomers(query) {
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const optionsContainer = document.getElementById('paymentCustomerOptions');
+  if (!paymentSelect || !optionsContainer) return;
+
+  const normalizedQuery = String(query || '').trim().toLowerCase();
+  const matchingOptions = Array.from(paymentSelect.options).filter(option => (
+    option.value === ''
+    || option.value === paymentSelect.value
+    || option.textContent.toLowerCase().includes(normalizedQuery)
+  ));
+  const optionButtons = matchingOptions.map(option => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'payment-customer-option';
+    button.setAttribute('role', 'option');
+    button.setAttribute('aria-selected', String(option.value === paymentSelect.value));
+    button.dataset.paymentCustomerId = option.value;
+    button.textContent = option.textContent;
+    return button;
+  });
+
+  if (!optionButtons.length) {
+    const emptyMessage = document.createElement('p');
+    emptyMessage.className = 'payment-customer-empty';
+    emptyMessage.textContent = 'No customers found';
+    optionsContainer.replaceChildren(emptyMessage);
+    return;
+  }
+
+  optionsContainer.replaceChildren(...optionButtons);
+}
+window.filterPaymentCustomers = filterPaymentCustomers;
+
+function setPaymentCustomerMenuOpen(isOpen, focusTrigger = false) {
+  const menu = document.getElementById('paymentCustomerMenu');
+  const trigger = document.getElementById('paymentCustomerTrigger');
+  const search = document.getElementById('paymentCustomerSearch');
+  if (!menu || !trigger) return;
+
+  menu.hidden = !isOpen;
+  trigger.setAttribute('aria-expanded', String(isOpen));
+  if (isOpen) {
+    syncPaymentCustomerTrigger();
+    filterPaymentCustomers(search?.value || '');
+    search?.focus();
+  } else if (focusTrigger) {
+    trigger.focus();
+  }
+}
+
+function togglePaymentCustomerMenu() {
+  const menu = document.getElementById('paymentCustomerMenu');
+  setPaymentCustomerMenuOpen(Boolean(menu?.hidden));
+}
+window.togglePaymentCustomerMenu = togglePaymentCustomerMenu;
+
+function handlePaymentCustomerSearchKeydown(event) {
+  if (event.key === 'Escape') {
+    event.preventDefault();
+    setPaymentCustomerMenuOpen(false, true);
+  }
+}
+window.handlePaymentCustomerSearchKeydown = handlePaymentCustomerSearchKeydown;
+
+function selectPaymentCustomer(customerId) {
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const search = document.getElementById('paymentCustomerSearch');
+  if (!paymentSelect) return;
+
+  paymentSelect.value = customerId;
+  if (search) search.value = '';
+  filterPaymentCustomers('');
+  syncPaymentCustomerTrigger();
+  setPaymentCustomerMenuOpen(false);
+  onPaymentCustomerChange();
+}
+
+function syncPaymentCustomerTrigger() {
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const trigger = document.getElementById('paymentCustomerTrigger');
+  if (!paymentSelect || !trigger) return;
+
+  const selectedOption = paymentSelect.options[paymentSelect.selectedIndex];
+  trigger.textContent = selectedOption?.textContent || 'Walk-in Customer';
 }
 
 function updateOrderCustomer() {
@@ -16168,6 +16272,7 @@ function onPaymentCustomerChange() {
   const newBalanceRow = document.getElementById('paymentNewBalanceRow');
 
   if (!paymentSelect) return;
+  syncPaymentCustomerTrigger();
   const customerId = paymentSelect.value;
   if (customerId !== '') {
     const customer = customers.find(entry => entry && String(entry.id) === String(customerId));
