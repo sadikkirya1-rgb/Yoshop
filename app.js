@@ -13156,6 +13156,7 @@ window.renderPurchaseHistory = renderPurchaseHistory;
 window.populatePurchaseFormOptions = populatePurchaseFormOptions;
 window.populatePurchaseCost = populatePurchaseCost;
 window.updatePurchaseTotals = updatePurchaseTotals;
+window.togglePurchaseForm = togglePurchaseForm;
 window.togglePurchasePaymentMode = togglePurchasePaymentMode;
 window.togglePurchaseTypeFields = togglePurchaseTypeFields;
 window.saveWastageLossEntry = saveWastageLossEntry;
@@ -15642,7 +15643,7 @@ function renderInvoices() {
         adjustButton.className = 'btn invoice-action-btn';
         adjustButton.type = 'button';
         adjustButton.textContent = '🛠️ Adjust';
-        adjustButton.disabled = adjustDisabled || !transactionActionsAllowed;
+        adjustButton.disabled = adjustDisabled || !transactionActionsAllowed || !canPerformAction('invoices.adjust');
         adjustButton.style.cssText = adjustButton.disabled ? 'opacity:0.45; pointer-events:none;' : '';
         adjustButton.addEventListener('click', event => {
           event.stopPropagation();
@@ -15891,6 +15892,8 @@ function renderInvoices() {
 window.renderInvoices = renderInvoices;
 
 async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
+  if (!requireActionPermission('invoices.adjust', 'adjusting an invoice')) return;
+
   const transactionIdOrKey = (typeof transactionOrCustomer === 'string' || typeof transactionOrCustomer === 'number')
     ? String(transactionOrCustomer)
     : null;
@@ -17327,8 +17330,27 @@ function togglePurchaseTypeFields() {
   togglePurchasePaymentMode();
 }
 
+function getLocalDateInputValue(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function togglePurchaseForm() {
+  const panel = document.getElementById('purchaseFormPanel');
+  if (!panel) return;
+
+  const isOpening = panel.style.display === 'none';
+  panel.style.display = isOpening ? 'block' : 'none';
+  if (isOpening) {
+    const dateInput = document.getElementById('purchaseDate');
+    if (dateInput && !dateInput.value) dateInput.value = getLocalDateInputValue();
+  }
+}
+
 function clearPurchaseForm() {
-  const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseType', 'purchaseSource', 'purchaseItem', 'purchaseQty', 'purchaseCost', 'purchaseTotal', 'purchaseServiceName', 'purchaseServiceCost', 'purchasePersonalExpItem', 'purchasePersonalExpDescription', 'purchasePersonalExpQty', 'purchasePersonalExpUnit', 'purchasePersonalExpUnitCost', 'purchasePersonalExpTotal', 'purchaseNewItemName', 'purchaseNewItemCategory', 'purchaseNewItemCost', 'purchaseNewItemQty'];
+  const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseType', 'purchaseSource', 'purchaseItem', 'purchaseQty', 'purchaseCost', 'purchaseTotal', 'purchaseServiceName', 'purchaseServiceCost', 'purchasePersonalExpItem', 'purchasePersonalExpDescription', 'purchasePersonalExpQty', 'purchasePersonalExpUnitCost', 'purchasePersonalExpTotal', 'purchaseNewItemName', 'purchaseNewItemCategory', 'purchaseNewItemCost', 'purchaseNewItemQty'];
   formFields.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -17338,7 +17360,7 @@ function clearPurchaseForm() {
 
   const dateInput = document.getElementById('purchaseDate');
   if (dateInput) {
-    dateInput.value = new Date().toISOString().split('T')[0];
+    dateInput.value = getLocalDateInputValue();
   }
 
   const purchaseType = document.getElementById('purchaseType');
@@ -17380,7 +17402,7 @@ function renderPurchaseHistory() {
 
 function savePurchaseEntry() {
   const supplier = document.getElementById('purchaseSupplier')?.value?.trim() || '';
-  const dateValue = document.getElementById('purchaseDate')?.value || new Date().toISOString().split('T')[0];
+  const dateValue = document.getElementById('purchaseDate')?.value || getLocalDateInputValue();
   const purchaseType = document.getElementById('purchaseType')?.value || '';
   const purchaseSource = purchaseType === 'personal-exp'
     ? 'internal'
@@ -17393,7 +17415,6 @@ function savePurchaseEntry() {
   const personalExpItem = document.getElementById('purchasePersonalExpItem')?.value?.trim();
   const personalExpDescription = document.getElementById('purchasePersonalExpDescription')?.value?.trim();
   const personalExpQty = Number(document.getElementById('purchasePersonalExpQty')?.value || 0);
-  const personalExpUnit = document.getElementById('purchasePersonalExpUnit')?.value?.trim();
   const personalExpUnitCost = Number(document.getElementById('purchasePersonalExpUnitCost')?.value || 0);
   const personalExpTotal = personalExpQty * personalExpUnitCost;
   const paymentMethod = purchaseSource === 'internal'
@@ -17427,8 +17448,8 @@ function savePurchaseEntry() {
     purchaseAmount = Number.isFinite(serviceCost) && serviceCost >= 0 ? serviceCost : 0;
     displayItem = serviceName;
   } else if (purchaseType === 'personal-exp') {
-    if (!personalExpItem || !personalExpDescription || !Number.isFinite(personalExpQty) || personalExpQty <= 0 || !personalExpUnit || !Number.isFinite(personalExpUnitCost) || personalExpUnitCost < 0 || !Number.isFinite(personalExpTotal) || personalExpTotal <= 0) {
-      showAppAlert('Please complete the Personal Exp item, description, quantity, unit, and total price.', 'Personal Exp Required');
+    if (!personalExpItem || !personalExpDescription || !Number.isFinite(personalExpQty) || personalExpQty <= 0 || !Number.isFinite(personalExpUnitCost) || personalExpUnitCost < 0 || !Number.isFinite(personalExpTotal) || personalExpTotal <= 0) {
+      showAppAlert('Please complete the Personal Exp item, description, quantity, and total price.', 'Personal Exp Required');
       return;
     }
     purchaseAmount = personalExpTotal;
@@ -17490,7 +17511,7 @@ function savePurchaseEntry() {
     supplier: supplier || 'Personal Expense',
     item: displayItem,
     qty: purchaseType === 'stock' ? Number(document.getElementById('purchaseQty')?.value || 0) : (purchaseType === 'new-item' ? Number(document.getElementById('purchaseNewItemQty')?.value || 0) : (purchaseType === 'personal-exp' ? personalExpQty : 0)),
-    unit: purchaseType === 'personal-exp' ? personalExpUnit : '',
+    unit: '',
     description: purchaseType === 'personal-exp' ? personalExpDescription : '',
     cost: purchaseType === 'service' ? serviceCost : (purchaseType === 'new-item' ? newItemCost : (purchaseType === 'personal-exp' ? personalExpUnitCost : cost)),
     purchaseAmount,

@@ -41,7 +41,7 @@ const ACTION_PERMISSION_TOKENS = [
   'staff.create', 'staff.edit', 'staff.delete', 'staff.permissions',
   'customers.create', 'customers.edit', 'customers.delete',
   'sales.create', 'sales.edit', 'sales.delete',
-  'invoices.edit', 'invoices.delete', 'inventory.create', 'inventory.edit', 'inventory.delete',
+  'invoices.adjust', 'invoices.edit', 'invoices.delete', 'inventory.create', 'inventory.edit', 'inventory.delete',
   'settings.edit', 'reports.export', 'printing.use'
 ];
 
@@ -118,7 +118,7 @@ function hasPermission(role, permissions = [], feature = '') {
   const requestedAction = featureParts[featureParts.length - 1] || '';
   if (!section) return false;
 
-  if (requestedAction === 'read' || requestedAction === 'create' || requestedAction === 'edit' || requestedAction === 'delete' || requestedAction === 'permissions') {
+  if (requestedAction === 'read' || requestedAction === 'create' || requestedAction === 'edit' || requestedAction === 'delete' || requestedAction === 'permissions' || requestedAction === 'adjust') {
     if (normalizedPermissions.includes(`${permissionPath}.write`)) return true;
     if (requestedAction === 'read' && normalizedPermissions.includes(`${permissionPath}.read`)) return true;
     return false;

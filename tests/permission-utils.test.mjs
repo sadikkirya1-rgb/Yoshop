@@ -35,6 +35,13 @@ test('action permission tokens support section-specific staff actions', () => {
   assert.equal(hasPermission('staff', ['sales.edit'], 'sales.delete'), false);
 });
 
+test('invoice adjustment is a distinct action and invoice write implies it', () => {
+  assert.ok(ACTION_PERMISSION_TOKENS.includes('invoices.adjust'));
+  assert.equal(hasPermission('staff', ['invoices.adjust'], 'invoices.adjust'), true);
+  assert.equal(hasPermission('staff', ['invoices.edit'], 'invoices.adjust'), false);
+  assert.equal(hasPermission('staff', ['invoices.write'], 'invoices.adjust'), true);
+});
+
 test('section read and write permissions are distinct and write implies actions', () => {
   assert.equal(hasPermission('staff', ['products.read'], 'products.read'), true);
   assert.equal(hasPermission('staff', ['products.read'], 'products.edit'), false);

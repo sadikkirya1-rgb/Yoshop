@@ -851,6 +851,7 @@
             <label><input type="checkbox" value="products.delete"> Products / Delete</label>
             <label><input type="checkbox" value="sales.edit"> Sales / Edit</label>
             <label><input type="checkbox" value="sales.delete"> Sales / Delete</label>
+            <label><input type="checkbox" value="invoices.adjust"> Invoices / Adjust</label>
             <label><input type="checkbox" value="invoices.edit"> Invoices / Edit</label>
             <label><input type="checkbox" value="invoices.delete"> Invoices / Delete</label>
             <label><input type="checkbox" value="customers.edit"> Customers / Edit</label>
@@ -1327,7 +1328,7 @@
       <section id="purchaseTab" style="display: none;">
         <h3>🛒 Purchase Management</h3>
         <div class="u-mb-15" style="display:flex; justify-content:flex-end;">
-          <button class="btn" onclick="document.getElementById('purchaseFormPanel').style.display = document.getElementById('purchaseFormPanel').style.display === 'none' ? 'block' : 'none'">➕ Add New Purchase/Expenditure</button>
+          <button class="btn" onclick="togglePurchaseForm()">➕ Add New Purchase/Expenditure</button>
         </div>
         <div id="purchaseFormPanel" class="form-panel u-mt-20" style="padding: 20px; display: none;">
           <h5 class="u-m-0">Record a Purchase</h5>
@@ -1373,7 +1374,6 @@
             <input type="text" id="purchasePersonalExpItem" placeholder="Item" class="u-flex-grow-1">
             <input type="text" id="purchasePersonalExpDescription" placeholder="Description" class="u-flex-grow-1">
             <input type="number" id="purchasePersonalExpQty" placeholder="Qty" min="0.01" step="0.01" oninput="updatePurchaseTotals()">
-            <input type="text" id="purchasePersonalExpUnit" placeholder="Unit">
             <input type="number" id="purchasePersonalExpUnitCost" placeholder="Unit Cost" min="0" step="0.01" oninput="updatePurchaseTotals()">
             <input type="number" id="purchasePersonalExpTotal" placeholder="Total" readonly aria-label="Personal expense total">
           </div>
