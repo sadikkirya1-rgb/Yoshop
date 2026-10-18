@@ -2,6 +2,13 @@ function normalizeText(value = '') {
   return typeof value === 'string' ? value.trim().toLowerCase() : '';
 }
 
+export function hasNewerStockUpdate(existingRecord = {}, incomingRecord = {}) {
+  const existingStockUpdatedAt = existingRecord?.stockUpdatedAt ? new Date(existingRecord.stockUpdatedAt).getTime() : NaN;
+  const incomingStockUpdatedAt = incomingRecord?.stockUpdatedAt ? new Date(incomingRecord.stockUpdatedAt).getTime() : NaN;
+  return Number.isFinite(incomingStockUpdatedAt)
+    && (!Number.isFinite(existingStockUpdatedAt) || incomingStockUpdatedAt > existingStockUpdatedAt);
+}
+
 function getRecordIdentity(record = {}, entityType = '') {
   const name = normalizeText(record?.name);
   const barcode = typeof record?.barcode === 'string' ? record.barcode.trim() : '';
@@ -86,13 +93,26 @@ export function mergeProductRecord(existingRecord = {}, incomingRecord = {}) {
   // 3. Stock
   const existingStock = existingRecord?.stock !== undefined ? Number(existingRecord.stock) : undefined;
   const incomingStock = incomingRecord?.stock !== undefined ? Number(incomingRecord.stock) : undefined;
+  const existingStockUpdatedAt = existingRecord?.stockUpdatedAt ? new Date(existingRecord.stockUpdatedAt).getTime() : NaN;
+  const incomingStockUpdatedAt = incomingRecord?.stockUpdatedAt ? new Date(incomingRecord.stockUpdatedAt).getTime() : NaN;
+  const existingHasStockTimeline = Number.isFinite(existingStockUpdatedAt);
+  const incomingHasStockTimeline = Number.isFinite(incomingStockUpdatedAt);
+  const incomingStockIsNewer = existingHasStockTimeline && incomingHasStockTimeline
+    ? incomingStockUpdatedAt >= existingStockUpdatedAt
+    : incomingHasStockTimeline !== existingHasStockTimeline
+      ? incomingHasStockTimeline
+      : incomingIsNewer;
+
   if (existingStock !== undefined && incomingStock !== undefined) {
-    merged.stock = incomingIsNewer ? incomingRecord.stock : existingRecord.stock;
+    merged.stock = incomingStockIsNewer ? incomingRecord.stock : existingRecord.stock;
   } else if (existingStock !== undefined) {
     merged.stock = existingRecord.stock;
   } else if (incomingStock !== undefined) {
     merged.stock = incomingRecord.stock;
   }
+
+  const stockSource = incomingStockIsNewer ? incomingRecord : existingRecord;
+  if (stockSource.stockUpdatedAt !== undefined) merged.stockUpdatedAt = stockSource.stockUpdatedAt;
 
   // Fill in other string/object fields if missing in the chosen winner
   const fields = ['category', 'name', 'unit', 'barcode', 'image', 'recipe'];

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getCanonicalProductCatalog, findMatchingProductEntry, shouldPreferIncomingRecord } from '../record-utils.mjs';
+import { getCanonicalProductCatalog, findMatchingProductEntry, hasNewerStockUpdate, mergeProductRecord, shouldPreferIncomingRecord } from '../record-utils.mjs';
 
 test('getCanonicalProductCatalog keeps only sellable products and removes duplicates', () => {
   const products = [
@@ -29,6 +29,59 @@ test('getCanonicalProductCatalog merges same-name stock and shop items into one 
   assert.equal(result[0].name, 'Milk');
   assert.equal(result[0].stock, 10);
   assert.equal(result[0].price, 4);
+});
+
+test('mergeProductRecord keeps the latest stock change despite a newer unrelated product edit', () => {
+  const staleProductEdit = {
+    name: 'Rice',
+    stock: 50,
+    version: 12,
+    updatedAt: '2026-10-18T10:05:00.000Z',
+    stockUpdatedAt: '2026-10-18T10:00:00.000Z'
+  };
+  const latestStockChange = {
+    name: 'Rice',
+    stock: 0,
+    version: 8,
+    updatedAt: '2026-10-18T10:01:00.000Z',
+    stockUpdatedAt: '2026-10-18T10:01:00.000Z'
+  };
+
+  assert.equal(mergeProductRecord(staleProductEdit, latestStockChange).stock, 0);
+});
+
+test('getCanonicalProductCatalog does not restore stale stock from duplicate records', () => {
+  const olderStock = {
+    name: 'Rice',
+    category: 'Groceries',
+    price: 2,
+    stock: 50,
+    version: 12,
+    updatedAt: '2026-10-18T10:05:00.000Z',
+    stockUpdatedAt: '2026-10-18T10:00:00.000Z'
+  };
+  const latestStock = {
+    name: 'Rice',
+    category: 'Groceries',
+    price: 2,
+    stock: 0,
+    version: 8,
+    updatedAt: '2026-10-18T10:01:00.000Z',
+    stockUpdatedAt: '2026-10-18T10:01:00.000Z'
+  };
+
+  for (const products of [[olderStock, latestStock], [latestStock, olderStock]]) {
+    assert.equal(getCanonicalProductCatalog(products, { includeOnlySellable: false })[0].stock, 0);
+  }
+});
+
+test('hasNewerStockUpdate detects inventory changes independently of product versions', () => {
+  const localRecord = { version: 12, stockUpdatedAt: '2026-10-18T10:00:00.000Z' };
+  const incomingStockUpdate = { version: 8, stockUpdatedAt: '2026-10-18T10:01:00.000Z' };
+  const incomingProductEdit = { version: 13, stockUpdatedAt: '2026-10-18T09:59:00.000Z' };
+
+  assert.equal(hasNewerStockUpdate(localRecord, incomingStockUpdate), true);
+  assert.equal(hasNewerStockUpdate(localRecord, incomingProductEdit), false);
 });
 
 test('findMatchingProductEntry detects an existing product before auto-creating a duplicate', () => {

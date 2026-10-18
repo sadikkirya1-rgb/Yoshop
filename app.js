@@ -17,7 +17,7 @@ import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
 import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
 import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from './permission-utils.mjs';
-import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, shouldPreferIncomingRecord } from './record-utils.mjs';
+import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, hasNewerStockUpdate, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, retainTransactionsOutsideDateRange } from './invoice-utils.mjs';
@@ -854,6 +854,12 @@ function enrichEnterpriseRecord(entityType, record = {}, existingRecord = null) 
     syncStatus: record.syncStatus || 'pending',
     lastSyncAt: record.lastSyncAt || null
   };
+}
+
+function setProductStock(record, stock) {
+  record.stock = stock;
+  record.stockUpdatedAt = new Date().toISOString();
+  return record;
 }
 
 function touchSettingsRecord(record = {}, recordId = 'settings') {
@@ -8853,7 +8859,7 @@ function deductStock(itemName, quantity, visited = new Set()) {
   if (visited.has(itemName)) {
     const dish = menu.find(d => d.name === itemName);
     if (dish && dish.stock !== undefined) {
-      dish.stock = Math.max(0, (parseFloat(dish.stock) || 0) - quantity);
+      setProductStock(dish, Math.max(0, (parseFloat(dish.stock) || 0) - quantity));
       const index = menu.indexOf(dish);
       if (index >= 0) {
         menu[index] = enrichEnterpriseRecord('products', dish, dish);
@@ -8869,7 +8875,7 @@ function deductStock(itemName, quantity, visited = new Set()) {
 
   if (!dish.recipe || dish.recipe.length === 0) {
     if (dish.stock !== undefined) {
-      dish.stock = Math.max(0, (parseFloat(dish.stock) || 0) - quantity);
+      setProductStock(dish, Math.max(0, (parseFloat(dish.stock) || 0) - quantity));
       const index = menu.indexOf(dish);
       if (index >= 0) {
         menu[index] = enrichEnterpriseRecord('products', dish, dish);
@@ -8909,7 +8915,7 @@ async function restoreStock(itemName, quantity, visited = new Set(), productId =
     ));
     if (stockItem) {
       const previousStock = parseFloat(stockItem.stock) || 0;
-      stockItem.stock = previousStock + quantity;
+      setProductStock(stockItem, previousStock + quantity);
       const index = menu.indexOf(stockItem);
       if (index >= 0) {
         menu[index] = enrichEnterpriseRecord('products', stockItem, stockItem);
@@ -8931,9 +8937,9 @@ async function restoreStock(itemName, quantity, visited = new Set(), productId =
 
   if (!dish.recipe || dish.recipe.length === 0) {
     const previousStock = Number.isFinite(Number(dish.stock)) ? Number(dish.stock) : 0;
-    dish.stock = Number.isFinite(Number(stockBeforeSale))
+    setProductStock(dish, Number.isFinite(Number(stockBeforeSale))
       ? Math.max(previousStock + quantity, Number(stockBeforeSale))
-      : previousStock + quantity;
+      : previousStock + quantity);
     const index = menu.indexOf(dish);
     if (index >= 0) {
       menu[index] = enrichEnterpriseRecord('products', dish, dish);
@@ -8958,9 +8964,9 @@ async function restoreStock(itemName, quantity, visited = new Set(), productId =
 
   if (dish.stock !== undefined || Number.isFinite(Number(stockBeforeSale))) {
     const previousStock = Number.isFinite(Number(dish.stock)) ? Number(dish.stock) : 0;
-    dish.stock = Number.isFinite(Number(stockBeforeSale))
+    setProductStock(dish, Number.isFinite(Number(stockBeforeSale))
       ? Math.max(previousStock + quantity, Number(stockBeforeSale))
-      : previousStock + quantity;
+      : previousStock + quantity);
     const index = menu.indexOf(dish);
     if (index >= 0) {
       menu[index] = enrichEnterpriseRecord('products', dish, dish);
@@ -16855,7 +16861,7 @@ async function saveStockAdjustment() {
   }
 
   const oldStock = menu[index].stock;
-  menu[index].stock = newStock;
+  setProductStock(menu[index], newStock);
   if (lowStockValue === '') {
     delete menu[index].lowStockThreshold;
   } else {
@@ -16993,7 +16999,7 @@ async function saveNewStockItem() {
     item.unit = unit;
     item.category = category || '';
     item.costPrice = costPrice;
-    item.stock = stock;
+    setProductStock(item, stock);
     item.manufactureDate = manufactureDate || '';
     item.expiryDate = expiryDate || '';
     item.image = uploadedImage || item.image || undefined;
@@ -17042,6 +17048,7 @@ async function saveNewStockItem() {
       category: existingItem?.category || null,
       costPrice,
       stock,
+      stockUpdatedAt: new Date().toISOString(),
       unit,
       manufactureDate,
       expiryDate,
@@ -17081,6 +17088,7 @@ async function saveNewStockItem() {
       type: 'stock',
       costPrice,
       stock,
+      stockUpdatedAt: new Date().toISOString(),
       unit,
       manufactureDate,
       expiryDate,
@@ -17423,7 +17431,7 @@ function savePurchaseEntry() {
 
     if (stockItem) {
       const newStock = (Number(stockItem.stock || 0) + parsedQty);
-      stockItem.stock = newStock;
+      setProductStock(stockItem, newStock);
       stockUpdated = true;
       stockValueImpact = purchaseAmount;
       stockItem = enrichEnterpriseRecord('products', stockItem, stockItem);
@@ -17613,7 +17621,7 @@ function saveWastageLossEntry() {
   const amount = unitCost * qty;
   const newStock = Math.max(0, Number(stockItem.stock || 0) - qty);
 
-  stockItem.stock = newStock;
+  setProductStock(stockItem, newStock);
   stockItem = enrichEnterpriseRecord('products', stockItem, stockItem);
   enqueueEnterpriseRecordChange('products', stockItem, 'upsert').catch(console.warn);
 
@@ -18249,15 +18257,15 @@ function upsertEnterpriseRecord(records = [], incomingRecord = {}, entityType) {
 
   if (index >= 0) {
     const localRecord = nextRecords[index];
-    if (!shouldAcceptIncomingRecord(localRecord, hydratedRecord)) {
+    const productStockIsNewer = entityType === 'productRecord' && hasNewerStockUpdate(localRecord, hydratedRecord);
+    if (!shouldAcceptIncomingRecord(localRecord, hydratedRecord) && !productStockIsNewer) {
       logRejectedIncomingRecord(entityType, localRecord, hydratedRecord);
       return nextRecords;
     }
 
-    nextRecords[index] = {
-      ...localRecord,
-      ...hydratedRecord
-    };
+    nextRecords[index] = entityType === 'productRecord'
+      ? mergeProductRecord(localRecord, hydratedRecord)
+      : { ...localRecord, ...hydratedRecord };
   } else {
     nextRecords.push(hydratedRecord);
   }
@@ -18315,8 +18323,9 @@ function mergeRemoteProducts(records = [], remoteRecords = []) {
       if (!localRecord || shouldAcceptIncomingRecord(localRecord, remoteRecord)) byId.delete(id);
       return;
     }
-    if (!localRecord || shouldAcceptIncomingRecord(localRecord, remoteRecord)) {
-      byId.set(id, localRecord ? {...localRecord, ...remoteRecord} : remoteRecord);
+    const productStockIsNewer = localRecord && hasNewerStockUpdate(localRecord, remoteRecord);
+    if (!localRecord || shouldAcceptIncomingRecord(localRecord, remoteRecord) || productStockIsNewer) {
+      byId.set(id, localRecord ? mergeProductRecord(localRecord, remoteRecord) : remoteRecord);
     }
   });
 
@@ -20668,7 +20677,7 @@ async function restoreData() {
       // Ensure all stock items have a proper stock property for display
       restoredMenu.forEach(item => {
         if (item && (item.costPrice !== undefined || item.unit) && item.stock === undefined) {
-          item.stock = item.stock === undefined ? 0 : item.stock;
+          item.stock = 0;
         }
       });
       
