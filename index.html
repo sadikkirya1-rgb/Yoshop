@@ -817,6 +817,7 @@
             <label><input type="checkbox" value="staffTab"> Staff</label>
             <label><input type="checkbox" value="customerTab"> Customers</label>
             <label><input type="checkbox" value="stockTab"> Stock</label>
+            <label><input type="checkbox" value="purchaseTab"> Purchase / Expense</label>
             <label><input type="checkbox" value="transactionsTab"> Sales</label>
             <label><input type="checkbox" value="reportsTab"> Reports</label>
             <label><input type="checkbox" value="settingsTab"> Settings</label>
@@ -839,6 +840,8 @@
             <label><input type="checkbox" value="customers.write"> Customers / Read &amp; Write</label>
             <label><input type="checkbox" value="inventory.read"> Inventory / Read only</label>
             <label><input type="checkbox" value="inventory.write"> Inventory / Read &amp; Write</label>
+            <label><input type="checkbox" value="purchases.read"> Purchase / Expense / Read only</label>
+            <label><input type="checkbox" value="purchases.write"> Purchase / Expense / Read &amp; Write</label>
             <label><input type="checkbox" value="reports.read"> Reports / Read only</label>
             <label><input type="checkbox" value="reports.write"> Reports / Read &amp; Write</label>
             <label><input type="checkbox" value="settings.read"> Settings / Read only</label>
@@ -857,6 +860,9 @@
             <label><input type="checkbox" value="customers.edit"> Customers / Edit</label>
             <label><input type="checkbox" value="customers.delete"> Customers / Delete</label>
             <label><input type="checkbox" value="inventory.edit"> Inventory / Edit</label>
+            <label><input type="checkbox" value="purchases.create"> Purchase / Expense / Add</label>
+            <label><input type="checkbox" value="purchases.edit"> Purchase / Expense / Edit</label>
+            <label><input type="checkbox" value="purchases.delete"> Purchase / Expense / Delete</label>
             <label><input type="checkbox" value="printing.use"> Printing</label>
           </div>
           <div class="data-table-toolbar" data-table-controls="staffListBody" data-filter-options="all:All staff|shopadmin:Shop admins|staff:Staff">
@@ -1328,7 +1334,7 @@
       <section id="purchaseTab" style="display: none;">
         <h3>🛒 Purchase Management</h3>
         <div class="u-mb-15" style="display:flex; justify-content:flex-end;">
-          <button class="btn" onclick="togglePurchaseForm()">➕ Add New Purchase/Expenditure</button>
+          <button class="btn" data-action-permission="purchases.create" onclick="togglePurchaseForm()">➕ Add New Purchase/Expenditure</button>
         </div>
         <div id="purchaseFormPanel" class="form-panel u-mt-20" style="padding: 20px; display: none;">
           <h5 class="u-m-0">Record a Purchase</h5>
@@ -1384,7 +1390,7 @@
             <input type="number" id="purchaseNewItemQty" placeholder="Initial Qty" min="0" step="1">
           </div>
           <div class="input-row" style="justify-content: flex-end;">
-            <button class="btn" onclick="savePurchaseEntry()">Save Purchase</button>
+            <button class="btn" data-action-permission="purchases.create" onclick="savePurchaseEntry()">Save Purchase</button>
             <button class="btn btn-secondary" onclick="clearPurchaseForm()">Clear</button>
           </div>
         </div>
@@ -1552,7 +1558,7 @@
           </div>
           <div class="input-row" style="justify-content:flex-end; gap:8px;">
             <button class="btn btn-secondary" onclick="closePurchaseEditModal()">Cancel</button>
-            <button class="btn" onclick="savePurchaseEdit()">💾 Save Changes</button>
+            <button class="btn" data-action-permission="purchases.edit" onclick="savePurchaseEdit()">💾 Save Changes</button>
           </div>
         </div>
       </div>

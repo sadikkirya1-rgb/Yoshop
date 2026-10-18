@@ -1005,7 +1005,7 @@ function findExactDuplicateProductName(name = '', excludeIndex = null, options =
 function getSectionPermissionKey(tabId = '') {
   return {
     dashboardTab: 'dashboard', menuTab: 'sales', addDishTab: 'products', categoryTab: 'categories',
-    unitTab: 'units', staffTab: 'staff', customerTab: 'customers', stockTab: 'inventory',
+    unitTab: 'units', staffTab: 'staff', customerTab: 'customers', stockTab: 'inventory', purchaseTab: 'purchases',
     transactionsTab: 'sales', reportsTab: 'reports', settingsTab: 'settings', invoicesTab: 'invoices'
   }[tabId] || '';
 }
@@ -6735,14 +6735,22 @@ function getRestorableActiveTabId() {
   }
   return [storedTabId, hashTabId].find(tabId => {
     const section = tabId && document.getElementById(tabId);
-    const hasAccess = isFullAccessRole() || currentUserPermissions.includes(tabId);
+    const sectionKey = getSectionPermissionKey(tabId);
+    const hasSectionAccess = sectionKey && (
+      canPerformAction(`${sectionKey}.read`) || canPerformAction(`${sectionKey}.write`)
+    );
+    const hasAccess = isFullAccessRole() || currentUserPermissions.includes(tabId) || hasSectionAccess;
     return section?.tagName === 'SECTION' && hasAccess;
   });
 }
 
 function showTab(tabId, btn) {
   const hasFullAccess = isFullAccessRole();
-  if (!hasFullAccess && !currentUserPermissions.includes(tabId)) {
+  const sectionKey = getSectionPermissionKey(tabId);
+  const hasSectionAccess = sectionKey && (
+    canPerformAction(`${sectionKey}.read`) || canPerformAction(`${sectionKey}.write`)
+  );
+  if (!hasFullAccess && !currentUserPermissions.includes(tabId) && !hasSectionAccess) {
     playErrorSound();
     return showAppAlert("Access Denied: You do not have permission to open this section.", 'Access Denied');
   }
@@ -14444,6 +14452,7 @@ function openStaffPermissionsModal(index) {
     { id: 'staffTab', label: 'Staff' },
     { id: 'customerTab', label: 'Customers' },
     { id: 'stockTab', label: 'Stock' },
+    { id: 'purchaseTab', label: 'Purchase / Expense' },
     { id: 'transactionsTab', label: 'Sales' },
     { id: 'reportsTab', label: 'Reports' },
     { id: 'auditReportTab', label: 'Audit Report' },
@@ -14467,7 +14476,7 @@ function openStaffPermissionsModal(index) {
   const sectionAccess = [
     ['dashboard', 'Dashboard'], ['sales', 'Sales / Shop'], ['products', 'Products'],
     ['categories', 'Categories'], ['units', 'Units'], ['staff', 'Staff'],
-    ['customers', 'Customers'], ['inventory', 'Inventory'], ['reports', 'Reports'],
+    ['customers', 'Customers'], ['inventory', 'Inventory'], ['purchases', 'Purchase / Expense'], ['reports', 'Reports'],
     ['audit', 'Audit Report'], ['settings', 'Settings'], ['invoices', 'Invoices']
   ];
 
@@ -17392,8 +17401,8 @@ function renderPurchaseHistory() {
         <td>${escapeHtml(entry.paymentMethod || (entry.purchaseSource === 'internal' ? 'Cash' : 'External'))}</td>
         <td class="u-text-right">${formatCurrency(amount)}</td>
         <td class="u-nowrap" style="text-align:center;">
-          <button class="icon-btn" onclick="editPurchaseEntry('${entry.id}')" title="Edit">✏️</button>
-          <button class="icon-btn" onclick="deletePurchaseEntry('${entry.id}')" title="Delete">🗑️</button>
+          <button class="icon-btn" data-action-permission="purchases.edit" onclick="editPurchaseEntry('${entry.id}')" title="Edit">✏️</button>
+          <button class="icon-btn" data-action-permission="purchases.delete" onclick="deletePurchaseEntry('${entry.id}')" title="Delete">🗑️</button>
         </td>
       </tr>
     `;
@@ -17401,6 +17410,7 @@ function renderPurchaseHistory() {
 }
 
 function savePurchaseEntry() {
+  if (!requireActionPermission('purchases.create', 'creating a purchase or expense')) return;
   const supplier = document.getElementById('purchaseSupplier')?.value?.trim() || '';
   const dateValue = document.getElementById('purchaseDate')?.value || getLocalDateInputValue();
   const purchaseType = document.getElementById('purchaseType')?.value || '';
@@ -17849,6 +17859,7 @@ async function deleteWastageLossEntry(id) {
 }
 
 function editPurchaseEntry(id) {
+  if (!requireActionPermission('purchases.edit', 'editing a purchase or expense')) return;
   const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(e => e.id === id);
   if (!entry) return;
   const modal = document.getElementById('editPurchaseModal');
@@ -17877,6 +17888,7 @@ function updateEditPurchaseTotal() {
 }
 
 function savePurchaseEdit() {
+  if (!requireActionPermission('purchases.edit', 'saving purchase or expense changes')) return;
   const id = document.getElementById('editPurchaseId')?.value;
   if (!id) return;
   const idx = (Array.isArray(purchaseHistory) ? purchaseHistory : []).findIndex(e => e.id === id);
@@ -17903,6 +17915,7 @@ function savePurchaseEdit() {
 }
 
 async function deletePurchaseEntry(id) {
+  if (!requireActionPermission('purchases.delete', 'deleting a purchase or expense')) return;
   if (!id) return;
 
   const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(e => e.id === id);
@@ -20010,7 +20023,11 @@ function applyRolePermissions() {
   if (isAppAdmin && !isMonitoringMode && activeTab && activeTab.id !== 'appAdminTab') {
     const adminBtn = document.getElementById('nav-app-admin-btn');
     if (adminBtn) showTab('appAdminTab', adminBtn);
-  } else if (!isShopAdmin && !isAppAdmin && activeTab && !normalizedPermissions.includes(activeTab.id)) {
+  } else if (!isShopAdmin && !isAppAdmin && activeTab
+    && !normalizedPermissions.includes(activeTab.id)
+    && !(getSectionPermissionKey(activeTab.id)
+      && (canPerformAction(`${getSectionPermissionKey(activeTab.id)}.read`)
+        || canPerformAction(`${getSectionPermissionKey(activeTab.id)}.write`)))) {
     const targetTab = getFirstAllowedTab(currentUserRole, normalizedPermissions, 'menuTab');
     if (targetTab) {
       const targetBtn = nav.querySelector(`button[onclick*="${targetTab}"]`);

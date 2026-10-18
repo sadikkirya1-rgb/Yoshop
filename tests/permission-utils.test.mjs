@@ -63,3 +63,16 @@ test('audit-only permissions resolve to the audit report tab and stay visible to
   assert.equal(getFirstAllowedTab('staff', ['audit.report.read'], 'menuTab'), 'auditReportTab');
   assert.equal(getFirstAllowedTab('staff', ['auditReportTab'], 'menuTab'), 'auditReportTab');
 });
+
+test('purchase and expense permissions resolve to the Purchase / Expense section', () => {
+  assert.ok(DEFAULT_PERMISSION_TOKENS.includes('purchaseTab'));
+  assert.ok(ACTION_PERMISSION_TOKENS.includes('purchases.create'));
+  assert.ok(ACTION_PERMISSION_TOKENS.includes('purchases.edit'));
+  assert.ok(ACTION_PERMISSION_TOKENS.includes('purchases.delete'));
+  assert.equal(hasPermission('staff', ['purchases.read'], 'purchases.read'), true);
+  assert.equal(hasPermission('staff', ['purchases.write'], 'purchases.delete'), true);
+  assert.equal(hasPermission('staff', ['purchases.read'], 'purchases.create'), false);
+  assert.equal(hasPermission('staff', ['purchaseTab'], 'expenses'), true);
+  assert.equal(getFirstAllowedTab('staff', ['purchases.read']), 'purchaseTab');
+  assert.equal(getFirstAllowedTab('staff', ['expenses.write']), 'purchaseTab');
+});

@@ -7,6 +7,7 @@ const DEFAULT_PERMISSION_TOKENS = [
   'staffTab',
   'customerTab',
   'stockTab',
+  'purchaseTab',
   'transactionsTab',
   'invoicesTab',
   'reportsTab',
@@ -30,6 +31,7 @@ const ACTION_PERMISSION_TOKENS = [
   'units.read', 'units.write',
   'staff.read', 'staff.write',
   'customers.read', 'customers.write',
+  'purchases.read', 'purchases.write',
   'inventory.read', 'inventory.write',
   'reports.read', 'reports.write',
   'settings.read', 'settings.write',
@@ -40,6 +42,7 @@ const ACTION_PERMISSION_TOKENS = [
   'units.create', 'units.edit', 'units.delete',
   'staff.create', 'staff.edit', 'staff.delete', 'staff.permissions',
   'customers.create', 'customers.edit', 'customers.delete',
+  'purchases.create', 'purchases.edit', 'purchases.delete',
   'sales.create', 'sales.edit', 'sales.delete',
   'invoices.adjust', 'invoices.edit', 'invoices.delete', 'inventory.create', 'inventory.edit', 'inventory.delete',
   'settings.edit', 'reports.export', 'printing.use'
@@ -53,6 +56,10 @@ const FEATURE_ALIASES = {
   units: 'unitTab',
   staff: 'staffTab',
   customers: 'customerTab',
+  purchase: 'purchaseTab',
+  purchases: 'purchaseTab',
+  expense: 'purchaseTab',
+  expenses: 'purchaseTab',
   stock: 'stockTab',
   sales: 'transactionsTab',
   invoice: 'invoicesTab',
@@ -150,6 +157,7 @@ function getFirstAllowedTab(role, permissions = [], fallback = 'menuTab') {
   const sectionTabs = {
     dashboard: 'dashboardTab', sales: 'menuTab', products: 'addDishTab', categories: 'categoryTab',
     units: 'unitTab', staff: 'staffTab', customers: 'customerTab', inventory: 'stockTab',
+    purchase: 'purchaseTab', purchases: 'purchaseTab', expense: 'purchaseTab', expenses: 'purchaseTab',
     reports: 'reportsTab', audit: 'auditReportTab', auditreport: 'auditReportTab',
     settings: 'settingsTab', invoice: 'invoicesTab', invoices: 'invoicesTab'
   };
