@@ -1001,15 +1001,6 @@ function findExactDuplicateProductName(name = '', excludeIndex = null, options =
       const isSellable = hasRecipe || (price > 0 && Boolean(category));
       if (!isSellable) continue;
     }
-    
-function getSectionPermissionKey(tabId = '') {
-  return {
-    dashboardTab: 'dashboard', menuTab: 'sales', addDishTab: 'products', categoryTab: 'categories',
-    unitTab: 'units', staffTab: 'staff', customerTab: 'customers', stockTab: 'inventory', purchaseTab: 'purchases',
-    transactionsTab: 'sales', reportsTab: 'reports', settingsTab: 'settings', invoicesTab: 'invoices'
-  }[tabId] || '';
-}
-
     if (product.name.trim().toLowerCase() === normalizedName) {
       return { index, record: product };
     }
@@ -6695,6 +6686,14 @@ function updateCurrencyDisplay() {
 }
 
 // ===== Tabs =====
+function getSectionPermissionKey(tabId = '') {
+  return {
+    dashboardTab: 'dashboard', menuTab: 'sales', addDishTab: 'products', categoryTab: 'categories',
+    unitTab: 'units', staffTab: 'staff', customerTab: 'customers', stockTab: 'inventory', purchaseTab: 'purchases',
+    transactionsTab: 'sales', reportsTab: 'reports', settingsTab: 'settings', invoicesTab: 'invoices'
+  }[tabId] || '';
+}
+
 function getActiveTabStorageKey() {
   if (!isPinVerified || !currentUserRole) return null;
 
