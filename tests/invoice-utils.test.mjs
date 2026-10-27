@@ -1,7 +1,28 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, retainTransactionsOutsideDateRange } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange } from '../invoice-utils.mjs';
+
+test('calculateInvoiceItemQuantityDeltas reconciles edited invoice quantities by product', () => {
+  const deltas = calculateInvoiceItemQuantityDeltas(
+    [
+      { name: 'Item', qty: 100 },
+      { name: 'Item', qty: 50 },
+      { name: 'Removed', qty: 3 }
+    ],
+    [
+      { name: 'Item', qty: 200 },
+      { name: 'Item', qty: 25 },
+      { name: 'Added', qty: 4 }
+    ]
+  );
+
+  assert.deepEqual(deltas.map(({ item, quantity }) => [item.name, quantity]), [
+    ['Item', 75],
+    ['Removed', -3],
+    ['Added', 4]
+  ]);
+});
 
 test('A4 invoice total summary row uses green cell styling for all invoices', () => {
   const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');

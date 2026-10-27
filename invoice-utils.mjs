@@ -17,6 +17,29 @@ export function paginateInvoiceItems(items = [], rowsPerPage = INVOICE_ROWS_PER_
   );
 }
 
+export function calculateInvoiceItemQuantityDeltas(previousItems = [], updatedItems = []) {
+  const quantities = new Map();
+  const addItems = (items, direction) => {
+    (Array.isArray(items) ? items : []).forEach(item => {
+      if (!item || typeof item !== 'object') return;
+      const name = String(item.name || item.productName || item.itemName || '').trim();
+      const productId = String(item.productId || item.productRecordId || item.product?.recordId || item.product?.id || '').trim();
+      const key = productId ? `id:${productId}` : `name:${name.toLowerCase()}`;
+      if (key === 'name:') return;
+      const entry = quantities.get(key) || { item, quantity: 0 };
+      entry.quantity += direction * Math.max(0, Number.parseInt(item.qty ?? item.quantity, 10) || 0);
+      if (direction > 0) entry.item = item;
+      quantities.set(key, entry);
+    });
+  };
+
+  addItems(previousItems, -1);
+  addItems(updatedItems, 1);
+  return [...quantities.values()]
+    .filter(entry => entry.quantity !== 0)
+    .map(entry => ({ item: entry.item, quantity: entry.quantity }));
+}
+
 function findMatchingCustomer(customer, transaction) {
   if (!customer || !transaction) return null;
   if (transaction?.customerId) {

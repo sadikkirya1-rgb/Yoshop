@@ -20,7 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, hasNewerStockUpdate, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, retainTransactionsOutsideDateRange } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -11008,7 +11008,16 @@ async function saveTransactionEdit() {
       updatedTransaction.inventoryRestored = false;
       updatedTransaction.inventoryRestoredAt = null;
     } else if (!isCanceled && !hasRestoredStock) {
-      await restoreTransactionStock(original);
+      const quantityDeltas = calculateInvoiceItemQuantityDeltas(original.items, updatedTransaction.items);
+      for (const { item, quantity } of quantityDeltas) {
+        const productId = item.productId || item.productRecordId || item.product?.recordId || item.product?.id || '';
+        if (quantity > 0) {
+          deductStock(item.name || item.productName || item.itemName, quantity);
+        } else {
+          await restoreStock(item.name || item.productName || item.itemName, Math.abs(quantity), new Set(), productId);
+        }
+      }
+    } else if (!isCanceled && hasRestoredStock) {
       updatedTransaction.items = updatedTransaction.items.map(item => {
         const product = Array.isArray(menu) ? menu.find(entry => entry?.name === item.name) : null;
         return {
@@ -11017,6 +11026,8 @@ async function saveTransactionEdit() {
         };
       });
       deductTransactionStock(updatedTransaction);
+      updatedTransaction.inventoryRestored = false;
+      updatedTransaction.inventoryRestoredAt = null;
     }
   }
 
