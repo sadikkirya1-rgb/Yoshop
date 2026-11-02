@@ -1591,6 +1591,21 @@ select option:checked {
 .data-table-toolbar .btn {
   margin: 0;
 }
+.customer-filter-buttons {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.customer-filter-buttons .btn[aria-pressed="true"] {
+  background: var(--primary);
+  color: #fff;
+}
+.customer-filter-buttons .btn[aria-pressed="false"] {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border-color);
+}
 .data-table-filter-panel {
   display: none;
   flex-basis: 100%;

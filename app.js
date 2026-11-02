@@ -20,7 +20,7 @@ import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstA
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, hasNewerStockUpdate, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange, getTransactionsForCustomer, calculateCustomerTotalPaid, reconcileCustomerTransactionReferences as reconcileCustomerTransactionRecords } from './invoice-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -1018,26 +1018,7 @@ function hydrateEnterpriseRecords(entityType, records = []) {
 }
 
 function reconcileCustomerTransactionReferences() {
-  if (!Array.isArray(customers) || !Array.isArray(transactions)) return;
-
-  const customersByName = new Map();
-  customers.forEach(customer => {
-    const name = String(customer?.name || '').trim().toLowerCase();
-    if (name && customer?.id && !customersByName.has(name)) customersByName.set(name, customer);
-  });
-
-  transactions.forEach(transaction => {
-    if (!transaction || !transaction.customerId) return;
-    const linkedCustomer = customers.find(customer => customer?.id && String(customer.id) === String(transaction.customerId));
-    if (linkedCustomer) return;
-
-    const customerName = String(transaction.customerNameReal || transaction.customerName || '').trim().toLowerCase();
-    const recoveredCustomer = customersByName.get(customerName);
-    if (recoveredCustomer) {
-      transaction.customerId = recoveredCustomer.id;
-      transaction.customerNameReal = recoveredCustomer.name;
-    }
-  });
+  reconcileCustomerTransactionRecords(customers, transactions);
 }
 
 function mergeEnterpriseRecordsPreservingLocal(localRecords = [], incomingRecords = [], entityType = '') {
@@ -2943,7 +2924,14 @@ async function flushLocalSyncQueue(options = {}) {
     console.warn('[SYNC] Could not refresh local sync queue after flush:', error);
   }
 
-  const remainingCount = calculatePendingSyncCount(pendingSyncQueue, 0);
+  const unsyncedTransactionCount = Array.isArray(transactions)
+    ? transactions.filter(transaction => transaction && transaction.synced !== true).length
+    : 0;
+  const remainingCount = calculatePendingSyncCount(pendingSyncQueue, unsyncedTransactionCount);
+  updateSyncPendingNotification({
+    pendingCount: remainingCount,
+    retryCount: pendingSyncQueue.filter(item => item && (item.syncStatus === 'retry' || item.syncStatus === 'failed')).length
+  });
   renderSyncStatus({
     state: !navigator.onLine ? '🔴' : remainingCount > 0 ? '🟡' : '🟢',
     label: remainingCount > 0 ? `${remainingCount} Pending` : '',
@@ -3172,7 +3160,7 @@ function repairConflictingCustomerName(source = {}) {
     ? customerList.find(candidate => candidate && (candidate.id === source.customerId || String(candidate.id) === String(source.customerId))) || null
     : null;
 
-  const preferredName = linkedCustomer?.name || source.customer?.name || source.customerNameReal || source.customerName || '';
+  const preferredName = linkedCustomer?.name || source.customerNameReal || source.customerName || source.customer?.name || '';
   const candidateNames = [
     linkedCustomer?.name,
     source.customer?.name,
@@ -5594,6 +5582,7 @@ async function updateOnlineStatus() {
   if (!statusEl) return;
 
   const { pendingCount, retryCount, retryNowCount, retryLaterCount, nextRetryAt } = await getPendingSyncSummary();
+  updateSyncPendingNotification({ pendingCount, retryCount });
   renderSyncHealthPanel().catch(console.warn);
 
   if (!navigator.onLine) {
@@ -14857,10 +14846,7 @@ window.toggleSelectAllCustomers = toggleSelectAllCustomers;
 
 function getCustomerAccountBalance(customer) {
   if (!customer || typeof customer !== 'object') return 0;
-  const customerTransactions = (Array.isArray(transactions) ? transactions : []).filter(transaction => {
-    if (transaction?.customerId) return customer?.id && String(transaction.customerId) === String(customer.id);
-    return !transaction?.customerId && transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
-  });
+  const customerTransactions = getTransactionsForCustomer(customer, customers, transactions);
 
   return buildInvoiceListItems({
     customers: [customer],
@@ -14875,6 +14861,7 @@ function renderCustomerList() {
   const currencySymbol = getCurrencySymbol();
   customers.forEach((customer, i) => {
     const outstandingBalance = getCustomerAccountBalance(customer);
+    const totalPaid = calculateCustomerTotalPaid(customer, customers, transactions);
     const outstandingText = outstandingBalance === 0
       ? `${currencySymbol}0`
       : `<span style="${outstandingBalance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${outstandingBalance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(outstandingBalance))}</span>`;
@@ -14885,12 +14872,18 @@ function renderCustomerList() {
     const sendStatusAction = '';
     const tr = document.createElement('tr');
     tr.dataset.customerName = String(customer.name || '').trim().toLowerCase();
+    tr.dataset.customerOutstanding = String(outstandingBalance < 0);
+    tr.dataset.customerCredit = String(outstandingBalance > 0);
+    tr.dataset.customerPaid = String(totalPaid > 0);
+    tr.dataset.customerWhatsapp = String(Boolean(getCustomerWhatsAppNumber(customer)));
+    tr.dataset.customerEmail = String(Boolean(getCustomerEmailAddress(customer)));
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
                         <td>${i + 1}</td>
                         <td>${escapeHtml(customer.name)}</td>
                         <td style="white-space:nowrap;">${whatsappCell}</td>
                         <td style="white-space:nowrap;">${emailCell}</td>
                         <td>${escapeHtml(customer.address || '')}</td>
+                        <td style="white-space:nowrap;">${currencySymbol}${formatCurrency(totalPaid)}</td>
                         <td>${outstandingText}</td>
                         <td style="text-align: right; white-space: nowrap;">
                           ${sendStatusAction}
@@ -14916,10 +14909,7 @@ function getCustomerQuickMessageText(customer, template) {
   let customerBalance = Number(customer?.balance || customer?.outstanding || customer?.outstandingBalance || 0);
 
   if (customer && Array.isArray(transactions)) {
-    const customerTransactions = transactions.filter(transaction => {
-      if (transaction?.customerId) return customer?.id && String(transaction.customerId) === String(customer.id);
-      return !transaction?.customerId && transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
-    });
+    const customerTransactions = getTransactionsForCustomer(customer, customers, transactions);
     customerBalance = buildInvoiceListItems({
       customers: [customer],
       transactions: customerTransactions
@@ -17974,6 +17964,7 @@ function applyDataTableControls(toolbar, resetPage = false) {
   const filter = toolbar.querySelector('[data-table-filter]');
   const searchValue = String(search?.value || '').trim().toLowerCase();
   const filterValue = String(filter?.value || 'all').toLowerCase();
+  const customerFilterValue = toolbar.dataset.customerFilter || 'all';
   if (resetPage) {
     const pageState = dataTablePagination.get(body.id);
     if (pageState) pageState.page = 1;
@@ -17985,22 +17976,30 @@ function applyDataTableControls(toolbar, resetPage = false) {
     : [];
   const exactCustomerRows = new Set(customerNameRows.filter(row => row.dataset.customerName === searchValue));
   const prioritizedCustomerRows = exactCustomerRows.size > 0 ? exactCustomerRows : new Set(customerNameRows);
+  const customerFilterDataKey = {
+    outstanding: 'customerOutstanding',
+    credit: 'customerCredit',
+    paid: 'customerPaid',
+    whatsapp: 'customerWhatsapp',
+    email: 'customerEmail'
+  }[customerFilterValue];
   rows.forEach(row => {
     const rowText = String(row.textContent || '').toLowerCase();
     const isService = rowText.includes('service');
     const matchesFilter = filterValue === 'all'
       || (filterValue === 'product' && !isService)
       || rowText.includes(filterValue);
+    const matchesCustomerFilter = !customerFilterDataKey || row.dataset[customerFilterDataKey] === 'true';
     const matchesSearch = !searchValue || (prioritizedCustomerRows.size > 0
       ? prioritizedCustomerRows.has(row)
       : rowText.includes(searchValue));
-    const filterHidden = !(matchesFilter && matchesSearch);
+    const filterHidden = !(matchesFilter && matchesCustomerFilter && matchesSearch);
     row.dataset.dataTableFilterHidden = String(filterHidden);
     row.hidden = filterHidden;
   });
   applyDataTablePagination(body);
 
-  const shouldShowEmptyRow = Boolean(searchValue)
+  const shouldShowEmptyRow = (Boolean(searchValue) || filterValue !== 'all' || Boolean(customerFilterDataKey))
     && rows.every(row => row.dataset.dataTableFilterHidden === 'true');
   let emptyRow = body.querySelector(':scope > tr[data-search-empty-row]');
   if (shouldShowEmptyRow && !emptyRow) {
@@ -18118,12 +18117,25 @@ function initializeDataTableControls() {
     const filter = toolbar.querySelector('[data-table-filter]');
     search?.addEventListener('input', () => applyDataTableControls(toolbar, true));
     filter?.addEventListener('change', () => applyDataTableControls(toolbar, true));
+    toolbar.querySelectorAll('[data-customer-filter]').forEach(button => {
+      button.addEventListener('click', () => {
+        toolbar.dataset.customerFilter = button.dataset.customerFilter || 'all';
+        toolbar.querySelectorAll('[data-customer-filter]').forEach(option => {
+          option.setAttribute('aria-pressed', String(option === button));
+        });
+        applyDataTableControls(toolbar, true);
+      });
+    });
     toolbar.querySelector('[data-table-filter-toggle]')?.addEventListener('click', () => {
       panel?.classList.toggle('is-open');
     });
     toolbar.querySelector('[data-table-reset]')?.addEventListener('click', () => {
       if (search) search.value = '';
       if (filter) filter.value = 'all';
+      toolbar.dataset.customerFilter = 'all';
+      toolbar.querySelectorAll('[data-customer-filter]').forEach(option => {
+        option.setAttribute('aria-pressed', String(option.dataset.customerFilter === 'all'));
+      });
       applyDataTableControls(toolbar, true);
     });
 
@@ -21775,6 +21787,64 @@ function testLocalNotification() {
 
 // ===== Notification Center Logic =====
 let appNotifications = [];
+let syncPendingNotificationActive = false;
+
+function showSyncPendingSystemNotification(message) {
+  if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
+
+  const title = 'YoShop sync pending';
+  const options = {
+    body: message,
+    icon: 'assets/icons/icon.png',
+    tag: 'yoshop-sync-pending',
+    renotify: false,
+    data: { url: './' }
+  };
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.ready
+      .then(registration => registration.showNotification(title, options))
+      .catch(() => {
+        try { new Notification(title, options); } catch (error) { console.warn('[SYNC] System notification failed:', error); }
+      });
+    return;
+  }
+
+  try { new Notification(title, options); } catch (error) { console.warn('[SYNC] System notification failed:', error); }
+}
+
+function updateSyncPendingNotification({ pendingCount = 0, retryCount = 0 } = {}) {
+  const existingIndex = appNotifications.findIndex(notification => notification.id === 'sync-pending');
+  if (pendingCount > 0) {
+    const message = retryCount > 0
+      ? `${pendingCount} change(s) are saved on this device and waiting to sync. ${retryCount} item(s) will retry automatically.`
+      : `${pendingCount} change(s) are saved on this device and waiting to sync.`;
+    const existing = existingIndex >= 0 ? appNotifications[existingIndex] : null;
+    const notification = {
+      id: 'sync-pending',
+      message,
+      type: 'sync-pending',
+      action: 'syncNow()',
+      date: existing?.date || new Date()
+    };
+
+    if (existingIndex >= 0) appNotifications[existingIndex] = notification;
+    else appNotifications.unshift(notification);
+
+    if (!syncPendingNotificationActive) showSyncPendingSystemNotification(message);
+    syncPendingNotificationActive = true;
+    updateNotificationBadge();
+    renderNotifications();
+    return;
+  }
+
+  syncPendingNotificationActive = false;
+  if (existingIndex >= 0) {
+    appNotifications.splice(existingIndex, 1);
+    updateNotificationBadge();
+    renderNotifications();
+  }
+}
 
 function addNotification(message, type = 'info', action = null) {
   const notif = { id: Date.now(), message, type, action, date: new Date() };
@@ -21881,9 +21951,11 @@ function renderNotifications() {
   }
 
   list.innerHTML = appNotifications.map(n => {
-    const actionBtn = n.action ? `<button class="btn" onclick="${n.action}" style="font-size: 0.8em; padding: 4px 8px; margin-top: 5px; background: var(--primary);">View</button>` : '';
-    const background = n.type === 'alert' ? 'rgba(255,0,0,0.05)' : (n.type === 'admin-notice' ? 'rgba(255, 0, 0, 0.08)' : 'transparent');
+    const actionLabel = n.type === 'sync-pending' ? 'Sync Now' : 'View';
+    const actionBtn = n.action ? `<button class="btn" onclick="${n.action}" style="font-size: 0.8em; padding: 4px 8px; margin-top: 5px; background: var(--primary);">${actionLabel}</button>` : '';
+    const background = n.type === 'alert' ? 'rgba(255,0,0,0.05)' : (n.type === 'admin-notice' ? 'rgba(255, 0, 0, 0.08)' : (n.type === 'sync-pending' ? 'rgba(245,158,11,0.12)' : 'transparent'));
     const encodedId = typeof n.id === 'string' ? JSON.stringify(n.id) : n.id;
+    const dismissBtn = n.type === 'sync-pending' ? '' : `<button onclick="dismissNotification(${encodedId})" style="background: none; border: none; cursor: pointer; color: #888; font-size: 1.2em; padding: 0 5px;">&times;</button>`;
     return `
             <div style="padding: 10px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: start; background: ${background};">
                 <div style="font-size: 0.9em; flex-grow: 1;">
@@ -21891,13 +21963,14 @@ function renderNotifications() {
                     <div style="font-size: 0.8em; color: #888;">${n.date.toLocaleTimeString()}</div>
                     ${actionBtn}
                 </div>
-                <button onclick="dismissNotification(${encodedId})" style="background: none; border: none; cursor: pointer; color: #888; font-size: 1.2em; padding: 0 5px;">&times;</button>
+                ${dismissBtn}
             </div>`;
   }).join('');
 }
 
 function dismissNotification(id) {
   const existing = appNotifications.find(n => n.id === id);
+  if (existing && existing.type === 'sync-pending') return;
   if (existing && existing.type === 'admin-notice' && currentUser && existing.sentAt) {
     markNoticeReadOnServer(currentUser.uid, existing.sentAt);
     removeAdminNoticeNotification();
@@ -21909,7 +21982,7 @@ function dismissNotification(id) {
 }
 
 function clearAllNotifications() {
-  appNotifications = [];
+  appNotifications = appNotifications.filter(notification => notification.type === 'sync-pending');
   updateNotificationBadge();
   renderNotifications();
 }

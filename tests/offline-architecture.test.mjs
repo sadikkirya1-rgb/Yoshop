@@ -1,6 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createBusinessRepository, createEntityId, createSyncEnvelope, mergeSnapshotData, calculatePendingSyncCount } from '../offline-architecture.mjs';
+import { createBusinessRepository, createEntityId, createSyncEnvelope, mergeSnapshotData, calculatePendingSyncCount, getSyncRetryDelayMs } from '../offline-architecture.mjs';
+
+test('sync retries back off exponentially and cap at thirty minutes', () => {
+  assert.equal(getSyncRetryDelayMs(1), 30_000);
+  assert.equal(getSyncRetryDelayMs(2), 60_000);
+  assert.equal(getSyncRetryDelayMs(99), 30 * 60 * 1000);
+});
+
+test('markSyncActionFailed stores the next retry time instead of retrying immediately', async () => {
+  const repository = createBusinessRepository({ userId: 'retry-user', deviceId: 'retry-device', dbName: 'sync-retry-test' });
+  await repository.initialize();
+  const action = await repository.enqueueSyncAction({ entityType: 'customers', payload: { id: 'retry-customer' } });
+
+  await repository.markSyncActionFailed(action.id, 'network unavailable');
+
+  const [failedAction] = await repository.getSyncQueue();
+  const retryDelay = new Date(failedAction.nextRetryAt).getTime() - new Date(failedAction.lastAttemptAt).getTime();
+  assert.equal(failedAction.syncStatus, 'retry');
+  assert.equal(failedAction.retryCount, 1);
+  assert.equal(retryDelay, getSyncRetryDelayMs(1));
+});
 
 test('createEntityId is stable for the same payload', () => {
   const first = createEntityId('transaction', { date: '2026-06-26T00:00:00.000Z', total: 25.5, items: [{ name: 'Coffee', qty: 2 }] });

@@ -1,7 +1,49 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange, getTransactionsForCustomer, calculateCustomerTotalPaid, reconcileCustomerTransactionReferences } from '../invoice-utils.mjs';
+
+test('customer transaction totals use stable ids and ignore ambiguous legacy names', () => {
+  const customers = [{ id: 'cust-1', name: 'Alex' }, { id: 'cust-2', name: 'Alex' }];
+  const transactions = [
+    { customerId: 'cust-1', customerNameReal: 'Alex', total: 100, amountPaid: 60 },
+    { customerName: 'Alex', total: 40, amountPaid: 40 },
+    { customerId: 'deleted-customer', customerNameReal: 'Alex', total: 25, amountPaid: 25 }
+  ];
+
+  assert.deepEqual(getTransactionsForCustomer(customers[0], customers, transactions), [transactions[0]]);
+  assert.equal(calculateCustomerTotalPaid(customers[0], customers, transactions), 60);
+});
+
+test('legacy name-only transactions match only a unique customer and totals include recorded adjustments', () => {
+  const customer = { id: 'cust-unique', name: 'Morgan' };
+  const transactions = [
+    { customerName: 'Morgan', total: 100, amountPaid: 25, adjustments: [{ amount: 10 }] },
+    { customerId: 'cust-unique', total: 80, amountPaid: 50 }
+  ];
+
+  assert.equal(calculateCustomerTotalPaid(customer, [customer], transactions), 85);
+  assert.equal(calculateCustomerTotalPaid(customer, [customer, { id: 'cust-other', name: 'Morgan' }], transactions), 50);
+});
+
+test('customer paid totals use a stored debt balance when legacy invoices omit amount paid', () => {
+  const customer = { id: 'cust-legacy', name: 'Taylor' };
+  const transactions = [{ customerId: 'cust-legacy', total: 100, balance: -40 }];
+
+  assert.equal(calculateCustomerTotalPaid(customer, [customer], transactions), 60);
+});
+
+test('customer reference reconciliation never reassigns deleted ids by name', () => {
+  const transaction = { customerId: 'deleted-customer', customerNameReal: 'Alex', customerName: 'Alex' };
+  const linkedTransaction = { customerId: 'cust-1', customerNameReal: 'Old name', customerName: 'Old name' };
+
+  reconcileCustomerTransactionReferences([{ id: 'cust-1', name: 'Current name' }, { id: 'cust-2', name: 'Alex' }], [transaction, linkedTransaction]);
+
+  assert.equal(transaction.customerId, 'deleted-customer');
+  assert.equal(transaction.customerNameReal, 'Alex');
+  assert.equal(linkedTransaction.customerNameReal, 'Current name');
+  assert.equal(linkedTransaction.customerName, 'Current name');
+});
 
 test('calculateInvoiceItemQuantityDeltas reconciles edited invoice quantities by product', () => {
   const deltas = calculateInvoiceItemQuantityDeltas(

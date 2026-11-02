@@ -40,15 +40,58 @@ export function calculateInvoiceItemQuantityDeltas(previousItems = [], updatedIt
     .map(entry => ({ item: entry.item, quantity: entry.quantity }));
 }
 
-function findMatchingCustomer(customer, transaction) {
+function normalizeCustomerName(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function findMatchingCustomer(customer, transaction, customers = []) {
   if (!customer || !transaction) return null;
-  if (transaction?.customerId) {
-    return customer?.id && String(transaction.customerId) === String(customer.id) ? customer : null;
+  const transactionCustomerId = transaction.customerId || transaction.customer?.id;
+  if (transactionCustomerId) {
+    return customer.id && String(transactionCustomerId) === String(customer.id) ? customer : null;
   }
-  const matchesCustomerId = customer?.id && transaction?.customerId && transaction.customerId === customer.id;
-  const matchesCustomerName = transaction?.customerNameReal && customer?.name && transaction.customerNameReal === customer.name;
-  const matchesLegacyCustomerName = transaction?.customerName && customer?.name && transaction.customerName === customer.name;
-  return matchesCustomerId || matchesCustomerName || matchesLegacyCustomerName ? customer : null;
+
+  const transactionName = normalizeCustomerName(transaction.customerNameReal || transaction.customer?.name || transaction.customerName);
+  const customerName = normalizeCustomerName(customer.name);
+  if (!transactionName || transactionName !== customerName) return null;
+
+  const sameNameCustomers = customers.filter(candidate => normalizeCustomerName(candidate?.name) === transactionName);
+  if (sameNameCustomers.length !== 1) return null;
+  const onlyMatch = sameNameCustomers[0];
+  return (customer.id && onlyMatch.id && String(customer.id) === String(onlyMatch.id)) || onlyMatch === customer
+    ? customer
+    : null;
+}
+
+export function getTransactionsForCustomer(customer, customers = [], transactions = []) {
+  const customerList = Array.isArray(customers) ? customers : [];
+  const transactionList = Array.isArray(transactions) ? transactions : [];
+  return transactionList.filter(transaction => findMatchingCustomer(customer, transaction, customerList));
+}
+
+export function calculateCustomerTotalPaid(customer, customers = [], transactions = []) {
+  return getTransactionsForCustomer(customer, customers, transactions).reduce((sum, transaction) => {
+    const total = Number(transaction.total ?? transaction.grandTotal ?? transaction.amount ?? 0) || 0;
+    const recordedAmountPaid = transaction.amountPaid ?? transaction.totalPaid ?? transaction.paidAmount;
+    const storedBalance = Number(transaction.balance);
+    const amountPaid = recordedAmountPaid === undefined && Number.isFinite(storedBalance) && storedBalance < 0
+      ? Math.max(0, Math.min(total, total + storedBalance))
+      : calculateInvoicePaymentSummary(transaction, total).amountPaid;
+    return sum + amountPaid;
+  }, 0);
+}
+
+export function reconcileCustomerTransactionReferences(customers = [], transactions = []) {
+  const customerList = Array.isArray(customers) ? customers : [];
+  const transactionList = Array.isArray(transactions) ? transactions : [];
+  transactionList.forEach(transaction => {
+    if (!transaction?.customerId) return;
+    const customer = customerList.find(candidate => candidate?.id && String(candidate.id) === String(transaction.customerId));
+    if (!customer) return;
+    transaction.customerNameReal = customer.name;
+    transaction.customerName = customer.name;
+    if (transaction.customer && typeof transaction.customer === 'object') transaction.customer.name = customer.name;
+  });
 }
 
 function getDateKey(dateValue) {
@@ -402,7 +445,7 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
   return txList
     .filter(tx => tx && (tx.invoiceNumber || tx.customerId || tx.customerNameReal || tx.customerName || tx.amountPaid !== undefined || tx.balance !== undefined))
     .map(transaction => {
-      const customer = customerList.find(customer => findMatchingCustomer(customer, transaction)) || null;
+      const customer = customerList.find(customer => findMatchingCustomer(customer, transaction, customerList)) || null;
       const total = Number(transaction.total || 0);
       const paymentSummary = calculateInvoicePaymentSummary(transaction, total);
       const amountPaid = paymentSummary.amountPaid;

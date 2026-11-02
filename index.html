@@ -938,9 +938,15 @@
           </div>
           <div class="data-table-toolbar" data-table-controls="customerListBody" data-table-search-priority="customer-name">
             <input type="search" data-table-search placeholder="Search customers..." aria-label="Search customers">
-            <button type="button" class="btn btn-secondary" data-table-filter-toggle>Filters</button>
+            <div class="customer-filter-buttons" role="group" aria-label="Filter customers">
+              <button type="button" class="btn btn-secondary" data-customer-filter="all" aria-pressed="true">All</button>
+              <button type="button" class="btn btn-secondary" data-customer-filter="outstanding" aria-pressed="false">Outstanding</button>
+              <button type="button" class="btn btn-secondary" data-customer-filter="credit" aria-pressed="false">Credit</button>
+              <button type="button" class="btn btn-secondary" data-customer-filter="paid" aria-pressed="false">Paid</button>
+              <button type="button" class="btn btn-secondary" data-customer-filter="whatsapp" aria-pressed="false">WhatsApp</button>
+              <button type="button" class="btn btn-secondary" data-customer-filter="email" aria-pressed="false">Email</button>
+            </div>
             <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
-            <div class="data-table-filter-panel" data-table-filter-panel></div>
           </div>
           <table class="u-mt-15 table-excel">
             <thead>
@@ -951,6 +957,7 @@
                 <th>WhatsApp</th>
                 <th>Email</th>
                 <th>Address</th>
+                <th>Total Paid</th>
                 <th>Outstanding</th>
                 <th style="text-align: right;">Actions</th>
               </tr>

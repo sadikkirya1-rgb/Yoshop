@@ -346,6 +346,11 @@ export function calculatePendingSyncCount(queue = [], unsyncedTransactions = 0) 
   return meaningfulQueueItems.length > 0 ? meaningfulQueueItems.length : unsyncedTransactions;
 }
 
+export function getSyncRetryDelayMs(retryCount = 1) {
+  const attempt = Math.max(1, Math.floor(Number(retryCount) || 1));
+  return Math.min(30_000 * (2 ** Math.min(attempt - 1, 6)), 30 * 60 * 1000);
+}
+
 function getSharedMemoryDatabase(dbName) {
   if (!MEMORY_DATABASES.has(dbName)) {
     MEMORY_DATABASES.set(dbName, createMemoryDatabase(dbName));
@@ -647,7 +652,7 @@ export function createBusinessRepository(options = {}) {
           current.attempts = retryCount;
           current.lastError = errorMessage;
           current.lastAttemptAt = now.toISOString();
-          current.nextRetryAt = now.toISOString();
+          current.nextRetryAt = new Date(now.getTime() + getSyncRetryDelayMs(retryCount)).toISOString();
           current.updatedAt = now.toISOString();
 
           const putRequest = objectStore.put(current);
