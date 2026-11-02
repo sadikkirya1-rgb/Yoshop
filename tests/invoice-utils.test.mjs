@@ -33,6 +33,25 @@ test('customer paid totals use a stored debt balance when legacy invoices omit a
   assert.equal(calculateCustomerTotalPaid(customer, [customer], transactions), 60);
 });
 
+test('customer lifetime paid includes standalone receipts but not duplicated invoice adjustments', () => {
+  const customer = {
+    id: 'cust-receipts',
+    name: 'Sam',
+    adjustments: [
+      { id: 'receipt-1', amount: 25 },
+      { id: 'invoice-payment-1', amount: 10 }
+    ]
+  };
+  const transactions = [{
+    customerId: 'cust-receipts',
+    total: 100,
+    amountPaid: 50,
+    adjustments: [{ id: 'invoice-payment-1', amount: 10 }]
+  }];
+
+  assert.equal(calculateCustomerTotalPaid(customer, [customer], transactions), 85);
+});
+
 test('customer reference reconciliation never reassigns deleted ids by name', () => {
   const transaction = { customerId: 'deleted-customer', customerNameReal: 'Alex', customerName: 'Alex' };
   const linkedTransaction = { customerId: 'cust-1', customerNameReal: 'Old name', customerName: 'Old name' };

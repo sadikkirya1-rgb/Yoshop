@@ -70,7 +70,8 @@ export function getTransactionsForCustomer(customer, customers = [], transaction
 }
 
 export function calculateCustomerTotalPaid(customer, customers = [], transactions = []) {
-  return getTransactionsForCustomer(customer, customers, transactions).reduce((sum, transaction) => {
+  const customerTransactions = getTransactionsForCustomer(customer, customers, transactions);
+  const invoicePaid = customerTransactions.reduce((sum, transaction) => {
     const total = Number(transaction.total ?? transaction.grandTotal ?? transaction.amount ?? 0) || 0;
     const recordedAmountPaid = transaction.amountPaid ?? transaction.totalPaid ?? transaction.paidAmount;
     const storedBalance = Number(transaction.balance);
@@ -79,6 +80,14 @@ export function calculateCustomerTotalPaid(customer, customers = [], transaction
       : calculateInvoicePaymentSummary(transaction, total).amountPaid;
     return sum + amountPaid;
   }, 0);
+  const invoiceAdjustmentIds = new Set(customerTransactions.flatMap(transaction => [
+    ...(Array.isArray(transaction.adjustments) ? transaction.adjustments : []),
+    transaction.lastAdjustment
+  ]).map(adjustment => adjustment?.id).filter(Boolean).map(String));
+  const standaloneReceiptTotal = (Array.isArray(customer?.adjustments) ? customer.adjustments : [])
+    .filter(adjustment => adjustment && adjustment.id && !invoiceAdjustmentIds.has(String(adjustment.id)))
+    .reduce((sum, adjustment) => sum + Math.max(0, Number(adjustment.amount) || 0), 0);
+  return invoicePaid + standaloneReceiptTotal;
 }
 
 export function reconcileCustomerTransactionReferences(customers = [], transactions = []) {

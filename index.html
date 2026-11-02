@@ -298,6 +298,12 @@
             <option value="">Walk-in Customer</option>
           </select>
         </div>
+        <div id="paymentLoyaltyRow" class="payment-loyalty-row" style="display:none;">
+          <label for="paymentLoyaltyPoints">Redeem points:</label>
+          <input type="number" id="paymentLoyaltyPoints" min="0" step="100" value="0" oninput="updatePaymentTotals()">
+          <span id="paymentLoyaltySummary" aria-live="polite"></span>
+          <span id="paymentLoyaltyDiscount"></span>
+        </div>
         <div id="orderStatusSection" class="input-row" style="display:none;">
           <label for="orderStatusSelect">Order Status:</label>
           <select id="orderStatusSelect" class="payment-method-select">
@@ -954,6 +960,8 @@
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllCustomers" onchange="toggleSelectAllCustomers(this.checked)"></th>
                 <th>#</th>
                 <th>Name</th>
+                <th>Membership</th>
+                <th class="u-text-right">Points</th>
                 <th>WhatsApp</th>
                 <th>Email</th>
                 <th>Address</th>
@@ -1749,6 +1757,27 @@
               <label for="invoiceCustomDateFormat">Custom Date Pattern:</label>
               <input type="text" id="invoiceCustomDateFormat" placeholder="e.g. DD MMM YYYY" title="Use DD, MM, MMM, MMMM, YYYY, HH, mm, and ss tokens">
             </div>
+            <h4>Loyalty and Membership</h4>
+            <div class="input-row">
+              <label for="loyaltyEnabled">Loyalty program:</label>
+              <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                <input type="checkbox" id="loyaltyEnabled">
+                <span>Enable points and automatic membership tiers</span>
+              </label>
+            </div>
+            <div class="input-row">
+              <label for="loyaltyEarnPointsPerCurrency">Points earned per currency unit paid:</label>
+              <input type="number" id="loyaltyEarnPointsPerCurrency" min="0" step="0.1" value="1">
+              <label for="loyaltyPointsPerCurrency">Points required to redeem one currency unit:</label>
+              <input type="number" id="loyaltyPointsPerCurrency" min="1" step="1" value="100">
+            </div>
+            <div class="input-row">
+              <label for="loyaltySilverSpendThreshold">Silver tier lifetime paid spend:</label>
+              <input type="number" id="loyaltySilverSpendThreshold" min="0" step="1" value="500">
+              <label for="loyaltyGoldSpendThreshold">Gold tier lifetime paid spend:</label>
+              <input type="number" id="loyaltyGoldSpendThreshold" min="0" step="1" value="1500">
+            </div>
+            <small class="u-fs-08 u-text-muted">New sales earn points only on amounts collected. Existing sales are not automatically backfilled.</small>
             <div class="input-row">
               <label for="serviceMode">Service Business Mode:</label>
               <label style="display:flex; align-items:center; gap:8px; margin:0;">

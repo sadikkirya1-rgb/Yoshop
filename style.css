@@ -3022,6 +3022,27 @@ section#menuTab.active {
 .payment-customer-row > label {
   flex-basis: 100px;
 }
+.payment-loyalty-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+  color: var(--text);
+}
+.payment-loyalty-row label {
+  flex-basis: 100px;
+}
+.payment-loyalty-row input {
+  width: 120px;
+  min-height: 36px;
+  padding: 6px 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+.payment-loyalty-row span {
+  font-size: 0.88rem;
+}
 
 .payment-customer-picker {
   position: relative;

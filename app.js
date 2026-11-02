@@ -11,7 +11,8 @@ import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail, pruneExpiredAuditEntries, acquireRecordLock, releaseRecordLock } from './audit-utils.mjs';
 import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity, mapWithConcurrency } from './admin-utils.mjs';
-import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField } from './sync-utils.mjs';
+import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField, getPendingArraySnapshot } from './sync-utils.mjs';
+import { DEFAULT_LOYALTY_SETTINGS, getLoyaltySummary, calculateLoyaltyRedemption, reconcileLoyaltyTransaction, reconcileLoyaltyPayment } from './loyalty-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
@@ -87,7 +88,7 @@ async function showNoticesPage() {
 async function renderShopNoticesInSettings(containerParam) {
   const container = containerParam || document.getElementById('shopNoticesList');
   if (!container) return;
-  container.innerHTML = '<p style="opacity:0.7;">Loading notices...</p>';
+    container.innerHTML = '<p style="opacity:0.7;">Loading notices...</p>';
   if (!currentUser || !dbFirestore) {
     container.innerHTML = '<p style="opacity:0.7;">Not available.</p>';
     return;
@@ -1019,6 +1020,27 @@ function hydrateEnterpriseRecords(entityType, records = []) {
 
 function reconcileCustomerTransactionReferences() {
   reconcileCustomerTransactionRecords(customers, transactions);
+}
+
+async function reconcileTransactionLoyalty(transaction, customerOverride = null) {
+  if (!transaction || settings?.loyaltyEnabled !== true) return false;
+  const customerId = transaction.customerId;
+  const customer = customerOverride || (customerId
+    ? customers.find(entry => entry && [entry.id, entry.recordId].some(id => id && String(id) === String(customerId)))
+    : null);
+  if (!customer) return false;
+
+  const previousLedger = customer.loyaltyLedger;
+  const result = reconcileLoyaltyTransaction(customer, transaction, settings);
+  if (!result.changed) return false;
+  try {
+    await enqueueEnterpriseRecordChange('customers', customer, 'upsert');
+  } catch (error) {
+    if (previousLedger === undefined) delete customer.loyaltyLedger;
+    else customer.loyaltyLedger = previousLedger;
+    throw error;
+  }
+  return true;
 }
 
 function mergeEnterpriseRecordsPreservingLocal(localRecords = [], incomingRecords = [], entityType = '') {
@@ -3105,6 +3127,7 @@ const defaultSettings = {
   taxRate: 0,
   ShopAdminPIN: "1234", // Default ShopAdmin PIN
   transactionEditWindowMinutes: 30,
+  ...DEFAULT_LOYALTY_SETTINGS,
   serviceMode: false,
   invoiceDateFormat: 'locale',
   invoiceCustomDateFormat: ''
@@ -5190,6 +5213,7 @@ async function recordTransaction(transaction) {
     synced: false,
     syncStatus: 'pending'
   }, transaction);
+  await reconcileTransactionLoyalty(transaction);
 
   const duplicateIndex = transactions.findIndex(existing => {
     if (!existing || !existing.date) return false;
@@ -5239,6 +5263,7 @@ async function recordTransaction(transaction) {
     scheduleBackgroundSync();
   }
 
+  renderCustomerList();
   renderTransactions();
   updateDashboard();
 
@@ -7129,6 +7154,7 @@ function toggleDraftPaymentFields() {
   setPaymentProcessingState(false, isDraft
     ? 'Drafts do not deduct stock or update customer accounts until confirmed.'
     : 'Review the total and confirm payment.', 'info');
+  updatePaymentTotals();
 }
 
 function toggleServiceMode() {
@@ -8437,6 +8463,7 @@ function processBill() { // This now opens the payment modal
   document.getElementById('deliveryFeeInput').value = '';
   document.getElementById('paymentDateTime').value = '';
   document.getElementById('amountTendered').value = '';
+  document.getElementById('paymentLoyaltyPoints').value = '0';
   const draftCheckbox = document.getElementById('savePaymentAsDraft');
   if (draftCheckbox) draftCheckbox.checked = false;
   toggleDraftPaymentFields();
@@ -8505,9 +8532,36 @@ function updatePaymentTotals() {
   if (discountAmount > originalTotal) discountAmount = originalTotal;
   if (discountAmount < 0) discountAmount = 0;
 
-  document.getElementById('paymentDiscountDisplay').textContent = formatCurrency(discountAmount);
+  const paymentSelect = document.getElementById('paymentCustomerSelect');
+  const selectedCustomer = paymentSelect?.value
+    ? customers.find(entry => entry && String(entry.id) === String(paymentSelect.value))
+    : null;
+  const loyaltyInput = document.getElementById('paymentLoyaltyPoints');
+  const isDraft = document.getElementById('savePaymentAsDraft')?.checked === true;
+  const loyaltyRedemption = selectedCustomer && !isDraft
+    ? calculateLoyaltyRedemption(selectedCustomer, loyaltyInput?.value, Math.max(0, originalTotal - discountAmount), settings)
+    : { points: 0, currencyDiscount: 0, availablePoints: selectedCustomer ? getLoyaltySummary(selectedCustomer, settings).pointsBalance : 0 };
+  const loyaltyRow = document.getElementById('paymentLoyaltyRow');
+  const loyaltySummary = document.getElementById('paymentLoyaltySummary');
+  const loyaltyDiscount = document.getElementById('paymentLoyaltyDiscount');
+  if (loyaltyRow) loyaltyRow.style.display = selectedCustomer && settings.loyaltyEnabled === true ? 'flex' : 'none';
+  if (loyaltyInput) {
+    loyaltyInput.step = String(Math.max(1, Number(settings.loyaltyPointsPerCurrency) || DEFAULT_LOYALTY_SETTINGS.loyaltyPointsPerCurrency));
+    loyaltyInput.max = String(loyaltyRedemption.availablePoints);
+  }
+  if (loyaltySummary) {
+    const summary = selectedCustomer ? getLoyaltySummary(selectedCustomer, settings) : null;
+    loyaltySummary.textContent = summary ? `${summary.tier} • ${summary.pointsBalance} available` : '';
+  }
+  if (loyaltyDiscount) {
+    loyaltyDiscount.textContent = loyaltyRedemption.points > 0
+      ? `Discount: ${getCurrencySymbol()}${formatCurrency(loyaltyRedemption.currencyDiscount)}`
+      : '';
+  }
+  const discountDisplay = document.getElementById('paymentDiscountDisplay');
+  if (discountDisplay) discountDisplay.textContent = formatCurrency(discountAmount + loyaltyRedemption.currencyDiscount);
 
-  const newTotal = originalTotal - discountAmount;
+  const newTotal = Math.max(0, originalTotal - discountAmount - loyaltyRedemption.currencyDiscount);
   if (paymentSubtotalEl) paymentSubtotalEl.textContent = formatCurrency(totals.subtotal);
   if (paymentTaxEl) paymentTaxEl.textContent = formatCurrency(totals.tax);
   const deliveryFeeEl = document.getElementById('paymentDeliveryFeeDisplay');
@@ -8516,7 +8570,6 @@ function updatePaymentTotals() {
   totalDueEl.dataset.currentTotal = newTotal;
   totalDueEl.dataset.originalTotal = originalTotal;
 
-  const paymentSelect = document.getElementById('paymentCustomerSelect');
   const isCustomerSelected = paymentSelect && paymentSelect.value !== '';
   const remainingBalanceEl = document.getElementById('paymentRemainingBalanceVal');
   const remainingBalanceRow = document.getElementById('paymentRemainingBalanceRow');
@@ -8629,11 +8682,14 @@ async function finalizePayment(isSplit = false) {
   const totalBeforeDiscount = totals.total + deliveryFee;
   if (discountAmount > totalBeforeDiscount) discountAmount = totalBeforeDiscount;
   if (discountAmount < 0) discountAmount = 0;
-  const finalTotal = totalBeforeDiscount - discountAmount;
-
   const customer = isCustomerSelected
     ? customers.find(entry => entry && String(entry.id) === String(paymentSelect.value))
     : null;
+  const loyaltyRedemption = customer && !isDraft
+    ? calculateLoyaltyRedemption(customer, document.getElementById('paymentLoyaltyPoints')?.value, Math.max(0, totalBeforeDiscount - discountAmount), settings)
+    : { points: 0, currencyDiscount: 0 };
+  discountAmount += loyaltyRedemption.currencyDiscount;
+  const finalTotal = Math.max(0, totalBeforeDiscount - discountAmount);
 
   const paymentDateInput = document.getElementById('paymentDateTime')?.value || '';
   const parsedPaymentDate = paymentDateInput ? new Date(paymentDateInput) : new Date();
@@ -8703,7 +8759,9 @@ async function finalizePayment(isSplit = false) {
       tax: totals.tax,
       deliveryFee,
       paymentMethod: paymentMethod,
-      discount: { value: discountInput, type: 'fixed', amount: discountAmount },
+      discount: { value: discountAmount, type: 'fixed', amount: discountAmount },
+      loyaltyRedeemedPoints: loyaltyRedemption.points,
+      loyaltyDiscountAmount: loyaltyRedemption.currencyDiscount,
       orderStatus: isDraft ? 'draft' : (document.getElementById('orderStatusSelect')?.value || 'pending'),
       orderType: settings.serviceMode ? 'service' : 'product',
       serviceOrder: {
@@ -10862,6 +10920,7 @@ async function confirmDraftTransaction(index) {
   }
 
   transactions[index] = updatedTransaction;
+  await reconcileTransactionLoyalty(updatedTransaction, customer);
   auditMutation('draft_confirmed', 'sales', {
     transactionId: updatedTransaction.id || updatedTransaction.recordId || updatedTransaction.date,
     total: updatedTransaction.total,
@@ -10872,6 +10931,7 @@ async function confirmDraftTransaction(index) {
   await enqueueTransactionSync(updatedTransaction);
   await saveData(false);
   renderTransactions();
+  renderCustomerList();
   renderInvoices();
   updateDashboard();
   await showAppAlert('Draft invoice confirmed and inventory updated.', 'Draft Confirmed');
@@ -11058,6 +11118,10 @@ async function saveTransactionEdit() {
       currentCustomer.subtotalSales = (Number(currentCustomer.subtotalSales) || 0) + totals.subtotal;
       currentCustomer.totalPaid = (Number(currentCustomer.totalPaid) || 0) + amountPaid;
     }
+    if (previousCustomer && previousCustomer !== currentCustomer) {
+      await reconcileTransactionLoyalty({ ...original, orderStatus: 'canceled' }, previousCustomer);
+    }
+    if (currentCustomer) await reconcileTransactionLoyalty(updatedTransaction, currentCustomer);
     new Set([previousCustomer, currentCustomer].filter(Boolean)).forEach(customer => {
       enqueueEnterpriseRecordChange('customers', customer, 'upsert').catch(console.warn);
     });
@@ -11069,6 +11133,7 @@ async function saveTransactionEdit() {
   await saveData(false);
   closeTransactionEditModal();
   renderTransactions();
+  renderCustomerList();
   renderInvoices();
   updateDashboard();
   if (originalStatus !== updatedStatus) sendOrderStatusNotification(index, updatedStatus);
@@ -12718,6 +12783,7 @@ async function clearAllAdjustments() {
   if (!confirmed?.confirmed) return;
 
   const transactionSyncs = [];
+  const loyaltySyncs = [];
   transactionRecords.forEach(transaction => {
     const entries = Array.isArray(transaction?.adjustments) && transaction.adjustments.length
       ? transaction.adjustments
@@ -12734,6 +12800,7 @@ async function clearAllAdjustments() {
     transaction.lastAdjustment = null;
     transaction.synced = false;
     transaction.syncStatus = 'pending';
+    loyaltySyncs.push(reconcileTransactionLoyalty(transaction));
     transactionSyncs.push(enqueueTransactionSync(transaction));
   });
 
@@ -12743,6 +12810,7 @@ async function clearAllAdjustments() {
     if (entries.length === 0) return;
 
     const adjustmentTotal = entries.reduce((sum, entry) => sum + (Number(entry?.amount) || 0), 0);
+    entries.forEach(entry => reconcileLoyaltyPayment(customer, entry?.id, 0, settings));
     customer.balance = (Number(customer.balance) || 0) - adjustmentTotal;
     customer.totalPaid = Math.max(0, (Number(customer.totalPaid) || 0) - adjustmentTotal);
     customer.adjustments = [];
@@ -12755,7 +12823,7 @@ async function clearAllAdjustments() {
   renderTransactions();
   renderCustomerList();
   updateDashboard();
-  void Promise.allSettled([...transactionSyncs, ...customerSyncs])
+  void Promise.allSettled([...transactionSyncs, ...customerSyncs, ...loyaltySyncs])
     .then(() => saveData(false))
     .then(() => {
       if (navigator.onLine && currentUser && dbFirestore) {
@@ -13655,6 +13723,19 @@ async function saveSettings() {
   settings.taxRate = parseFloat(document.getElementById('taxRate').value) || 0;
   settings.invoiceDateFormat = document.getElementById('invoiceDateFormat')?.value || 'locale';
   settings.invoiceCustomDateFormat = document.getElementById('invoiceCustomDateFormat')?.value.trim() || '';
+  settings.loyaltyEnabled = document.getElementById('loyaltyEnabled')?.checked === true;
+  settings.loyaltyEarnPointsPerCurrency = Number(document.getElementById('loyaltyEarnPointsPerCurrency')?.value);
+  settings.loyaltyPointsPerCurrency = Number(document.getElementById('loyaltyPointsPerCurrency')?.value);
+  settings.loyaltySilverSpendThreshold = Number(document.getElementById('loyaltySilverSpendThreshold')?.value);
+  settings.loyaltyGoldSpendThreshold = Number(document.getElementById('loyaltyGoldSpendThreshold')?.value);
+  if (
+    !Number.isFinite(settings.loyaltyEarnPointsPerCurrency) || settings.loyaltyEarnPointsPerCurrency < 0 ||
+    !Number.isFinite(settings.loyaltyPointsPerCurrency) || settings.loyaltyPointsPerCurrency < 1 ||
+    !Number.isFinite(settings.loyaltySilverSpendThreshold) || settings.loyaltySilverSpendThreshold < 0 ||
+    !Number.isFinite(settings.loyaltyGoldSpendThreshold) || settings.loyaltyGoldSpendThreshold < settings.loyaltySilverSpendThreshold
+  ) {
+    return alert('Enter valid loyalty rates and ensure the Gold spend threshold is at least the Silver threshold.');
+  }
   const transactionWindow = parseInt(document.getElementById('transactionEditWindowMinutes')?.value, 10);
   settings.transactionEditWindowMinutes = Number.isFinite(transactionWindow) ? Math.max(0, transactionWindow) : 30;
   settings.serviceMode = Boolean(document.getElementById('serviceMode')?.checked);
@@ -13712,6 +13793,7 @@ async function saveSettings() {
   renderInventoryReport();
   renderStockListTable();
   renderTransactions();
+  renderCustomerList();
   renderReport();
   updateCurrencyDisplay(); // Call this AFTER all sections are re-rendered
 }
@@ -13912,6 +13994,12 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('promoMessage', settings.promoMessage || '');
   setVal('invoiceDateFormat', settings.invoiceDateFormat || 'locale');
   setVal('invoiceCustomDateFormat', settings.invoiceCustomDateFormat || '');
+  setVal('loyaltyEarnPointsPerCurrency', settings.loyaltyEarnPointsPerCurrency ?? DEFAULT_LOYALTY_SETTINGS.loyaltyEarnPointsPerCurrency);
+  setVal('loyaltyPointsPerCurrency', settings.loyaltyPointsPerCurrency ?? DEFAULT_LOYALTY_SETTINGS.loyaltyPointsPerCurrency);
+  setVal('loyaltySilverSpendThreshold', settings.loyaltySilverSpendThreshold ?? DEFAULT_LOYALTY_SETTINGS.loyaltySilverSpendThreshold);
+  setVal('loyaltyGoldSpendThreshold', settings.loyaltyGoldSpendThreshold ?? DEFAULT_LOYALTY_SETTINGS.loyaltyGoldSpendThreshold);
+  const loyaltyEnabledCheckbox = document.getElementById('loyaltyEnabled');
+  if (loyaltyEnabledCheckbox) loyaltyEnabledCheckbox.checked = settings.loyaltyEnabled === true;
   setVal('transactionEditWindowMinutes', settings.transactionEditWindowMinutes ?? 30);
   setVal('ShopAdminPIN', settings.ShopAdminPIN || "");
   setVal('confirmShopAdminPIN', settings.ShopAdminPIN || "");
@@ -14862,6 +14950,7 @@ function renderCustomerList() {
   customers.forEach((customer, i) => {
     const outstandingBalance = getCustomerAccountBalance(customer);
     const totalPaid = calculateCustomerTotalPaid(customer, customers, transactions);
+    const loyaltySummary = getLoyaltySummary(customer, settings);
     const outstandingText = outstandingBalance === 0
       ? `${currencySymbol}0`
       : `<span style="${outstandingBalance < 0 ? 'color:#dc3545' : 'color:#28a745'}; font-weight:bold;">${outstandingBalance < 0 ? '-' : ''}${currencySymbol}${formatCurrency(Math.abs(outstandingBalance))}</span>`;
@@ -14880,6 +14969,8 @@ function renderCustomerList() {
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
                         <td>${i + 1}</td>
                         <td>${escapeHtml(customer.name)}</td>
+                        <td>${loyaltySummary.tier}</td>
+                        <td class="u-text-right">${loyaltySummary.pointsBalance}</td>
                         <td style="white-space:nowrap;">${whatsappCell}</td>
                         <td style="white-space:nowrap;">${emailCell}</td>
                         <td>${escapeHtml(customer.address || '')}</td>
@@ -15209,6 +15300,7 @@ async function updateTransactionStatusByIndex(transactionIndex, status) {
     syncStatus: 'pending'
   });
   transactions[transactionIndex] = updatedTransaction;
+  await reconcileTransactionLoyalty(updatedTransaction);
   const shouldSendUpdate = previousStatus !== normalizedStatus;
   saveState('transactions', transactions, { enqueueSync: false }).catch(() => {});
   enqueueTransactionSync(transactions[transactionIndex]).catch(console.warn);
@@ -15221,6 +15313,7 @@ async function updateTransactionStatusByIndex(transactionIndex, status) {
   }
   saveData();
   renderTransactions();
+  renderCustomerList();
   renderInvoices();
   if (shouldSendUpdate) {
     sendOrderStatusNotification(transactionIndex, normalizedStatus);
@@ -16021,6 +16114,7 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
     activeTransaction.amountPaid = amountPaid;
     activeTransaction.adjustmentsAppliedToAmountPaid = true;
     activeTransaction.balance = Math.min(0, amountPaid - (parseFloat(activeTransaction.total) || 0));
+    await reconcileTransactionLoyalty(activeTransaction);
 
     if (typeof enqueueLocalSyncAction === 'function') {
       await enqueueLocalSyncAction({
@@ -16042,6 +16136,7 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
     }
     renderInvoices();
     renderTransactions();
+    renderCustomerList();
     previewOrder(activeTransaction);
 
     modal.style.display = 'none';
@@ -16135,6 +16230,7 @@ async function recordCustomerAdjustment(index) {
 
   customer.adjustments = Array.isArray(customer.adjustments) ? customer.adjustments : [];
   customer.adjustments.push(adjustment);
+  reconcileLoyaltyPayment(customer, adjustment.id, amount, settings);
   customer.balance = (parseFloat(customer.balance) || 0) + amount;
   customer.totalPaid = (parseFloat(customer.totalPaid) || 0) + amount;
   customer.lastTransactionDate = adjustment.date;
@@ -16286,6 +16382,8 @@ function updateOrderCustomer() {
   }
 }
 
+let lastPaymentLoyaltyCustomerId = null;
+
 function onPaymentCustomerChange() {
   const paymentSelect = document.getElementById('paymentCustomerSelect');
   const balanceRow = document.getElementById('paymentCustomerBalanceRow');
@@ -16295,6 +16393,11 @@ function onPaymentCustomerChange() {
   if (!paymentSelect) return;
   syncPaymentCustomerTrigger();
   const customerId = paymentSelect.value;
+  if (lastPaymentLoyaltyCustomerId !== customerId) {
+    const loyaltyInput = document.getElementById('paymentLoyaltyPoints');
+    if (loyaltyInput) loyaltyInput.value = '0';
+    lastPaymentLoyaltyCustomerId = customerId;
+  }
   if (customerId !== '') {
     const customer = customers.find(entry => entry && String(entry.id) === String(customerId));
     if (!customer) {
@@ -16349,6 +16452,7 @@ function addCustomer() {
     totalSales: existingCustomer?.totalSales || 0,
     totalPaid: existingCustomer?.totalPaid || 0,
     adjustments: existingCustomer?.adjustments || [],
+    loyaltyLedger: existingCustomer?.loyaltyLedger || [],
     lastTransactionDate: existingCustomer?.lastTransactionDate || new Date().toISOString()
   }, existingCustomer);
 
@@ -16895,7 +16999,6 @@ async function saveStockAdjustment() {
   });
   restockHistory.unshift(restockRecord);
   enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
-  if (restockHistory.length > 100) restockHistory.pop();
 
   saveData();
 
@@ -17409,7 +17512,7 @@ function renderPurchaseHistory() {
   }).join('');
 }
 
-function savePurchaseEntry() {
+async function savePurchaseEntry() {
   if (!requireActionPermission('purchases.create', 'creating a purchase or expense')) return;
   const supplier = document.getElementById('purchaseSupplier')?.value?.trim() || '';
   const dateValue = document.getElementById('purchaseDate')?.value || getLocalDateInputValue();
@@ -17511,12 +17614,11 @@ function savePurchaseEntry() {
       });
       restockHistory.unshift(restockRecord);
       enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
-      if (restockHistory.length > 100) restockHistory.pop();
     }
   }
 
   const entry = {
-    id: `purchase-${Date.now()}`,
+    id: `purchase-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     date: dateValue,
     supplier: supplier || 'Personal Expense',
     item: displayItem,
@@ -17534,9 +17636,15 @@ function savePurchaseEntry() {
   };
 
   purchaseHistory.unshift(entry);
-  if (purchaseHistory.length > 100) purchaseHistory.pop();
-
-  saveData().catch(() => {});
+  try {
+    await saveState('purchaseHistory', purchaseHistory);
+  } catch (error) {
+    console.error('[PURCHASE] Could not persist purchase locally:', error);
+    await showAppAlert('The purchase remains on this screen but could not be confirmed in local storage. Do not close the app; check device storage and retry.', 'Purchase Save Needs Attention');
+    renderPurchaseHistory();
+    return;
+  }
+  await saveData();
   renderPurchaseHistory();
   renderStockListTable();
   renderInventoryReport();
@@ -17653,7 +17761,7 @@ function renderWastageLossHistory() {
   }).join('');
 }
 
-function saveWastageLossEntry() {
+async function saveWastageLossEntry() {
   const dateValue = document.getElementById('wastageLossDate')?.value || new Date().toISOString().split('T')[0];
   const item = document.getElementById('wastageLossItem')?.value?.trim();
   const qty = Number(document.getElementById('wastageLossQty')?.value || 0);
@@ -17700,10 +17808,8 @@ function saveWastageLossEntry() {
   });
   restockHistory.unshift(restockRecord);
   enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
-  if (restockHistory.length > 100) restockHistory.pop();
-
   const entry = {
-    id: `wastage-${Date.now()}`,
+    id: `wastage-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     date: dateValue,
     item,
     qty,
@@ -17714,9 +17820,15 @@ function saveWastageLossEntry() {
   };
 
   wastageLossHistory.unshift(entry);
-  if (wastageLossHistory.length > 100) wastageLossHistory.pop();
-
-  saveData().catch(() => {});
+  try {
+    await saveState('wastageLossHistory', wastageLossHistory);
+  } catch (error) {
+    console.error('[WASTAGE] Could not persist waste/loss locally:', error);
+    await showAppAlert('The waste/loss entry remains on this screen but could not be confirmed in local storage. Do not close the app; check device storage and retry.', 'Record Save Needs Attention');
+    renderWastageLossHistory();
+    return;
+  }
+  await saveData();
   renderWastageLossHistory();
   renderStockListTable();
   renderInventoryReport();
@@ -17805,7 +17917,7 @@ function updateEditWastageTotal() {
   if (el) el.textContent = `Total: ${formatCurrency(total)}`;
 }
 
-function saveWastageEdit() {
+async function saveWastageEdit() {
   const id = document.getElementById('editWastageId')?.value;
   if (!id) return;
   const idx = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).findIndex(e => e.id === id);
@@ -17823,7 +17935,14 @@ function saveWastageEdit() {
     total: amount,
     note: document.getElementById('editWastageNote')?.value?.trim() || ''
   };
-  saveData().catch(() => {});
+  try {
+    await saveState('wastageLossHistory', wastageLossHistory);
+  } catch (error) {
+    console.error('[WASTAGE] Could not persist waste/loss edit:', error);
+    await showAppAlert('The edit could not be saved locally. Keep this window open and check device storage.', 'Save Needs Attention');
+    return;
+  }
+  await saveData();
   renderWastageLossHistory();
   updateDashboard();
   closeWastageEditModal();
@@ -17845,16 +17964,19 @@ async function deleteWastageLossEntry(id) {
   if (!confirmed || !confirmed.confirmed) return;
 
   wastageLossHistory = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).filter(e => e.id !== id);
+  try {
+    await saveState('wastageLossHistory', wastageLossHistory);
+  } catch (error) {
+    console.error('[WASTAGE] Could not persist waste/loss deletion:', error);
+    await showAppAlert('The deletion could not be saved locally. The record remains pending on this device.', 'Delete Needs Attention');
+    return;
+  }
   renderWastageLossHistory();
   updateDashboard();
-  void saveData(true, { allowEmptyOverwriteFields: ['wastageLossHistory'] })
-    .then(() => {
-      if (navigator.onLine && currentUser && dbFirestore) {
-        return flushLocalSyncQueue({ force: true });
-      }
-      return null;
-    })
-    .catch(error => console.warn('[SYNC] Failed to flush deleted waste/loss sync:', error));
+  await saveData(true, { allowEmptyOverwriteFields: ['wastageLossHistory'] });
+  if (navigator.onLine && currentUser && dbFirestore) {
+    await flushLocalSyncQueue({ force: true }).catch(error => console.warn('[SYNC] Failed to flush deleted waste/loss sync:', error));
+  }
   await showAppAlert('Waste/loss entry deleted.', 'Deleted');
 }
 
@@ -17887,7 +18009,7 @@ function updateEditPurchaseTotal() {
   if (el) el.textContent = `Total: ${formatCurrency(total)}`;
 }
 
-function savePurchaseEdit() {
+async function savePurchaseEdit() {
   if (!requireActionPermission('purchases.edit', 'saving purchase or expense changes')) return;
   const id = document.getElementById('editPurchaseId')?.value;
   if (!id) return;
@@ -17907,7 +18029,14 @@ function savePurchaseEdit() {
     amount: purchaseAmount,
     total: purchaseAmount
   };
-  saveData().catch(() => {});
+  try {
+    await saveState('purchaseHistory', purchaseHistory);
+  } catch (error) {
+    console.error('[PURCHASE] Could not persist purchase edit:', error);
+    await showAppAlert('The edit could not be saved locally. Keep this window open and check device storage.', 'Save Needs Attention');
+    return;
+  }
+  await saveData();
   renderPurchaseHistory();
   updateDashboard();
   closePurchaseEditModal();
@@ -17930,16 +18059,19 @@ async function deletePurchaseEntry(id) {
   if (!confirmed || !confirmed.confirmed) return;
 
   purchaseHistory = (Array.isArray(purchaseHistory) ? purchaseHistory : []).filter(e => e.id !== id);
+  try {
+    await saveState('purchaseHistory', purchaseHistory);
+  } catch (error) {
+    console.error('[PURCHASE] Could not persist purchase deletion:', error);
+    await showAppAlert('The deletion could not be saved locally. The record remains pending on this device.', 'Delete Needs Attention');
+    return;
+  }
   renderPurchaseHistory();
   updateDashboard();
-  void saveData(true, { allowEmptyOverwriteFields: ['purchaseHistory'] })
-    .then(() => {
-      if (navigator.onLine && currentUser && dbFirestore) {
-        return flushLocalSyncQueue({ force: true });
-      }
-      return null;
-    })
-    .catch(error => console.warn('[SYNC] Failed to flush deleted purchase sync:', error));
+  await saveData(true, { allowEmptyOverwriteFields: ['purchaseHistory'] });
+  if (navigator.onLine && currentUser && dbFirestore) {
+    await flushLocalSyncQueue({ force: true }).catch(error => console.warn('[SYNC] Failed to flush deleted purchase sync:', error));
+  }
   await showAppAlert('Purchase entry deleted.', 'Deleted');
 }
 
@@ -18790,7 +18922,7 @@ function setupRealTimeSync(uid) {
                 if (
                   Array.isArray(cloudVal) &&
                   cloudVal.length === 0 &&
-                  (fieldName === 'purchaseHistory' || fieldName === 'wastageLossHistory')
+                  ['purchaseHistory', 'wastageLossHistory', 'expenses'].includes(fieldName)
                 ) return cloudVal;
                 if (Array.isArray(cloudVal) && cloudVal.length === 0 && Array.isArray(localVal) && localVal.length === 0) return cloudVal;
                 return Array.isArray(localVal) && localVal.length > 0 ? localVal : (cloudVal || localVal || []);
@@ -18808,6 +18940,7 @@ function setupRealTimeSync(uid) {
                 dishCategories: safeArray(getCloudCategoryList(cloudData), dishCategories),
                 customers: hydrateEnterpriseRecords('customers', safeArray(cloudData.customers, customers)),
                 units: hydrateEnterpriseRecords('units', safeArray(cloudData.units, units)),
+                expenses: safeArray(cloudData.expenses, expenses),
                 suppliers: hydrateEnterpriseRecords('suppliers', safeArray(cloudData.suppliers, supplierList)),
                 purchaseHistory: hydrateEnterpriseRecords('purchaseOrders', safeArray(cloudData.purchaseHistory, purchaseHistory, 'purchaseHistory')),
                 wastageLossHistory: hydrateEnterpriseRecords('expenses', safeArray(cloudData.wastageLossHistory, wastageLossHistory, 'wastageLossHistory')),
@@ -18831,6 +18964,21 @@ function setupRealTimeSync(uid) {
                   return;
                 }
                 try {
+                  let localQueue = [];
+                  if (localRepositoryReady && localRepository?.getSyncQueue) {
+                    try {
+                      localQueue = await localRepository.getSyncQueue();
+                    } catch (error) {
+                      console.warn('[SYNC] Could not inspect pending purchase/expense snapshots:', error);
+                    }
+                  }
+                  const pendingPurchaseHistory = getPendingArraySnapshot(localQueue, 'purchaseOrders', 'purchaseHistory');
+                  const pendingWastageHistory = getPendingArraySnapshot(localQueue, 'expenses', 'wastageLossHistory');
+                  const pendingExpenses = getPendingArraySnapshot(localQueue, 'expenses', 'expenses');
+                  if (pendingPurchaseHistory !== undefined) updateData.purchaseHistory = hydrateEnterpriseRecords('purchaseOrders', pendingPurchaseHistory);
+                  if (pendingWastageHistory !== undefined) updateData.wastageLossHistory = hydrateEnterpriseRecords('expenses', pendingWastageHistory);
+                  if (pendingExpenses !== undefined) updateData.expenses = pendingExpenses;
+
                   // Identify and clear changed images/logos from cache
                   if (Array.isArray(updateData.menu)) {
                     updateData.menu.forEach(cloudDish => {
@@ -18910,6 +19058,7 @@ function setupRealTimeSync(uid) {
                   customers = mergeEnterpriseRecordsPreservingLocal(customers, updateData.customers, 'customers');
                   reconcileCustomerTransactionReferences();
                   units = updateData.units;
+                  expenses = updateData.expenses;
                   supplierList = updateData.suppliers;
                   purchaseHistory = updateData.purchaseHistory;
                   wastageLossHistory = updateData.wastageLossHistory;

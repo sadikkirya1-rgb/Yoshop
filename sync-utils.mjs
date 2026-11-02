@@ -89,3 +89,22 @@ export function shouldProtectEmptyOverwriteField(field, action = {}) {
 
   return !allowList.has(field);
 }
+
+export function getPendingArraySnapshot(queue = [], entityType = '', stateId = '') {
+  const pendingActions = (Array.isArray(queue) ? queue : [])
+    .filter(action => {
+      const payload = action?.payload || {};
+      const status = String(action?.syncStatus || '').trim().toLowerCase();
+      return action?.entityType === entityType &&
+        String(payload.id || '') === String(stateId) &&
+        Array.isArray(payload.value) &&
+        !['processed', 'synced', 'completed', 'done'].includes(status);
+    })
+    .sort((left, right) => {
+      const leftTime = new Date(left.updatedAt || left.createdAt || 0).getTime() || 0;
+      const rightTime = new Date(right.updatedAt || right.createdAt || 0).getTime() || 0;
+      return rightTime - leftTime;
+    });
+
+  return pendingActions.length ? pendingActions[0].payload.value : undefined;
+}

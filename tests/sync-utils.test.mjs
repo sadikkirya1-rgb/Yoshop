@@ -1,6 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSettingsSyncPayload, buildTransactionSyncPayload, buildInvoiceNumber, normalizeInvoiceNumber, parseInvoiceSequence, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField } from '../sync-utils.mjs';
+import { buildSettingsSyncPayload, buildTransactionSyncPayload, buildInvoiceNumber, normalizeInvoiceNumber, parseInvoiceSequence, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField, getPendingArraySnapshot } from '../sync-utils.mjs';
+
+test('getPendingArraySnapshot preserves the latest queued full-array state including intentional deletes', () => {
+  const queue = [
+    { entityType: 'purchaseOrders', syncStatus: 'pending', updatedAt: '2026-01-01T00:00:00.000Z', payload: { id: 'purchaseHistory', value: [{ id: 'old' }] } },
+    { entityType: 'purchaseOrders', syncStatus: 'processing', updatedAt: '2026-01-02T00:00:00.000Z', payload: { id: 'purchaseHistory', value: [] } },
+    { entityType: 'expenses', syncStatus: 'pending', payload: { id: 'wastageLossHistory', value: [{ id: 'waste-1' }] } }
+  ];
+
+  assert.deepEqual(getPendingArraySnapshot(queue, 'purchaseOrders', 'purchaseHistory'), []);
+  assert.deepEqual(getPendingArraySnapshot(queue, 'expenses', 'wastageLossHistory'), [{ id: 'waste-1' }]);
+  assert.equal(getPendingArraySnapshot(queue, 'expenses', 'expenses'), undefined);
+});
 
 test('sync queue path stays under the tenant-owned data collection', () => {
   const collectionPath = getSyncQueueCollectionPath('user-123');
