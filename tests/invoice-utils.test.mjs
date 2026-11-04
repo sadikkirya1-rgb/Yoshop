@@ -52,16 +52,21 @@ test('customer lifetime paid includes standalone receipts but not duplicated inv
   assert.equal(calculateCustomerTotalPaid(customer, [customer], transactions), 85);
 });
 
-test('customer reference reconciliation never reassigns deleted ids by name', () => {
+test('customer reference reconciliation preserves recorded invoice customer names', () => {
   const transaction = { customerId: 'deleted-customer', customerNameReal: 'Alex', customerName: 'Alex' };
   const linkedTransaction = { customerId: 'cust-1', customerNameReal: 'Old name', customerName: 'Old name' };
+  const missingSnapshotTransaction = { customerId: 'cust-1' };
 
-  reconcileCustomerTransactionReferences([{ id: 'cust-1', name: 'Current name' }, { id: 'cust-2', name: 'Alex' }], [transaction, linkedTransaction]);
+  reconcileCustomerTransactionReferences(
+    [{ id: 'cust-1', name: 'Current name' }, { id: 'cust-2', name: 'Alex' }],
+    [transaction, linkedTransaction, missingSnapshotTransaction]
+  );
 
   assert.equal(transaction.customerId, 'deleted-customer');
   assert.equal(transaction.customerNameReal, 'Alex');
-  assert.equal(linkedTransaction.customerNameReal, 'Current name');
-  assert.equal(linkedTransaction.customerName, 'Current name');
+  assert.equal(linkedTransaction.customerNameReal, 'Old name');
+  assert.equal(linkedTransaction.customerName, 'Old name');
+  assert.equal(missingSnapshotTransaction.customerNameReal, 'Current name');
 });
 
 test('calculateInvoiceItemQuantityDeltas reconciles edited invoice quantities by product', () => {
@@ -246,6 +251,26 @@ test('buildInvoiceListItems preserves an invoice after its customer is deleted w
   assert.equal(rows[0].customer, null);
   assert.equal(rows[0].customerName, 'Alex');
   assert.equal(rows[0].previewData.customerId, 'old-customer');
+});
+
+test('buildInvoiceListItems displays saved customer details instead of changed customer records', () => {
+  const rows = buildInvoiceListItems({
+    customers: [{ id: 'cust-1', name: 'New Name', contact: 'new phone', address: 'New address' }],
+    transactions: [{
+      id: 'tx-1',
+      customerId: 'cust-1',
+      customerNameReal: 'Invoice-time Name',
+      customerContact: 'invoice-time phone',
+      customerAddress: 'Invoice-time address',
+      total: 100,
+      amountPaid: 0
+    }]
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].customerName, 'Invoice-time Name');
+  assert.equal(rows[0].previewData.customerContact, 'invoice-time phone');
+  assert.equal(rows[0].previewData.customerAddress, 'Invoice-time address');
 });
 
 test('buildInvoiceListItems includes fully paid account invoices even without an invoice number', () => {
@@ -881,6 +906,31 @@ test('mergeTransactionsPreservingDuplicates collapses duplicate invoices already
 
   assert.equal(merged.length, 1);
   assert.equal(merged[0].invoiceNumber, 'INV-001');
+});
+
+test('invoice numbers shared by different customers are kept as separate invoices', () => {
+  const alice = {
+    id: 'sale-alice',
+    date: '2024-10-06T10:00:00.000Z',
+    customerId: 'cust-alice',
+    customerNameReal: 'Alice',
+    invoiceNumber: 'INV-001',
+    total: 100,
+    amountPaid: 0
+  };
+  const bob = {
+    id: 'sale-bob',
+    date: '2024-10-06T10:00:00.000Z',
+    customerId: 'cust-bob',
+    customerNameReal: 'Bob',
+    invoiceNumber: 'INV-001',
+    total: 80,
+    amountPaid: 80
+  };
+
+  assert.equal(mergeTransactionsPreservingDuplicates([alice], [bob]).length, 2);
+  assert.equal(deduplicateTransactions([alice, bob]).length, 2);
+  assert.notEqual(getTransactionDuplicateKey(alice), getTransactionDuplicateKey(bob));
 });
 
 test('mergeTransactionsPreservingDuplicates collapses same-sale refreshes without invoice ids', () => {

@@ -44,6 +44,16 @@ function normalizeCustomerName(value) {
   return String(value || '').trim().toLowerCase();
 }
 
+function getTransactionCustomerIdentity(transaction = {}) {
+  const customerId = transaction.customerId || transaction.customer?.id;
+  if (customerId) return `id:${String(customerId)}`;
+
+  const customerName = normalizeCustomerName(
+    transaction.customerNameReal || transaction.customer?.name || transaction.customerName
+  );
+  return customerName ? `name:${customerName}` : '';
+}
+
 function findMatchingCustomer(customer, transaction, customers = []) {
   if (!customer || !transaction) return null;
   const transactionCustomerId = transaction.customerId || transaction.customer?.id;
@@ -94,12 +104,10 @@ export function reconcileCustomerTransactionReferences(customers = [], transacti
   const customerList = Array.isArray(customers) ? customers : [];
   const transactionList = Array.isArray(transactions) ? transactions : [];
   transactionList.forEach(transaction => {
-    if (!transaction?.customerId) return;
+    if (!transaction?.customerId || transaction.customerNameReal || transaction.customer?.name) return;
     const customer = customerList.find(candidate => candidate?.id && String(candidate.id) === String(transaction.customerId));
     if (!customer) return;
     transaction.customerNameReal = customer.name;
-    transaction.customerName = customer.name;
-    if (transaction.customer && typeof transaction.customer === 'object') transaction.customer.name = customer.name;
   });
 }
 
@@ -231,7 +239,7 @@ function getTransactionItemsSignature(transaction = {}) {
 function getTransactionFallbackKey(transaction = {}) {
   const date = transaction.date;
   const total = Number(transaction.total || 0);
-  const customer = transaction.customerId || transaction.customerNameReal || transaction.customerName || '';
+  const customer = getTransactionCustomerIdentity(transaction);
   const amountPaid = Number(transaction.amountPaid || transaction.amount || 0);
   const paymentMethod = typeof transaction.paymentMethod === 'string' ? transaction.paymentMethod.trim().toLowerCase() : '';
   const tableNo = typeof transaction.tableNo === 'string' ? transaction.tableNo.trim().toLowerCase() : '';
@@ -248,7 +256,10 @@ export function getTransactionDuplicateKey(transaction = {}) {
   if (!transaction || typeof transaction !== 'object') return '';
 
   const invoiceKey = normalizeInvoiceNumber(transaction.invoiceNumber);
-  if (invoiceKey) return `invoice:${invoiceKey}`;
+  if (invoiceKey) {
+    const customerIdentity = getTransactionCustomerIdentity(transaction);
+    return `invoice:${invoiceKey}|customer:${customerIdentity || 'unknown'}`;
+  }
 
   const id = transaction.id || transaction.recordId || transaction.transactionId;
   if (id) return `id:${String(id)}`;
@@ -261,7 +272,10 @@ function getTransactionMatchKeys(transaction = {}) {
 
   const keys = [];
   const invoiceKey = normalizeInvoiceNumber(transaction.invoiceNumber);
-  if (invoiceKey) keys.push(`invoice:${invoiceKey}`);
+  if (invoiceKey) {
+    const customerIdentity = getTransactionCustomerIdentity(transaction);
+    keys.push(`invoice:${invoiceKey}|customer:${customerIdentity || 'unknown'}`);
+  }
 
   const id = transaction.id || transaction.recordId || transaction.transactionId;
   if (id) keys.push(`id:${String(id)}`);
@@ -347,12 +361,7 @@ export function mergeTransactionsPreservingDuplicates(existingTransactions = [],
       }
 
       const sameId = Boolean(existing.id && transaction.id && existing.id === transaction.id);
-      const sameInvoiceNumber = Boolean(
-        normalizeInvoiceNumber(existing.invoiceNumber) &&
-        normalizeInvoiceNumber(transaction.invoiceNumber) &&
-        normalizeInvoiceNumber(existing.invoiceNumber) === normalizeInvoiceNumber(transaction.invoiceNumber)
-      );
-      return sameId || sameInvoiceNumber;
+      return sameId;
     });
 
     if (existingIndex >= 0) {
@@ -454,7 +463,7 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
   return txList
     .filter(tx => tx && (tx.invoiceNumber || tx.customerId || tx.customerNameReal || tx.customerName || tx.amountPaid !== undefined || tx.balance !== undefined))
     .map(transaction => {
-      const customer = customerList.find(customer => findMatchingCustomer(customer, transaction, customerList)) || null;
+      const customer = customerList.find(candidate => findMatchingCustomer(candidate, transaction, customerList)) || null;
       const total = Number(transaction.total || 0);
       const paymentSummary = calculateInvoicePaymentSummary(transaction, total);
       const amountPaid = paymentSummary.amountPaid;
@@ -470,13 +479,13 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
       const lastAdjustment = mergedAdjustments.length > 0 ? mergedAdjustments[mergedAdjustments.length - 1] : (transaction.lastAdjustment || null);
 
       const normalizedBalance = Number.isFinite(paymentSummary.balance) ? paymentSummary.balance : 0;
-      const customerName = customer?.name || transaction.customerNameReal || transaction.customerName || 'Unknown Customer';
+      const customerName = transaction.customerNameReal || transaction.customer?.name || customer?.name || transaction.customerName || 'Unknown Customer';
       const previewData = {
         date: transaction.date || new Date().toISOString(),
         customerName,
         customerNameReal: customerName,
-        customerContact: transaction.customerContact || transaction.contact || customer?.contact || customer?.phone || customer?.mobile || '',
-        customerAddress: transaction.customerAddress || transaction.address || customer?.address || '',
+        customerContact: transaction.customerContact || transaction.customerPhone || transaction.contact || transaction.customer?.contact || transaction.customer?.phone || customer?.contact || customer?.phone || customer?.mobile || '',
+        customerAddress: transaction.customerAddress || transaction.address || transaction.customer?.address || customer?.address || '',
         tableNo: transaction.tableNo || 'Customer Account',
         items: Array.isArray(transaction.items) && transaction.items.length > 0
           ? transaction.items
@@ -488,7 +497,7 @@ export function buildInvoiceListItems({ customers = [], transactions = [] } = {}
         discount: transaction.discount || { amount: 0 },
         receiptType: 'customerDebtInvoice',
         paymentMethod: transaction.paymentMethod || 'On Account',
-        customerId: transaction.customerId || customer?.id || null,
+        customerId: transaction.customerId || null,
         note: balance < 0
           ? `Outstanding balance due for ${transaction.customerNameReal || transaction.customerName || customer?.name || 'customer account'}`
           : `Invoice paid in full for ${transaction.customerNameReal || transaction.customerName || customer?.name || 'customer account'}`,

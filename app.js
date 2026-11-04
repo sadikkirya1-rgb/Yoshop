@@ -3183,30 +3183,12 @@ function repairConflictingCustomerName(source = {}) {
     ? customerList.find(candidate => candidate && (candidate.id === source.customerId || String(candidate.id) === String(source.customerId))) || null
     : null;
 
-  const preferredName = linkedCustomer?.name || source.customerNameReal || source.customerName || source.customer?.name || '';
-  const candidateNames = [
-    linkedCustomer?.name,
-    source.customer?.name,
-    source.customerNameReal,
-    source.customerName
-  ].filter(value => typeof value === 'string' && value.trim() !== '');
-  const uniqueNames = [...new Set(candidateNames.map(value => value.trim().toLowerCase()))];
+  const preferredName = source.customerNameReal || source.customer?.name || linkedCustomer?.name || source.customerName || '';
 
-  if (!preferredName && uniqueNames.length === 0) return source;
-
-  if (uniqueNames.length > 1 && preferredName) {
-    source.customerNameReal = preferredName;
-    source.customerName = preferredName;
-    if (source.customer && typeof source.customer === 'object') {
-      source.customer.name = preferredName;
-    }
-  }
-
-  if (!source.customerNameReal && preferredName) {
-    source.customerNameReal = preferredName;
-  }
-  if (!source.customerName && preferredName) {
-    source.customerName = preferredName;
+  if (!source.customerNameReal && preferredName) source.customerNameReal = preferredName;
+  if (!source.customerName && source.customerNameReal) source.customerName = source.customerNameReal;
+  if (source.customer && typeof source.customer === 'object' && !source.customer.name && preferredName) {
+    source.customer.name = preferredName;
   }
 
   return source;
@@ -8775,6 +8757,7 @@ async function finalizePayment(isSplit = false) {
       customerContact: customer ? (customer.contact || customer.phone || customer.mobile || customer.whatsapp || '') : '',
       customerPhone: customer ? (customer.phone || customer.mobile || customer.whatsapp || customer.contact || '') : '',
       customerWhatsApp: customer ? customer.whatsapp || '' : '',
+      customerAddress: customer ? customer.address || '' : '',
       customerId: customer ? customer.id || customer.recordId : null,
       customerNameReal: customer ? customer.name : 'Walk-in Customer',
       amountPaid: isDraft ? 0 : amountPaid,
@@ -10955,7 +10938,7 @@ function editTransaction(index, permission = 'sales.edit') {
 
   const linkedCustomer = source.customerId
     ? customers.find(customer => customer && [customer.id, customer.recordId].some(id => id && String(id) === String(source.customerId)))
-    : customers.find(customer => customer && String(customer.name || '').trim() === String(source.customerNameReal || '').trim());
+    : null;
   resetTransactionProductForm();
   transactionEditState = {
     index,
@@ -18808,7 +18791,18 @@ function setupEnterpriseRecordCollectionSync(uid) {
             recordId: change.doc.data().recordId || change.doc.data().id || change.doc.id
           };
 
-          if (change.type === 'removed' || isDeletedEnterpriseRecord(record)) {
+          if (change.type === 'removed') {
+            if (config.entityType !== 'customers') {
+              nextRecords = removeEnterpriseRecord(nextRecords, record);
+            }
+            return;
+          }
+
+          if (isDeletedEnterpriseRecord(record)) {
+            if (config.entityType === 'customers') {
+              const localRecord = nextRecords.find(existing => getEnterpriseRecordId(existing) === getEnterpriseRecordId(record));
+              if (localRecord && !shouldAcceptIncomingRecord(localRecord, record)) return;
+            }
             nextRecords = removeEnterpriseRecord(nextRecords, record);
           } else {
             nextRecords = upsertEnterpriseRecord(nextRecords, record, config.entityType);
