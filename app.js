@@ -22272,9 +22272,20 @@ function previewKioskMenu() {
   const modal = document.getElementById('kioskPreviewModal');
   const frame = document.getElementById('kioskPreviewFrame');
   if (!modal || !frame) return showAppAlert('The preview window is unavailable. Refresh YoShop and try again.', 'Preview Unavailable');
+  setKioskPreviewSize('desktop');
   frame.src = previewUrl.toString();
   modal.style.display = 'flex';
   modal.setAttribute('aria-hidden', 'false');
+}
+
+function setKioskPreviewSize(size) {
+  const dialog = document.querySelector('.kiosk-preview-dialog');
+  if (!dialog) return;
+  const isPhone = size === 'phone';
+  dialog.classList.toggle('is-phone-preview', isPhone);
+  dialog.querySelectorAll('.kiosk-preview-size-switch button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.previewSize === (isPhone ? 'phone' : 'desktop')));
+  });
 }
 
 function closeKioskPreview() {
@@ -22707,7 +22718,7 @@ Object.assign(window, {
 
   // PRODUCTION: Monitoring & Debugging (Available in console)
   getAppHealthStatus, exportErrorLog, captureError, getCachedQuery, getShopsPageOptimized, requestCache, errorLog, clearImageFromCache
-  , initializeKioskMenuTab, saveKioskMenuSettings, rotateKioskMenuLink, renderKioskQr, previewKioskMenu, closeKioskPreview, printKioskQr,
+  , initializeKioskMenuTab, saveKioskMenuSettings, rotateKioskMenuLink, renderKioskQr, previewKioskMenu, setKioskPreviewSize, closeKioskPreview, printKioskQr,
   selectVisibleKioskProducts, clearKioskProductSelection, copyKioskMenuLink,
   updateKioskOrderStatus, loadKioskOrderToPos, enableKioskOrderPush, disableKioskOrderPush
 });

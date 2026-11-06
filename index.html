@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" href="assets/icons/android192x192.png">
   <!-- Using android192x192.png as the default favicon -->
   <link rel="canonical" href="https://yoshop.netlify.app/"> <!-- Updated canonical URL -->
-  <link rel="stylesheet" href="style.css?v=20261106-kiosk-responsive-v1">
+  <link rel="stylesheet" href="style.css?v=20261106-kiosk-enhancements-v1">
   <script>
     const previewTunnel = location.hostname.endsWith('.github.dev') || location.hostname.endsWith('.app.github.dev');
     if (!previewTunnel) {
@@ -45,7 +45,7 @@
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script type="module" src="app.js?v=20261106-kiosk-link-v1"></script>
+  <script type="module" src="app.js?v=20261106-kiosk-enhancements-v1"></script>
   <script>
     // Safety stubs to prevent ReferenceError from inline onclicks
     window.loginWithPIN = window.loginWithPIN || function() { console.warn('loginWithPIN called before app module loaded'); };
@@ -2091,7 +2091,13 @@
     <div class="kiosk-preview-dialog" role="dialog" aria-modal="true" aria-labelledby="kioskPreviewTitle">
       <div class="kiosk-preview-toolbar">
         <h3 id="kioskPreviewTitle">Digital menu preview</h3>
-        <button type="button" class="icon-btn" onclick="closeKioskPreview()" aria-label="Close menu preview" title="Close">&times;</button>
+        <div class="kiosk-preview-actions">
+          <div class="kiosk-preview-size-switch" role="group" aria-label="Preview device size">
+            <button type="button" data-preview-size="desktop" onclick="setKioskPreviewSize('desktop')" aria-pressed="true">Desktop</button>
+            <button type="button" data-preview-size="phone" onclick="setKioskPreviewSize('phone')" aria-pressed="false">Phone</button>
+          </div>
+          <button type="button" class="icon-btn" onclick="closeKioskPreview()" aria-label="Close menu preview" title="Close">&times;</button>
+        </div>
       </div>
       <iframe id="kioskPreviewFrame" title="Customer digital menu preview" src="about:blank"></iframe>
     </div>

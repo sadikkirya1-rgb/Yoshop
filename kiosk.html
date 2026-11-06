@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#174a3e">
   <title>Digital Menu | YoShop</title>
-  <link rel="stylesheet" href="kiosk.css?v=20261106-responsive-v1">
-  <script type="module" src="kiosk.js"></script>
+  <link rel="stylesheet" href="kiosk.css?v=20261106-title-price-row-v1">
+  <script type="module" src="kiosk.js?v=20261106-cart-quantity-v1"></script>
 </head>
 <body>
   <header class="kiosk-header">
@@ -20,6 +20,7 @@
         <h1 id="businessName">Menu</h1>
         <p id="kioskMessage" role="status">Loading menu...</p>
       </div>
+      <button id="kioskRetry" class="kiosk-secondary-button kiosk-retry-button" type="button" hidden>Try again</button>
       <div id="kioskPreviewNotice" class="kiosk-preview-notice" hidden>Preview mode</div>
       <div class="kiosk-menu-controls">
         <label class="kiosk-search-label" for="kioskSearch">Search the menu</label>
@@ -48,7 +49,7 @@
           <p class="kiosk-kicker">YOUR SELECTION</p>
           <h2 id="cartHeading">Your order</h2>
         </div>
-        <span id="kioskCartCount" class="kiosk-cart-count">0</span>
+        <span id="kioskCartCount" class="kiosk-cart-count" aria-live="polite">0</span>
       </div>
       <div id="kioskCartItems" class="kiosk-cart-items"></div>
       <div class="kiosk-cart-total">

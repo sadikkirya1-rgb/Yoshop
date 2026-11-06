@@ -82,7 +82,7 @@ async function getPublishedKioskCatalog(kiosk) {
 	snapshots.forEach((snapshot, index) => {
 		if (!snapshot.exists) return;
 		const product = snapshot.data() || {};
-		if (product.deleted || product.isAvailable === false || !String(product.name || "").trim()) return;
+		if (product.deleted || !String(product.name || "").trim()) return;
 		const price = Number(product.price);
 		if (!Number.isFinite(price) || price < 0) return;
 		const image = String(product.image || "");
@@ -92,6 +92,7 @@ async function getPublishedKioskCatalog(kiosk) {
 			description: String(product.description || "").trim().slice(0, 240),
 			category: String(product.category || "Menu").trim().slice(0, 60),
 			price: Math.round(price * 100) / 100,
+			isAvailable: product.isAvailable !== false,
 			image: /^https:\/\//i.test(image) ? image : ""
 		};
 	});

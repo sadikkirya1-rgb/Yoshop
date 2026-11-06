@@ -43,7 +43,9 @@ const elements = {
   tax: document.getElementById('kioskTax'),
   total: document.getElementById('kioskTotal'),
   submit: document.getElementById('placeKioskOrder'),
-  attendant: document.getElementById('requestAttendant')
+  attendant: document.getElementById('requestAttendant'),
+  retry: document.getElementById('kioskRetry'),
+  cartPanel: document.querySelector('.kiosk-cart-panel')
 };
 
 function formatMoney(value) {
@@ -94,9 +96,29 @@ function setMenuViewMode(mode, persist = true) {
 }
 
 function addItem(item) {
+  const activeCard = document.activeElement?.dataset?.productId === item.id;
   const existing = cart.get(item.id);
-  cart.set(item.id, {item, quantity: Math.min(20, (existing?.quantity || 0) + 1), notes: existing?.notes || ''});
+  if (item.isAvailable === false || (existing?.quantity || 0) >= 20) return;
+  cart.set(item.id, {item, quantity: (existing?.quantity || 0) + 1, notes: existing?.notes || ''});
+  renderMenu();
   renderCart();
+  if (activeCard) elements.menu.querySelector(`[data-product-id="${CSS.escape(item.id)}"]`)?.focus();
+}
+
+function changeCartQuantity(item, change) {
+  const existing = cart.get(item.id);
+  if (!existing) return;
+  const nextQuantity = existing.quantity + change;
+  if (nextQuantity <= 0) cart.delete(item.id);
+  else cart.set(item.id, {...existing, quantity: Math.min(20, nextQuantity)});
+  renderMenu();
+  renderCart();
+  const nextAction = change > 0 ? 'increment' : 'decrement';
+  const row = [...elements.cartItems.querySelectorAll('.kiosk-cart-line')]
+    .find(cartRow => cartRow.dataset.productId === item.id);
+  const nextControl = row?.querySelector(`[data-quantity-action="${nextAction}"]`);
+  if (nextControl && !nextControl.disabled) nextControl.focus();
+  else document.getElementById('cartHeading').focus();
 }
 
 function renderMenu() {
@@ -122,6 +144,23 @@ function renderMenu() {
   items.forEach(item => {
     const card = document.createElement('article');
     card.className = 'kiosk-menu-item';
+    card.dataset.productId = item.id;
+    const quantity = cart.get(item.id)?.quantity || 0;
+    if (!previewOnly && item.isAvailable !== false) {
+      card.tabIndex = 0;
+      card.setAttribute('role', 'button');
+      card.setAttribute('aria-label', `${item.name}, ${formatMoney(item.price)}. Tap to add one. ${quantity} selected.`);
+      card.addEventListener('click', () => addItem(item));
+      card.addEventListener('keydown', event => {
+        if (event.target !== card || !['Enter', ' '].includes(event.key)) return;
+        event.preventDefault();
+        addItem(item);
+      });
+    } else if (item.isAvailable === false) {
+      card.classList.add('is-sold-out');
+    }
+    const imageWrap = document.createElement('div');
+    imageWrap.className = 'kiosk-item-image-wrap';
     if (item.image) {
       const image = document.createElement('img');
       image.src = item.image;
@@ -130,27 +169,57 @@ function renderMenu() {
       image.decoding = 'async';
       image.fetchPriority = 'low';
       image.referrerPolicy = 'no-referrer';
-      image.onerror = () => image.remove();
-      card.appendChild(image);
+      image.onerror = () => {
+        image.remove();
+        imageWrap.classList.add('has-image-error');
+      };
+      imageWrap.appendChild(image);
     } else {
       const placeholder = document.createElement('span');
       placeholder.className = 'kiosk-item-image-placeholder';
       placeholder.setAttribute('aria-hidden', 'true');
-      card.appendChild(placeholder);
+      imageWrap.appendChild(placeholder);
     }
+    if (!previewOnly && quantity > 0) {
+      const selectedCount = document.createElement('span');
+      selectedCount.className = 'kiosk-selected-count';
+      selectedCount.textContent = String(quantity);
+      selectedCount.setAttribute('aria-live', 'polite');
+      selectedCount.setAttribute('aria-label', `${quantity} selected`);
+      imageWrap.appendChild(selectedCount);
+    }
+    card.appendChild(imageWrap);
     const detail = document.createElement('div');
+    detail.className = 'kiosk-item-details';
+    const titleRow = document.createElement('div');
+    titleRow.className = 'kiosk-item-title-row';
+    const heading = document.createElement('div');
+    heading.className = 'kiosk-item-heading';
     const title = document.createElement('h3');
     title.textContent = item.name;
+    heading.appendChild(title);
+    if (item.category) {
+      const category = document.createElement('span');
+      category.className = 'kiosk-item-category';
+      category.textContent = item.category;
+      heading.appendChild(category);
+    }
     const description = document.createElement('p');
-    description.textContent = item.description || item.category || '';
+    description.textContent = item.description || '';
     const price = document.createElement('span');
     price.className = 'kiosk-item-price';
     price.textContent = formatMoney(item.price);
-    detail.append(title, description, price);
-    card.appendChild(detail);
-    if (!previewOnly) {
-      card.appendChild(createButton('+', 'kiosk-add-button', () => addItem(item), `Add ${item.name} to order`));
+    titleRow.append(heading, price);
+    detail.append(titleRow);
+    if (item.description) detail.appendChild(description);
+    if (item.isAvailable === false) {
+      const availability = document.createElement('span');
+      availability.className = 'kiosk-sold-out';
+      availability.textContent = 'Sold out';
+      availability.setAttribute('aria-label', 'Currently unavailable');
+      detail.appendChild(availability);
     }
+    card.appendChild(detail);
     elements.menu.appendChild(card);
   });
 }
@@ -165,49 +234,47 @@ function renderCart() {
     empty.textContent = previewOnly ? 'Preview does not place orders.' : 'Your order is empty. Add items from the menu.';
     elements.cartItems.appendChild(empty);
   }
-  cart.forEach(({item, quantity, notes}) => {
+  cart.forEach(({item, quantity}) => {
     quantityTotal += quantity;
     subtotalCents += Math.round(Number(item.price) * 100) * quantity;
     const row = document.createElement('div');
     row.className = 'kiosk-cart-line';
+    row.dataset.productId = item.id;
     const info = document.createElement('div');
+    const titleRow = document.createElement('div');
+    titleRow.className = 'kiosk-cart-line-heading';
     const title = document.createElement('div');
     title.className = 'kiosk-cart-line-title';
     title.textContent = item.name;
     const linePrice = document.createElement('div');
     linePrice.className = 'kiosk-cart-line-price';
     linePrice.textContent = formatMoney(item.price * quantity);
-    info.append(title, linePrice);
-    const controls = document.createElement('div');
-    controls.className = 'kiosk-quantity-controls';
-    controls.appendChild(createButton('-', '', () => {
-      if (quantity <= 1) cart.delete(item.id);
-      else cart.set(item.id, {item, quantity: quantity - 1, notes});
-      renderCart();
-    }, `Remove one ${item.name}`));
+    titleRow.append(title, linePrice);
+    info.appendChild(titleRow);
+    const quantityControls = document.createElement('div');
+    quantityControls.className = 'kiosk-cart-quantity-controls';
+    quantityControls.setAttribute('role', 'group');
+    quantityControls.setAttribute('aria-label', `${item.name} quantity`);
+    const decrease = createButton('−', 'kiosk-cart-quantity-button', () => changeCartQuantity(item, -1), `Remove one ${item.name}`);
+    decrease.dataset.quantityAction = 'decrement';
     const count = document.createElement('span');
+    count.className = 'kiosk-cart-line-quantity';
     count.textContent = String(quantity);
-    controls.append(count, createButton('+', '', () => {
-      cart.set(item.id, {item, quantity: Math.min(20, quantity + 1), notes});
-      renderCart();
-    }, `Add one ${item.name}`));
-    row.append(info, controls);
-    if (!previewOnly) {
-      const notesInput = document.createElement('textarea');
-      notesInput.maxLength = 200;
-      notesInput.placeholder = 'Special request (optional)';
-      notesInput.value = notes;
-      notesInput.setAttribute('aria-label', `Special request for ${item.name}`);
-      notesInput.addEventListener('change', () => cart.set(item.id, {item, quantity, notes: notesInput.value.trim()}));
-      row.appendChild(notesInput);
-    }
+    count.setAttribute('aria-live', 'polite');
+    count.setAttribute('aria-label', `${quantity} selected`);
+    const increase = createButton('+', 'kiosk-cart-quantity-button', () => changeCartQuantity(item, 1), `Add one ${item.name}`);
+    increase.dataset.quantityAction = 'increment';
+    increase.disabled = quantity >= 20;
+    quantityControls.append(decrease, count, increase);
+    row.append(info, quantityControls);
     elements.cartItems.appendChild(row);
   });
   const taxCents = Math.round(subtotalCents * Math.min(30, Math.max(0, Number(menuData.taxRate) || 0)) / 100);
   elements.cartCount.textContent = String(quantityTotal);
   elements.subtotal.textContent = formatMoney(subtotalCents / 100);
   elements.tax.textContent = formatMoney(taxCents / 100);
-  elements.total.textContent = formatMoney((subtotalCents + taxCents) / 100);
+  const total = formatMoney((subtotalCents + taxCents) / 100);
+  elements.total.textContent = total;
   elements.submit.disabled = previewOnly || cart.size === 0;
 }
 
@@ -230,7 +297,9 @@ async function submitRequest(requestType) {
     cart.clear();
     pendingSubmissionId = '';
     renderCart();
-    setMessage(requestType === 'attendant' ? 'Your request has been sent. A staff member will be with you shortly.' : 'Your order has been sent. Please pay your server or cashier when it is ready.');
+    setMessage(requestType === 'attendant'
+      ? 'Request sent. A staff member will be with you shortly.'
+      : `Order sent${table ? ` for ${table}` : ''}. Your team will prepare it shortly. Pay your server or cashier when it is ready.`);
   } catch (error) {
     setMessage(error.message || 'We could not send that request. Please try again.', true);
   } finally {
@@ -240,6 +309,9 @@ async function submitRequest(requestType) {
 }
 
 async function initialize() {
+  document.body.classList.toggle('kiosk-preview-mode', previewOnly);
+  document.getElementById('cartHeading').setAttribute('tabindex', '-1');
+  elements.retry.addEventListener('click', () => window.location.reload());
   if (!token) {
     setMessage('This menu link is incomplete. Please scan the QR code again.', true);
     elements.menu.replaceChildren();
@@ -248,6 +320,13 @@ async function initialize() {
   if (table) elements.tableLabel.textContent = `ORDER AT ${table.toUpperCase()}`;
   elements.previewNotice.hidden = !previewOnly;
   elements.attendant.hidden = previewOnly;
+  const loadingCards = Array.from({length: 3}, () => {
+    const card = document.createElement('div');
+    card.className = 'kiosk-loading-card';
+    card.setAttribute('aria-hidden', 'true');
+    return card;
+  });
+  elements.menu.replaceChildren(...loadingCards);
   elements.search.addEventListener('input', renderMenu);
   elements.sort.addEventListener('change', renderMenu);
   elements.listView.addEventListener('click', () => setMenuViewMode('list'));
@@ -265,7 +344,12 @@ async function initialize() {
     if (previewOnly) await getAuth(app).authStateReady();
     const response = await httpsCallable(functions, 'getKioskMenu')({token, preview: previewOnly});
     menuData = {...menuData, ...(response.data || {})};
-    if (!menuData.items?.length) throw new Error('This menu is not available right now.');
+    if (!menuData.items?.length) {
+      setMessage('This menu has no items available yet. Please check back soon.', true);
+      elements.menu.replaceChildren();
+      elements.retry.hidden = true;
+      return;
+    }
     elements.businessName.textContent = menuData.businessName || 'Menu';
     elements.attendant.hidden = previewOnly || menuData.allowAttendant === false;
     setMessage(table ? `Choose your items for ${table}.` : 'Choose your items and send your order to the team.');
@@ -279,6 +363,7 @@ async function initialize() {
       : error.message || 'This digital menu is unavailable.';
     setMessage(message, true);
     elements.menu.replaceChildren();
+    elements.retry.hidden = false;
   }
 }
 

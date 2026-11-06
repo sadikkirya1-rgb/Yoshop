@@ -25,6 +25,9 @@ test('sanitizeKioskOrder uses catalog prices and computes tax in cents', () => {
 
 test('sanitizeKioskOrder rejects items outside the published catalog and invalid quantities', () => {
 	assert.throws(() => sanitizeKioskOrder({requestType: 'order', items: [{productId: 'hidden', quantity: 1}]}, {}), /unavailable/);
+	assert.throws(() => sanitizeKioskOrder({requestType: 'order', items: [{productId: 'dish-1', quantity: 1}]}, {
+		'dish-1': {name: 'Tea', price: 2, isAvailable: false}
+	}), /unavailable/);
 	assert.throws(() => sanitizeKioskOrder({requestType: 'order', items: [{productId: 'dish-1', quantity: 0}]}, {
 		'dish-1': {name: 'Tea', price: 2}
 	}), /quantities/);
