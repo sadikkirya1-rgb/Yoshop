@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import kioskUtils from '../kiosk-functions/kiosk-utils.js';
 
-const {sanitizeKioskOrder} = kioskUtils;
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap} = kioskUtils;
 
 test('sanitizeKioskOrder uses catalog prices and computes tax in cents', () => {
 	const result = sanitizeKioskOrder({
@@ -68,4 +68,37 @@ test('sanitizeKioskOrder requires a valid table, customer name, and WhatsApp num
 	assert.throws(() => sanitizeKioskOrder({requestType: 'order', customerName: 'Alex', whatsappNumber: '+971501234567', items}, catalog), /table number/);
 	assert.throws(() => sanitizeKioskOrder({requestType: 'order', table: 'T4', whatsappNumber: '+971501234567', items}, catalog), /customer name/);
 	assert.throws(() => sanitizeKioskOrder({requestType: 'order', table: 'T4', customerName: 'Alex', whatsappNumber: 'abc', items}, catalog), /WhatsApp number/);
+});
+
+test('sanitizeKioskDisplayOrder includes only active public board fields', () => {
+	const result = sanitizeKioskDisplayOrder({
+		source: 'kiosk',
+		requestType: 'order',
+		orderNumber: '20261106-007',
+		table: '<Patio & 2>',
+		status: 'preparing',
+		customerName: 'Private Customer',
+		whatsappNumber: '+971501234567',
+		createdAt: new Date('2026-11-06T15:00:00.000Z')
+	});
+
+	assert.deepEqual(result, {
+		orderNumber: '20261106-007',
+		table: 'Patio  2',
+		status: 'preparing',
+		createdAt: '2026-11-06T15:00:00.000Z'
+	});
+	assert.equal(sanitizeKioskDisplayOrder({source: 'kiosk', requestType: 'attendant', status: 'new'}), null);
+	assert.equal(sanitizeKioskDisplayOrder({source: 'kiosk', requestType: 'order', status: 'paid'}), null);
+});
+
+test('sanitizeKioskImageMap keeps secure image URLs only for selected products', () => {
+	assert.deepEqual(sanitizeKioskImageMap({
+		dish1: 'https://storage.example.com/dish1.jpg',
+		dish2: 'http://storage.example.com/dish2.jpg',
+		dish3: 'https://user:pass@storage.example.com/dish3.jpg',
+		dish4: 'https://storage.example.com/dish4.jpg'
+	}, ['dish1', 'dish2', 'dish3']), {
+		dish1: 'https://storage.example.com/dish1.jpg'
+	});
 });

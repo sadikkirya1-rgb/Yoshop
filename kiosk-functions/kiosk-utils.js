@@ -55,4 +55,34 @@ function sanitizeKioskOrder(requestData = {}, catalog = {}, taxRate = 0) {
 	};
 }
 
-module.exports = {sanitizeKioskOrder};
+function sanitizeKioskDisplayOrder(order = {}) {
+	const status = String(order.status || '');
+	if (order.source !== 'kiosk' || order.requestType !== 'order' || !['new', 'accepted', 'preparing', 'ready', 'in_pos'].includes(status)) {
+		return null;
+	}
+	const createdAt = order.createdAt?.toDate?.() || new Date(order.createdAt || 0);
+	return {
+		orderNumber: String(order.orderNumber || '').slice(0, 40),
+		table: String(order.table || '').replace(/[<>&]/g, '').trim().slice(0, 40),
+		status,
+		createdAt: Number.isNaN(createdAt.valueOf()) ? '' : createdAt.toISOString()
+	};
+}
+
+function sanitizeKioskImageMap(imageMap = {}, selectedProductIds = []) {
+	const selectedIds = new Set(selectedProductIds.map((id) => String(id || '').trim()).filter(Boolean));
+	const result = {};
+	Object.entries(imageMap).forEach(([productId, value]) => {
+		const id = String(productId || '').trim();
+		if (!selectedIds.has(id) || typeof value !== 'string' || value.length > 2048) return;
+		try {
+			const imageUrl = new URL(value);
+			if (imageUrl.protocol === 'https:' && !imageUrl.username && !imageUrl.password) result[id] = imageUrl.href;
+		} catch (error) {
+			return;
+		}
+	});
+	return result;
+}
+
+module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap};

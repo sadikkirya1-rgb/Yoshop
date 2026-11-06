@@ -22079,7 +22079,9 @@ function renderKioskOrderCards(orders = null) {
     const heading = document.createElement('div');
     heading.className = 'kiosk-order-card-heading';
     const title = document.createElement('strong');
-    title.textContent = order.requestType === 'attendant' ? 'Attendant request' : `Order${order.table ? ` · ${order.table}` : ''}`;
+    title.textContent = order.requestType === 'attendant'
+      ? 'Attendant request'
+      : `Order${order.orderNumber ? ` #${order.orderNumber}` : ''}${order.table ? ` · ${order.table}` : ''}`;
     const status = document.createElement('span');
     status.className = `kiosk-order-status status-${order.status || 'new'}`;
     status.textContent = statusLabels[order.status] || 'New';
@@ -22223,11 +22225,15 @@ async function initializeKioskMenuTab() {
   if (!isShopAdminRole()) {
     document.querySelector('.kiosk-publish-panel')?.style.setProperty('display', 'none');
     document.querySelector('.kiosk-qr-panel')?.style.setProperty('display', 'none');
+    document.querySelector('.kiosk-order-display-open')?.setAttribute('hidden', '');
+    document.querySelector('.kiosk-order-display-queue')?.setAttribute('hidden', '');
     if (status) status.textContent = 'Staff order queue';
     return;
   }
   document.querySelector('.kiosk-publish-panel')?.style.removeProperty('display');
   document.querySelector('.kiosk-qr-panel')?.style.removeProperty('display');
+  document.querySelector('.kiosk-order-display-open')?.removeAttribute('hidden');
+  document.querySelector('.kiosk-order-display-queue')?.removeAttribute('hidden');
   if (status) status.textContent = 'Loading kiosk settings...';
   try {
     const configure = httpsCallable(functions, 'configureKioskMenu');
@@ -22251,8 +22257,18 @@ async function saveKioskMenuSettings(rotateToken = false) {
   if (!currentUser || !isShopAdminRole()) return showAppAlert('Only the business owner can publish this menu.', 'Access Denied');
   const status = document.getElementById('kioskMenuStatus');
   const selectedProductIds = Array.from(kioskSelectedProductIds);
+  const productImages = {};
+  selectedProductIds.forEach(productId => {
+    const product = kioskAvailableProducts.find(item => getKioskProductId(item) === productId);
+    if (!product) return;
+    const image = typeof product.image === 'string' && product.image.startsWith('https://')
+      ? product.image
+      : getCachedDishImage(product.name);
+    if (typeof image === 'string' && image.startsWith('https://')) productImages[productId] = image;
+  });
   const payload = {
     selectedProductIds,
+    productImages,
     enabled: document.getElementById('kioskEnabledInput')?.checked === true,
     allowAttendant: document.getElementById('kioskAttendantInput')?.checked === true,
     rotateToken
@@ -22309,6 +22325,28 @@ function closeKioskPreview() {
   if (modal) {
     modal.style.display = 'none';
     modal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+async function openKioskOrderDisplay() {
+  if (!currentUser || !isShopAdminRole()) {
+    return showAppAlert('Only the business owner can open the customer order display.', 'Access Denied');
+  }
+  const displayWindow = window.open('about:blank', '_blank');
+  if (!displayWindow) {
+    return showAppAlert('Allow pop-ups to open the order display on another screen.', 'Pop-up Blocked');
+  }
+  displayWindow.opener = null;
+  displayWindow.document.title = 'Opening order display';
+  displayWindow.document.body.textContent = 'Connecting to the order display...';
+  try {
+    const response = await httpsCallable(functions, 'getKioskOrderDisplayLink')({});
+    const displayUrl = new URL('order-display.html', window.location.href);
+    displayUrl.hash = new URLSearchParams({display: String(response.data?.displayToken || '')}).toString();
+    displayWindow.location.replace(displayUrl.toString());
+  } catch (error) {
+    displayWindow.close();
+    await showAppAlert(getKioskBackendErrorMessage(error, 'Could not open the order display.'), 'Order Display Unavailable');
   }
 }
 
@@ -22734,5 +22772,5 @@ Object.assign(window, {
   getAppHealthStatus, exportErrorLog, captureError, getCachedQuery, getShopsPageOptimized, requestCache, errorLog, clearImageFromCache
   , initializeKioskMenuTab, saveKioskMenuSettings, rotateKioskMenuLink, renderKioskQr, previewKioskMenu, setKioskPreviewSize, closeKioskPreview, printKioskQr,
   selectVisibleKioskProducts, clearKioskProductSelection, copyKioskMenuLink,
-  updateKioskOrderStatus, loadKioskOrderToPos, enableKioskOrderPush, disableKioskOrderPush
+  updateKioskOrderStatus, loadKioskOrderToPos, enableKioskOrderPush, disableKioskOrderPush, openKioskOrderDisplay
 });

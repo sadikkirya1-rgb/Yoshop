@@ -22,6 +22,7 @@ const cart = new Map();
 let menuData = {items: [], currency: '$', allowAttendant: false};
 let selectedCategory = 'All';
 let pendingSubmissionId = '';
+let pendingTrackingToken = '';
 const VIEW_MODE_STORAGE_KEY = 'yoshop-kiosk-view-mode';
 let menuViewMode = 'grid';
 
@@ -58,11 +59,17 @@ const elements = {
   waiterName: document.getElementById('kioskWaiterName'),
   detailsError: document.getElementById('kioskDetailsError'),
   backToCart: document.getElementById('kioskBackToCart'),
-  confirmOrder: document.getElementById('kioskConfirmOrder')
+  confirmOrder: document.getElementById('kioskConfirmOrder'),
+  trackOrder: document.getElementById('kioskTrackOrder')
 };
 
 function formatMoney(value) {
   return `${menuData.currency || '$'}${(Number(value) || 0).toFixed(2)}`;
+}
+
+function createTrackingToken() {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
 function setMessage(message, isError = false) {
@@ -155,11 +162,11 @@ function renderMenu() {
     elements.menu.appendChild(empty);
     return;
   }
-  items.forEach(item => {
-    const card = document.createElement('article');
-    card.className = 'kiosk-menu-item';
-    card.dataset.productId = item.id;
+  items.forEach((item, index) => {
     const quantity = cart.get(item.id)?.quantity || 0;
+    const card = document.createElement('article');
+    card.className = `menu-item kiosk-menu-item${quantity > 0 ? ' active' : ''}`;
+    card.dataset.productId = item.id;
     if (!previewOnly && item.isAvailable !== false) {
       card.tabIndex = 0;
       card.setAttribute('role', 'button');
@@ -179,10 +186,9 @@ function renderMenu() {
       const image = document.createElement('img');
       image.src = item.image;
       image.alt = '';
-      image.loading = 'lazy';
+      image.loading = index < 4 ? 'eager' : 'lazy';
       image.decoding = 'async';
-      image.fetchPriority = 'low';
-      image.referrerPolicy = 'no-referrer';
+      image.fetchPriority = index < 4 ? 'high' : 'auto';
       image.onerror = () => {
         image.remove();
         imageWrap.classList.add('has-image-error');
@@ -204,29 +210,17 @@ function renderMenu() {
     }
     card.appendChild(imageWrap);
     const detail = document.createElement('div');
-    detail.className = 'kiosk-item-details';
-    const titleRow = document.createElement('div');
-    titleRow.className = 'kiosk-item-title-row';
+    detail.className = 'menu-item-body kiosk-item-details';
     const heading = document.createElement('div');
-    heading.className = 'kiosk-item-heading';
-    const title = document.createElement('h3');
+    const isLongProductName = item.name.trim().length >= 18;
+    heading.className = `menu-item-header ${isLongProductName ? 'menu-item-header-stacked' : 'menu-item-header-inline'}`;
+    const title = document.createElement('h4');
     title.textContent = item.name;
-    heading.appendChild(title);
-    if (item.category) {
-      const category = document.createElement('span');
-      category.className = 'kiosk-item-category';
-      category.textContent = item.category;
-      heading.appendChild(category);
-    }
-    const description = document.createElement('p');
-    description.textContent = item.description || '';
-    const price = document.createElement('span');
+    const price = document.createElement('p');
     price.className = 'kiosk-item-price';
     price.textContent = formatMoney(item.price);
-    titleRow.appendChild(heading);
-    detail.append(titleRow);
-    detail.appendChild(price);
-    if (item.description) detail.appendChild(description);
+    heading.append(title, price);
+    detail.appendChild(heading);
     if (item.isAvailable === false) {
       const availability = document.createElement('span');
       availability.className = 'kiosk-sold-out';
@@ -263,7 +257,6 @@ function renderCart() {
       image.alt = '';
       image.loading = 'lazy';
       image.decoding = 'async';
-      image.referrerPolicy = 'no-referrer';
       image.onerror = () => {
         image.remove();
         imageBox.classList.add('is-placeholder');
@@ -367,19 +360,31 @@ async function submitRequest(requestType, customerDetails = null) {
   elements.submit.disabled = true;
   elements.attendant.disabled = true;
   elements.confirmOrder.disabled = true;
+  elements.trackOrder.hidden = true;
   setMessage(requestType === 'attendant' ? 'Sending your request...' : 'Sending your order...');
   try {
     pendingSubmissionId ||= crypto.randomUUID();
+    if (requestType === 'order') pendingTrackingToken ||= createTrackingToken();
     const payload = {
       token,
       requestType,
       ...(requestType === 'order' ? customerDetails : {table}),
+      ...(requestType === 'order' ? {trackingToken: pendingTrackingToken} : {}),
       idempotencyKey: pendingSubmissionId,
       items: requestType === 'order' ? [...cart.values()].map(({item, quantity, notes}) => ({productId: item.id, quantity, notes})) : []
     };
-    await httpsCallable(functions, 'submitKioskRequest')(payload);
+    const response = await httpsCallable(functions, 'submitKioskRequest')(payload);
+    const orderNumber = String(response.data?.orderNumber || '');
+    if (requestType === 'order' && pendingTrackingToken) {
+      const trackingUrl = new URL('order-status.html', window.location.href);
+      trackingUrl.hash = new URLSearchParams({tracking: pendingTrackingToken}).toString();
+      elements.trackOrder.href = trackingUrl.toString();
+      elements.trackOrder.textContent = orderNumber ? `Track order #${orderNumber}` : 'Track your order';
+      elements.trackOrder.hidden = false;
+    }
     cart.clear();
     pendingSubmissionId = '';
+    pendingTrackingToken = '';
     renderCart();
     elements.customerDetails.hidden = true;
     elements.cartPanel.classList.remove('is-entering-details');
@@ -387,7 +392,7 @@ async function submitRequest(requestType, customerDetails = null) {
     setCartSheetOpen(false, false);
     setMessage(requestType === 'attendant'
       ? 'Request sent. A staff member will be with you shortly.'
-      : `Order sent for ${customerDetails.table}. Your team will prepare it shortly. Pay your server or cashier when it is ready.`);
+      : `Order${orderNumber ? ` #${orderNumber}` : ''} sent for ${customerDetails.table}. Your team will prepare it shortly.`);
   } catch (error) {
     if (requestType === 'order') {
       elements.detailsError.textContent = error.message || 'We could not send that order. Please try again.';

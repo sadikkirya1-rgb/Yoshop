@@ -131,6 +131,10 @@ body.dark-mode .dashboard-card:hover {
   font-weight: 600;
 }
 
+.kiosk-order-display-open { white-space: nowrap; }
+.kiosk-order-display-open[hidden],
+.kiosk-order-display-queue[hidden] { display: none; }
+
 .kiosk-publish-state {
   display: inline-flex;
   align-items: center;

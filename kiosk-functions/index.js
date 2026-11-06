@@ -4,7 +4,7 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const crypto = require("node:crypto");
 const admin = require("firebase-admin");
 const {getFirestore} = require("firebase-admin/firestore");
-const {sanitizeKioskOrder} = require("./kiosk-utils");
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap} = require("./kiosk-utils");
 
 admin.initializeApp();
 const db = getFirestore(admin.app(), "yoshop");
@@ -85,7 +85,9 @@ async function getPublishedKioskCatalog(kiosk) {
 		if (product.deleted || !String(product.name || "").trim()) return;
 		const price = Number(product.price);
 		if (!Number.isFinite(price) || price < 0) return;
-		const image = String(product.image || "");
+		const image = /^https:\/\//i.test(String(product.image || ""))
+			? String(product.image)
+			: String(kiosk.config.productImages?.[productIds[index]] || "");
 		catalog[productIds[index]] = {
 			id: productIds[index],
 			name: String(product.name).trim().slice(0, 100),
@@ -113,6 +115,10 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 		: (Array.isArray(current.selectedProductIds) ? current.selectedProductIds : []);
 	const enabled = typeof data.enabled === "boolean" ? data.enabled : current.enabled === true;
 	const allowAttendant = typeof data.allowAttendant === "boolean" ? data.allowAttendant : current.allowAttendant !== false;
+	const productImages = {
+		...sanitizeKioskImageMap(current.productImages, selectedProductIds),
+		...sanitizeKioskImageMap(data.productImages, selectedProductIds)
+	};
 
 	if (enabled && selectedProductIds.length === 0) {
 		throw new HttpsError("failed-precondition", "Publish at least one menu item before enabling the kiosk.");
@@ -129,6 +135,7 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 		enabled,
 		allowAttendant,
 		selectedProductIds,
+		productImages,
 		publicToken: token,
 		tokenHash,
 		updatedAt: now,
@@ -185,14 +192,81 @@ exports.submitKioskRequest = onCall(callableOptions, async (request) => {
 	const ipHash = hashKioskValue(String(request.rawRequest?.ip || "unknown")).slice(0, 32);
 	const rateRef = db.collection("kioskRateLimits").doc(`${kiosk.tokenHash}_${ipHash}`);
 	const nowMillis = Date.now();
+	if (order.requestType === "attendant") {
+		return db.runTransaction(async (transaction) => {
+			const [existingOrder, rateSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(rateRef)]);
+			if (existingOrder.exists) return {orderId, duplicate: true};
+			const rateData = rateSnapshot.data() || {};
+			const windowStart = Number(rateData.windowStart) || nowMillis;
+			const requestCount = nowMillis - windowStart >= KIOSK_RATE_LIMIT_WINDOW_MS ? 0 : Number(rateData.requestCount) || 0;
+			if (requestCount >= KIOSK_RATE_LIMIT_MAX_REQUESTS) {
+				throw new HttpsError("resource-exhausted", "Too many requests. Please try again in a minute.");
+			}
+			transaction.set(rateRef, {
+				windowStart: requestCount === 0 ? nowMillis : windowStart,
+				requestCount: requestCount + 1,
+				expiresAt: new Date(nowMillis + KIOSK_RATE_LIMIT_WINDOW_MS * 2)
+			});
+			transaction.create(orderRef, {
+				...order,
+				status: "new",
+				source: "kiosk",
+				createdAt: admin.firestore.FieldValue.serverTimestamp(),
+				statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+			});
+			return {orderId, duplicate: false};
+		});
+	}
+	const trackingToken = String(requestData.trackingToken || "").trim();
+	if (!/^[a-f0-9]{64}$/i.test(trackingToken)) {
+		throw new HttpsError("invalid-argument", "A valid order tracking key is required.");
+	}
+	const trackingHash = hashKioskValue(trackingToken);
+	const trackingRef = db.collection("kioskOrderTracking").doc(trackingHash);
+	const orderDate = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+	const counterRef = db.collection("users").doc(kiosk.uid).collection("kioskOrderCounters").doc(orderDate);
 	const result = await db.runTransaction(async (transaction) => {
-		const [existingOrder, rateSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(rateRef)]);
-		if (existingOrder.exists) return {orderId, duplicate: true};
+		const [existingOrder, rateSnapshot, trackingSnapshot, counterSnapshot] = await Promise.all([
+			transaction.get(orderRef),
+			transaction.get(rateRef),
+			transaction.get(trackingRef),
+			transaction.get(counterRef)
+		]);
+		if (trackingSnapshot.exists && trackingSnapshot.data()?.orderId !== orderId) {
+			throw new HttpsError("already-exists", "Could not create an order tracking link. Please try again.");
+		}
+		const previousOrder = existingOrder.data() || {};
+		const previousTrackingRef = previousOrder.trackingHash
+			? db.collection("kioskOrderTracking").doc(String(previousOrder.trackingHash))
+			: null;
+		if (existingOrder.exists && previousTrackingRef && previousOrder.trackingHash !== trackingHash) {
+			throw new HttpsError("failed-precondition", "This order already has a different tracking link.");
+		}
+		if (existingOrder.exists && previousOrder.orderNumber && trackingSnapshot.exists) {
+			return {orderId, orderNumber: String(previousOrder.orderNumber), duplicate: true};
+		}
+
 		const rateData = rateSnapshot.data() || {};
 		const windowStart = Number(rateData.windowStart) || nowMillis;
 		const requestCount = nowMillis - windowStart >= KIOSK_RATE_LIMIT_WINDOW_MS ? 0 : Number(rateData.requestCount) || 0;
-		if (requestCount >= KIOSK_RATE_LIMIT_MAX_REQUESTS) {
+		if (!existingOrder.exists && requestCount >= KIOSK_RATE_LIMIT_MAX_REQUESTS) {
 			throw new HttpsError("resource-exhausted", "Too many requests. Please try again in a minute.");
+		}
+		const nextSequence = Number(counterSnapshot.data()?.sequence || 0) + 1;
+		const orderNumber = previousOrder.orderNumber || `${orderDate}-${String(nextSequence).padStart(3, "0")}`;
+		if (!trackingSnapshot.exists) {
+			transaction.create(trackingRef, {
+				uid: kiosk.uid,
+				orderId,
+				expiresAt: admin.firestore.Timestamp.fromMillis(nowMillis + 7 * 24 * 60 * 60 * 1000)
+			});
+		}
+		if (!previousOrder.orderNumber) {
+			transaction.set(counterRef, {sequence: nextSequence}, {merge: true});
+		}
+		if (existingOrder.exists) {
+			transaction.update(orderRef, {orderNumber});
+			return {orderId, orderNumber, duplicate: true};
 		}
 		transaction.set(rateRef, {
 			windowStart: requestCount === 0 ? nowMillis : windowStart,
@@ -201,14 +275,91 @@ exports.submitKioskRequest = onCall(callableOptions, async (request) => {
 		});
 		transaction.create(orderRef, {
 			...order,
+			orderNumber,
+			trackingHash,
 			status: "new",
 			source: "kiosk",
 			createdAt: admin.firestore.FieldValue.serverTimestamp(),
 			statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
 		});
-		return {orderId, duplicate: false};
+		return {orderId, orderNumber, duplicate: false};
 	});
 	return result;
+});
+
+exports.getKioskOrderStatus = onCall(callableOptions, async (request) => {
+	const trackingToken = String(request.data?.trackingToken || "").trim();
+	if (!/^[a-f0-9]{64}$/i.test(trackingToken)) {
+		throw new HttpsError("invalid-argument", "A valid order tracking link is required.");
+	}
+	const trackingHash = hashKioskValue(trackingToken);
+	const trackingSnapshot = await db.collection("kioskOrderTracking").doc(trackingHash).get();
+	if (!trackingSnapshot.exists) throw new HttpsError("not-found", "This order tracking link is unavailable.");
+	const tracking = trackingSnapshot.data() || {};
+	const expiresAt = tracking.expiresAt?.toMillis?.();
+	if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+		throw new HttpsError("not-found", "This order tracking link has expired.");
+	}
+	const uid = String(tracking.uid || "");
+	const orderId = String(tracking.orderId || "");
+	if (!uid || !/^[A-Za-z0-9_-]{20,100}$/.test(orderId)) {
+		throw new HttpsError("not-found", "This order tracking link is unavailable.");
+	}
+	const orderSnapshot = await db.collection("users").doc(uid).collection("kioskOrders").doc(orderId).get();
+	if (!orderSnapshot.exists) throw new HttpsError("not-found", "This order is no longer available.");
+	const order = orderSnapshot.data() || {};
+	if (order.requestType !== "order" || order.source !== "kiosk") {
+		throw new HttpsError("not-found", "This order is no longer available.");
+	}
+	const updatedAtValue = order.statusUpdatedAt?.toDate?.() || new Date(order.statusUpdatedAt || order.createdAt?.toDate?.() || Date.now());
+	return {
+		orderNumber: String(order.orderNumber || ""),
+		status: String(order.status || "new"),
+		table: String(order.table || "").slice(0, 40),
+		updatedAt: Number.isNaN(updatedAtValue.valueOf()) ? "" : updatedAtValue.toISOString()
+	};
+});
+
+exports.getKioskOrderDisplayLink = onCall(callableOptions, async (request) => {
+	const {uid} = await assertKioskOwner(request);
+	const settingsRef = db.collection("users").doc(uid).collection("data").doc("kiosk_settings");
+	const displayToken = await db.runTransaction(async (transaction) => {
+		const settingsSnapshot = await transaction.get(settingsRef);
+		if (!settingsSnapshot.exists) {
+			throw new HttpsError("failed-precondition", "Save kiosk settings before opening the order display.");
+		}
+		const settings = settingsSnapshot.data() || {};
+		const existingToken = String(settings.orderDisplayToken || "");
+		const token = /^[A-Za-z0-9_-]{32,100}$/.test(existingToken) ? existingToken : createKioskToken();
+		const displayRef = db.collection("kioskOrderDisplays").doc(hashKioskValue(token));
+		transaction.set(displayRef, {uid, updatedAt: admin.firestore.FieldValue.serverTimestamp()});
+		if (token !== existingToken) transaction.update(settingsRef, {orderDisplayToken: token});
+		return token;
+	});
+	return {displayToken};
+});
+
+exports.getKioskOrderDisplay = onCall(callableOptions, async (request) => {
+	const displayToken = String(request.data?.displayToken || "").trim();
+	if (!/^[A-Za-z0-9_-]{32,100}$/.test(displayToken)) {
+		throw new HttpsError("invalid-argument", "A valid order display link is required.");
+	}
+	const displaySnapshot = await db.collection("kioskOrderDisplays").doc(hashKioskValue(displayToken)).get();
+	if (!displaySnapshot.exists) throw new HttpsError("not-found", "This order display is unavailable.");
+	const uid = String(displaySnapshot.data()?.uid || "");
+	if (!uid) throw new HttpsError("not-found", "This order display is unavailable.");
+	const [profileSnapshot, ordersSnapshot] = await Promise.all([
+		db.collection("users").doc(uid).collection("data").doc("shop_profile").get(),
+		db.collection("users").doc(uid).collection("kioskOrders").orderBy("createdAt", "desc").limit(60).get()
+	]);
+	const profile = profileSnapshot.data() || {};
+	const orders = ordersSnapshot.docs
+		.map(document => sanitizeKioskDisplayOrder(document.data() || {}))
+		.filter(Boolean);
+	return {
+		businessName: String(profile.settings?.name || "Order display").trim().slice(0, 100),
+		orders
+	};
 });
 
 exports.registerKioskDevice = onCall(callableOptions, async (request) => {

@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" href="assets/icons/android192x192.png">
   <!-- Using android192x192.png as the default favicon -->
   <link rel="canonical" href="https://yoshop.netlify.app/"> <!-- Updated canonical URL -->
-  <link rel="stylesheet" href="style.css?v=20261106-kiosk-enhancements-v1">
+  <link rel="stylesheet" href="style.css?v=20261106-order-display-v1">
   <script>
     const previewTunnel = location.hostname.endsWith('.github.dev') || location.hostname.endsWith('.app.github.dev');
     if (!previewTunnel) {
@@ -45,7 +45,7 @@
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script type="module" src="app.js?v=20261106-order-customer-details-v1"></script>
+  <script type="module" src="app.js?v=20261106-order-display-v1"></script>
   <script>
     // Safety stubs to prevent ReferenceError from inline onclicks
     window.loginWithPIN = window.loginWithPIN || function() { console.warn('loginWithPIN called before app module loaded'); };
@@ -621,6 +621,7 @@
           <div class="kiosk-workspace-status">
             <span id="kioskPublishState" class="kiosk-publish-state is-offline">Menu paused</span>
             <strong id="kioskNewOrderCount">0 new</strong>
+            <button type="button" class="btn btn-success kiosk-order-display-open" onclick="openKioskOrderDisplay()">Open order display</button>
           </div>
         </div>
         <div class="kiosk-owner-grid">
@@ -677,6 +678,7 @@
         <div class="kiosk-orders-heading">
           <div><h4>Incoming requests</h4><p>New orders and attendant calls from every table.</p></div>
           <div class="kiosk-action-row">
+            <button type="button" class="btn btn-secondary kiosk-order-display-queue" onclick="openKioskOrderDisplay()">Open customer display</button>
             <button type="button" class="btn btn-secondary" onclick="enableKioskOrderPush()">Enable alerts on this device</button>
             <span id="kioskOrdersConnection" role="status">Connecting...</span>
           </div>

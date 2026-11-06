@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#174a3e">
   <title>Digital Menu | YoShop</title>
-  <link rel="stylesheet" href="kiosk.css?v=20261106-customer-details-v2">
-  <script type="module" src="kiosk.js?v=20261106-customer-details-v4"></script>
+  <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
+  <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com">
+  <link rel="stylesheet" href="kiosk.css?v=20261106-main-menu-cards-v3">
+  <script type="module" src="kiosk.js?v=20261106-main-menu-cards-v4"></script>
 </head>
 <body>
   <header class="kiosk-header">
@@ -20,6 +22,7 @@
         <p class="kiosk-kicker" id="kioskTableLabel">ORDER AT YOUR TABLE</p>
         <h1 id="businessName">Menu</h1>
         <p id="kioskMessage" role="status">Loading menu...</p>
+        <a id="kioskTrackOrder" class="kiosk-track-order" target="_blank" rel="noopener noreferrer" hidden>Track your order</a>
       </div>
       <button id="kioskRetry" class="kiosk-secondary-button kiosk-retry-button" type="button" hidden>Try again</button>
       <div id="kioskPreviewNotice" class="kiosk-preview-notice" hidden>Preview mode</div>
@@ -67,6 +70,7 @@
         <input id="kioskCustomerName" name="customerName" type="text" maxlength="100" autocomplete="name" required>
         <label for="kioskCustomerWhatsApp">WhatsApp number</label>
         <input id="kioskCustomerWhatsApp" name="whatsappNumber" type="tel" maxlength="30" autocomplete="tel" inputmode="tel" placeholder="+1234567890" required>
+        <p class="kiosk-details-privacy">Your number is shared with the business team only for this order.</p>
         <label for="kioskWaiterName">Waiter name <span>(optional)</span></label>
         <input id="kioskWaiterName" name="waiterName" type="text" maxlength="100" autocomplete="off">
         <p id="kioskDetailsError" class="kiosk-details-error" role="alert" hidden></p>
