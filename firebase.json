@@ -14,6 +14,10 @@
     {
       "source": "scaling-functions",
       "codebase": "scaling"
+    },
+    {
+      "source": "kiosk-functions",
+      "codebase": "kiosk"
     }
   ],
   "hosting": {
@@ -24,7 +28,8 @@
       "**/.*",
       "**/node_modules/**",
         "functions/**",
-        "scaling-functions/**"
+        "scaling-functions/**",
+        "kiosk-functions/**"
     ],
     "headers": [
       {
@@ -38,6 +43,15 @@
       },
       {
         "source": "/index.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "/kiosk.html",
         "headers": [
           {
             "key": "Cache-Control",

@@ -1,15 +1,18 @@
-const CACHE_NAME = 'yoshop-v63';
+const CACHE_NAME = 'yoshop-v64';
 
 const APP_SHELL_URLS = [
   '/',
   '/index.html',
+  '/kiosk.html',
+  '/kiosk.css',
+  '/kiosk.js',
   '/manifest.json',
   '/assetlinks.json',
 
   '/style.css',
-  '/style.css?v=20260821-v1',
+  '/style.css?v=20261106-kiosk-v1',
   '/app.js',
-  '/app.js?v=20261010-v9',
+  '/app.js?v=20261106-kiosk-v1',
   '/invoice-utils.mjs',
 
   '/offline-architecture.mjs',
@@ -52,6 +55,9 @@ const APP_SHELL_URLS = [
 const QUERYLESS_APP_PATHS = new Set([
   '/',
   '/index.html',
+  '/kiosk.html',
+  '/kiosk.css',
+  '/kiosk.js',
   '/manifest.json',
   '/assetlinks.json',
   '/app.js',
@@ -183,4 +189,35 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
+});
+
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (error) {
+    payload = {notification: {body: event.data?.text() || 'A new kiosk request is waiting for staff.'}};
+  }
+  const notification = payload.notification || {};
+  const data = payload.data || {};
+  event.waitUntil(self.registration.showNotification(notification.title || 'YoShop order alert', {
+    body: notification.body || 'A new kiosk request is waiting for staff.',
+    icon: '/assets/icons/icon.png',
+    tag: data.orderId ? `kiosk-${data.orderId}` : 'kiosk-order-alert',
+    data
+  }));
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  event.waitUntil((async () => {
+    const clientsList = await self.clients.matchAll({type: 'window', includeUncontrolled: true});
+    const appClient = clientsList.find(client => new URL(client.url).origin === self.location.origin);
+    if (appClient) {
+      await appClient.focus();
+      appClient.postMessage({type: 'OPEN_KIOSK_ORDERS'});
+    } else {
+      await self.clients.openWindow('/index.html#kioskMenuTab');
+    }
+  })());
 });

@@ -100,7 +100,21 @@ Update `sw.js` cache version for each deployment:
 const CACHE_NAME = 'yoshop-v33'; // Increment this version on each release
 ```
 
-### 6. **Production Deployment Checklist**
+### 6. **Kiosk Menu and Push Alerts**
+
+Before enabling staff push alerts, generate a Web Push certificate key pair in Firebase Console under **Project Settings > Cloud Messaging > Web Push certificates**, then replace `PASTE_FIREBASE_WEB_PUSH_PUBLIC_KEY_HERE` in `app.js` with the public key. Deploy Functions and Hosting after setting the key. Each staff device must allow notifications and select **Enable alerts on this device** from the kiosk order queue. iPad push requires a supported iPadOS version and, where required by Safari, YoShop installed to the Home Screen.
+
+Deploy the isolated kiosk callables and trigger with:
+
+```bash
+npx --yes firebase-tools deploy --only functions:kiosk --project yoshop-b502f
+```
+
+The kiosk codebase has no SendGrid secret dependency, so it can deploy independently of the customer-email Functions in the `default` codebase. It still requires the Firebase Functions, Cloud Build, and Artifact Registry services used by Cloud Functions deployments.
+
+The kiosk QR is a revocable public link. Rotating it invalidates previously printed copies. Firestore rules should continue denying unauthenticated direct access to tenant products and kiosk orders; customers use the callable menu and order endpoints.
+
+### 7. **Production Deployment Checklist**
 
 Before deploying to production:
 

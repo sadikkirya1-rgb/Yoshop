@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#174a3e">
+  <title>Digital Menu | YoShop</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="kiosk.css">
+  <script type="module" src="kiosk.js"></script>
+</head>
+<body>
+  <header class="kiosk-header">
+    <a class="kiosk-wordmark" href="/" aria-label="YoShop">Y</a>
+    <span>Digital menu</span>
+  </header>
+  <main class="kiosk-layout">
+    <section class="kiosk-menu-column" aria-labelledby="businessName">
+      <div class="kiosk-intro">
+        <p class="kiosk-kicker" id="kioskTableLabel">ORDER AT YOUR TABLE</p>
+        <h1 id="businessName">Menu</h1>
+        <p id="kioskMessage" role="status">Loading menu...</p>
+      </div>
+      <div id="kioskPreviewNotice" class="kiosk-preview-notice" hidden>Preview mode</div>
+      <label class="kiosk-search-label" for="kioskSearch">Search the menu</label>
+      <input id="kioskSearch" class="kiosk-search" type="search" placeholder="Search dishes">
+      <div id="kioskCategories" class="kiosk-categories" role="group" aria-label="Menu categories"></div>
+      <div id="kioskMenuItems" class="kiosk-menu-items"></div>
+    </section>
+    <aside class="kiosk-cart-panel" aria-labelledby="cartHeading">
+      <div class="kiosk-cart-heading">
+        <div>
+          <p class="kiosk-kicker">YOUR SELECTION</p>
+          <h2 id="cartHeading">Your order</h2>
+        </div>
+        <span id="kioskCartCount" class="kiosk-cart-count">0</span>
+      </div>
+      <div id="kioskCartItems" class="kiosk-cart-items"></div>
+      <div class="kiosk-cart-total">
+        <span>Subtotal</span><strong id="kioskSubtotal">$0.00</strong>
+        <span>Tax</span><strong id="kioskTax">$0.00</strong>
+        <span class="kiosk-total-label">Total</span><strong id="kioskTotal" class="kiosk-total-value">$0.00</strong>
+      </div>
+      <button id="placeKioskOrder" class="kiosk-primary-button" type="button" disabled>Place order</button>
+      <button id="requestAttendant" class="kiosk-secondary-button" type="button" hidden>Request an attendant</button>
+      <p class="kiosk-cart-footnote">Pay your server or cashier when your order is ready.</p>
+    </aside>
+  </main>
+  <footer class="kiosk-footer">Powered by YoShop</footer>
+</body>
+</html>

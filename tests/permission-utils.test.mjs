@@ -18,6 +18,8 @@ test('hasPermission maps old manager data to ShopAdmin for compatibility', () =>
 test('hasPermission respects staff permissions with feature aliases', () => {
   assert.equal(hasPermission('staff', ['inventoryTab'], 'inventory'), true);
   assert.equal(hasPermission('staff', ['menuTab'], 'reports'), false);
+  assert.equal(hasPermission('staff', ['kioskMenuTab'], 'kioskMenu'), true);
+  assert.equal(hasPermission('staff', ['kioskmenu.write'], 'kioskmenu'), true);
 });
 
 test('getEffectivePermissions returns a normalized permission list for staff', () => {

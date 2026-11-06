@@ -1,6 +1,7 @@
 const DEFAULT_PERMISSION_TOKENS = [
   'dashboardTab',
   'menuTab',
+  'kioskMenuTab',
   'addDishTab',
   'categoryTab',
   'unitTab',
@@ -35,6 +36,7 @@ const ACTION_PERMISSION_TOKENS = [
   'inventory.read', 'inventory.write',
   'reports.read', 'reports.write',
   'settings.read', 'settings.write',
+  'kioskmenu.read', 'kioskmenu.write',
   'invoices.read', 'invoices.write',
   'audit.report.read', 'audit.report.write', 'audit.report.export',
   'products.create', 'products.edit', 'products.delete',
@@ -51,6 +53,7 @@ const ACTION_PERMISSION_TOKENS = [
 const FEATURE_ALIASES = {
   dashboard: 'dashboardTab',
   shop: 'menuTab',
+  kioskmenu: 'kioskMenuTab',
   products: 'addDishTab',
   categories: 'categoryTab',
   units: 'unitTab',
@@ -159,7 +162,7 @@ function getFirstAllowedTab(role, permissions = [], fallback = 'menuTab') {
     units: 'unitTab', staff: 'staffTab', customers: 'customerTab', inventory: 'stockTab',
     purchase: 'purchaseTab', purchases: 'purchaseTab', expense: 'purchaseTab', expenses: 'purchaseTab',
     reports: 'reportsTab', audit: 'auditReportTab', auditreport: 'auditReportTab',
-    settings: 'settingsTab', invoice: 'invoicesTab', invoices: 'invoicesTab'
+    settings: 'settingsTab', kioskmenu: 'kioskMenuTab', invoice: 'invoicesTab', invoices: 'invoicesTab'
   };
   const directTab = normalizedPermissions.find(permission => permission.endsWith('Tab'));
   if (directTab) return directTab;

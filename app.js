@@ -4,10 +4,11 @@ import { getAnalytics } from "https://www.gstatic.com/firebasejs/12.13.0/firebas
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
 
-import { getFirestore, doc, setDoc, getDoc, onSnapshot, collection, collectionGroup, query, orderBy, documentId, limit, startAfter, getDocs, getCountFromServer, deleteDoc, deleteField, where, arrayUnion, Timestamp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
+import { getFirestore, doc, setDoc, getDoc, updateDoc, onSnapshot, collection, collectionGroup, query, orderBy, documentId, limit, startAfter, getDocs, getCountFromServer, deleteDoc, deleteField, where, arrayUnion, Timestamp } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js";
 import { getStorage, ref, uploadString, getDownloadURL } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js";
 import { getAuth, signInWithPopup, signInWithRedirect, GoogleAuthProvider, onAuthStateChanged, signOut, createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, linkWithCredential, EmailAuthProvider, updatePassword, reauthenticateWithCredential, updateProfile } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js";
 import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-functions.js";
+import { getMessaging, getToken, deleteToken, isSupported, onMessage } from "https://www.gstatic.com/firebasejs/12.13.0/firebase-messaging.js";
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail, pruneExpiredAuditEntries, acquireRecordLock, releaseRecordLock } from './audit-utils.mjs';
 import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity, mapWithConcurrency } from './admin-utils.mjs';
@@ -34,6 +35,7 @@ const firebaseConfig = {
   appId: "1:860076092806:web:1a83971ae7637ef2cd1007",
   measurementId: "G-5PETKNBCNF"
 };
+const FIREBASE_MESSAGING_VAPID_KEY = 'PASTE_FIREBASE_WEB_PUSH_PUBLIC_KEY_HERE';
 
 // REPLACEMENT: Put your actual Firebase UID here (find it in Firebase Console > Auth)
 const MASTER_APP_ADMIN_UID = "Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2"; // Also detects sadikkirya@gmail.com automatically
@@ -749,7 +751,7 @@ function getButtonActionPermission(button) {
   const sectionKey = {
     addDishTab: 'products', categoryTab: 'categories', unitTab: 'units', staffTab: 'staff',
     customerTab: 'customers', transactionsTab: 'sales', invoicesTab: 'invoices', stockTab: 'inventory',
-    settingsTab: 'settings', reportsTab: 'reports', menuTab: 'sales'
+    settingsTab: 'settings', reportsTab: 'reports', menuTab: 'sales', kioskMenuTab: 'kioskmenu'
   }[section];
   if (/editTransaction\(|reopenTransaction\(|sendOrderStatusNotification\(|sendOrderStatusEmail\(/.test(onclick)) return 'sales.edit';
   if (/deleteTransaction\(/.test(onclick)) return 'sales.delete';
@@ -6684,7 +6686,7 @@ function updateCurrencyDisplay() {
 // ===== Tabs =====
 function getSectionPermissionKey(tabId = '') {
   return {
-    dashboardTab: 'dashboard', menuTab: 'sales', addDishTab: 'products', categoryTab: 'categories',
+    dashboardTab: 'dashboard', menuTab: 'sales', kioskMenuTab: 'kioskmenu', addDishTab: 'products', categoryTab: 'categories',
     unitTab: 'units', staffTab: 'staff', customerTab: 'customers', stockTab: 'inventory', purchaseTab: 'purchases',
     transactionsTab: 'sales', reportsTab: 'reports', settingsTab: 'settings', invoicesTab: 'invoices'
   }[tabId] || '';
@@ -6793,6 +6795,9 @@ function showTab(tabId, btn) {
       break;
     case 'menuTab':
       renderMenu();
+      break;
+    case 'kioskMenuTab':
+      initializeKioskMenuTab();
       break;
     case 'addDishTab':
       renderDishesTable();
@@ -8726,7 +8731,8 @@ async function finalizePayment(isSplit = false) {
       invoiceDate: paymentDate,
       customerName: currentServerName, // This is the staff name for compatibility
       servedBy: currentServerName,
-      tableNo: 'Shop',
+      tableNo: currentOrder.table || 'Shop',
+      orderSource: currentOrder.source || 'pos',
       items: currentOrder.items
         .filter(item => (parseInt(item?.qty, 10) || 0) > 0)
         .map(item => ({
@@ -8782,6 +8788,14 @@ async function finalizePayment(isSplit = false) {
     }
 
     await recordTransaction(transaction);
+    if (!isDraft && currentOrder.kioskOrderId && currentUser && dbFirestore) {
+      updateDoc(doc(dbFirestore, 'users', currentUser.uid, 'kioskOrders', currentOrder.kioskOrderId), {
+        status: 'paid',
+        paymentStatus: 'paid',
+        paidAt: new Date().toISOString(),
+        statusUpdatedAt: new Date().toISOString()
+      }).catch(error => console.warn('[KIOSK] Sale saved but kiosk order status update failed:', error));
+    }
     const changeDue = isDraft ? 0 : amountTendered - amountPaid;
     activeOrders[CART_ID] = { items: [], server: '' };
     await saveData(false);
@@ -19451,6 +19465,12 @@ async function mainInit() {
       const previousUser = currentUser;
       currentUser = user;
 
+      if (!user || previousUser?.uid !== user.uid) {
+        if (kioskOrderUnsubscribe) kioskOrderUnsubscribe();
+        kioskOrderUnsubscribe = null;
+        kioskSettingsCache = null;
+      }
+
       if (presenceHeartbeat) {
         window.clearInterval(presenceHeartbeat);
         presenceHeartbeat = null;
@@ -20599,6 +20619,13 @@ if (
 }
 
 mainInit();
+
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data?.type !== 'OPEN_KIOSK_ORDERS') return;
+    showTab('kioskMenuTab', document.getElementById('nav-kiosk-menu-btn'));
+  });
+}
 
 // Register Service Worker for PWA
 if ('serviceWorker' in navigator) {
@@ -21871,6 +21898,391 @@ function setupRealTimeTransactionsSync(uid) {
   }
 }
 
+let kioskOrderUnsubscribe = null;
+let kioskOrdersInitialSnapshot = true;
+let kioskPushMessageUnsubscribe = null;
+
+function getKioskProductId(product) {
+  return String(product?.recordId || product?.id || '').trim();
+}
+
+function getKioskProductLabel(product) {
+  const price = Number(product?.price);
+  return `${String(product?.name || 'Menu item')} · ${formatCurrency(Number.isFinite(price) ? price : 0)}`;
+}
+
+function getKioskBackendErrorMessage(error, fallback) {
+  const details = `${error?.code || ''} ${error?.message || ''}`.toLowerCase();
+  if (/functions\/internal|\binternal\b|cors|failed to fetch|networkerror/.test(details)) {
+    return 'Kiosk Functions are not deployed or reachable. Deploy the kiosk Functions, then refresh YoShop.';
+  }
+  return error?.message || fallback;
+}
+
+function setKioskPushStatus(message) {
+  ['kioskPushStatus', 'kioskQueuePushStatus'].forEach(id => {
+    const status = document.getElementById(id);
+    if (status) status.textContent = message;
+  });
+}
+
+function renderKioskProductOptions(selectedProductIds = []) {
+  const container = document.getElementById('kioskProductOptions');
+  if (!container) return;
+  const selected = new Set(selectedProductIds.map(String));
+  const products = (Array.isArray(menu) ? menu : []).filter(product => {
+    const price = Number(product?.price);
+    return getKioskProductId(product) && String(product?.name || '').trim() && Number.isFinite(price) && price >= 0 && !product.deleted;
+  });
+  container.replaceChildren();
+  if (!products.length) {
+    const empty = document.createElement('p');
+    empty.className = 'kiosk-status-text';
+    empty.textContent = 'Add priced products before publishing a digital menu.';
+    container.appendChild(empty);
+    return;
+  }
+  products.forEach(product => {
+    const label = document.createElement('label');
+    label.className = 'kiosk-product-option';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = getKioskProductId(product);
+    checkbox.checked = selected.has(checkbox.value);
+    const name = document.createElement('span');
+    name.textContent = getKioskProductLabel(product);
+    label.append(checkbox, name);
+    container.appendChild(label);
+  });
+}
+
+function getKioskPublicUrl(config = kioskSettingsCache, table = '') {
+  const token = String(config?.publicToken || '');
+  if (!token) return '';
+  const url = new URL('kiosk.html', window.location.href);
+  url.searchParams.set('token', token);
+  if (table) url.searchParams.set('table', String(table).trim().slice(0, 40));
+  return url.toString();
+}
+
+let kioskSettingsCache = null;
+
+function renderKioskQr() {
+  const qrContainer = document.getElementById('kioskQrCode');
+  const table = document.getElementById('kioskTableInput')?.value.trim() || '';
+  const url = getKioskPublicUrl(kioskSettingsCache, table);
+  const link = document.getElementById('kioskPublicLink');
+  const businessName = document.getElementById('kioskQrBusinessName');
+  const tableLabel = document.getElementById('kioskQrTableLabel');
+  if (businessName) businessName.textContent = kioskSettingsCache?.businessName || settings?.name || 'YoShop';
+  if (tableLabel) tableLabel.textContent = table ? `Order from ${table}` : 'Scan to view our menu';
+  if (link) {
+    link.href = url || '#';
+    link.textContent = url ? 'Open digital menu' : 'Publish the menu to create a QR link';
+  }
+  if (!qrContainer) return;
+  qrContainer.replaceChildren();
+  if (!url || typeof QRCode !== 'function') return;
+  new QRCode(qrContainer, {text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M});
+}
+
+function renderKioskOrderCards(orders = []) {
+  const container = document.getElementById('kioskOrdersList');
+  if (!container) return;
+  container.replaceChildren();
+  if (!orders.length) {
+    const empty = document.createElement('p');
+    empty.className = 'kiosk-status-text';
+    empty.textContent = 'No kiosk requests yet.';
+    container.appendChild(empty);
+    return;
+  }
+  const statusLabels = {new: 'New', accepted: 'Accepted', preparing: 'Preparing', ready: 'Ready', in_pos: 'In POS', paid: 'Paid', rejected: 'Rejected'};
+  orders.forEach(order => {
+    const card = document.createElement('article');
+    card.className = 'kiosk-order-card';
+    const heading = document.createElement('div');
+    heading.className = 'kiosk-order-card-heading';
+    const title = document.createElement('strong');
+    title.textContent = order.requestType === 'attendant' ? 'Attendant request' : `Order${order.table ? ` · ${order.table}` : ''}`;
+    const status = document.createElement('span');
+    status.className = `kiosk-order-status status-${order.status || 'new'}`;
+    status.textContent = statusLabels[order.status] || 'New';
+    heading.append(title, status);
+    card.appendChild(heading);
+
+    const meta = document.createElement('p');
+    const createdAt = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || Date.now());
+    meta.textContent = `${createdAt.toLocaleString()}${order.requestType === 'attendant' ? '' : ` · ${formatCurrency(Number(order.total) || 0)}`}`;
+    card.appendChild(meta);
+
+    if (Array.isArray(order.items) && order.items.length) {
+      const itemList = document.createElement('ul');
+      order.items.forEach(item => {
+        const row = document.createElement('li');
+        row.textContent = `${Number(item.quantity) || 0} × ${String(item.name || 'Menu item')}${item.notes ? ` · ${String(item.notes)}` : ''}`;
+        itemList.appendChild(row);
+      });
+      card.appendChild(itemList);
+    }
+
+    const actions = document.createElement('div');
+    actions.className = 'kiosk-order-actions';
+    const addAction = (label, nextStatus, className = 'btn btn-secondary') => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = className;
+      button.textContent = label;
+      button.dataset.actionPermission = 'kioskmenu.write';
+      button.addEventListener('click', () => updateKioskOrderStatus(order.id, nextStatus));
+      actions.appendChild(button);
+    };
+    if (order.status === 'new') {
+      addAction('Accept', 'accepted', 'btn btn-success');
+      addAction('Reject', 'rejected', 'btn btn-danger');
+    } else if (order.status === 'accepted') {
+      addAction('Start preparing', 'preparing', 'btn btn-success');
+    } else if (order.status === 'preparing') {
+      addAction('Mark ready', 'ready', 'btn btn-success');
+    } else if (order.status === 'ready') {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-success';
+      button.textContent = 'Load to POS';
+      button.addEventListener('click', () => loadKioskOrderToPos(order));
+      actions.appendChild(button);
+    } else if (order.status === 'in_pos') {
+      const note = document.createElement('span');
+      note.className = 'kiosk-status-text';
+      note.textContent = 'Complete checkout in Shop to record the sale.';
+      actions.appendChild(note);
+    }
+    if (actions.childElementCount) card.appendChild(actions);
+    container.appendChild(card);
+  });
+}
+
+function listenForKioskOrders() {
+  if (!currentUser || !dbFirestore) return;
+  if (kioskOrderUnsubscribe) kioskOrderUnsubscribe();
+  kioskOrdersInitialSnapshot = true;
+  const ordersQuery = query(collection(dbFirestore, 'users', currentUser.uid, 'kioskOrders'), orderBy('createdAt', 'desc'), limit(50));
+  kioskOrderUnsubscribe = onSnapshot(ordersQuery, snapshot => {
+    const orders = snapshot.docs.map(orderDocument => ({id: orderDocument.id, ...orderDocument.data()}));
+    const connection = document.getElementById('kioskOrdersConnection');
+    if (connection) connection.textContent = 'Live';
+    if (!kioskOrdersInitialSnapshot) {
+      snapshot.docChanges().filter(change => change.type === 'added').forEach(change => {
+        const order = change.doc.data();
+        const message = order.requestType === 'attendant'
+          ? `Attendant requested${order.table ? ` at ${order.table}` : ''}.`
+          : `New kiosk order${order.table ? ` at ${order.table}` : ''}.`;
+        addNotification(message, 'alert');
+        if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+          navigator.serviceWorker?.ready.then(registration => registration.showNotification('YoShop order alert', {
+            body: message,
+            icon: 'assets/icons/icon.png',
+            tag: `kiosk-${change.doc.id}`,
+            data: {type: 'kiosk-order', orderId: change.doc.id}
+          })).catch(() => {});
+        }
+      });
+    }
+    kioskOrdersInitialSnapshot = false;
+    renderKioskOrderCards(orders);
+  }, error => {
+    console.warn('[KIOSK] Could not listen for incoming requests:', error);
+    const connection = document.getElementById('kioskOrdersConnection');
+    if (connection) connection.textContent = 'Unavailable';
+  });
+}
+
+async function initializeKioskMenuTab() {
+  const status = document.getElementById('kioskMenuStatus');
+  if (!currentUser) {
+    if (status) status.textContent = 'Sign in to view kiosk requests.';
+    return;
+  }
+  if (!dbFirestore) {
+    if (status) status.textContent = 'Connect to the internet to manage kiosk ordering.';
+    return;
+  }
+  listenForKioskOrders();
+  if (!isShopAdminRole()) {
+    document.querySelector('.kiosk-publish-panel')?.style.setProperty('display', 'none');
+    document.querySelector('.kiosk-qr-panel')?.style.setProperty('display', 'none');
+    if (status) status.textContent = 'Staff order queue';
+    return;
+  }
+  document.querySelector('.kiosk-publish-panel')?.style.removeProperty('display');
+  document.querySelector('.kiosk-qr-panel')?.style.removeProperty('display');
+  if (status) status.textContent = 'Loading kiosk settings...';
+  try {
+    const configure = httpsCallable(functions, 'configureKioskMenu');
+    const response = await configure({});
+    kioskSettingsCache = response.data || {};
+    const enabled = document.getElementById('kioskEnabledInput');
+    const attendant = document.getElementById('kioskAttendantInput');
+    if (enabled) enabled.checked = kioskSettingsCache.enabled === true;
+    if (attendant) attendant.checked = kioskSettingsCache.allowAttendant !== false;
+    renderKioskProductOptions(kioskSettingsCache.selectedProductIds || []);
+    if (status) status.textContent = kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Select items and publish to activate the QR menu.';
+    renderKioskQr();
+  } catch (error) {
+    console.error('[KIOSK] Failed to load settings:', error);
+    if (status) status.textContent = getKioskBackendErrorMessage(error, 'Could not load kiosk settings.');
+  }
+}
+
+async function saveKioskMenuSettings(rotateToken = false) {
+  if (!currentUser || !isShopAdminRole()) return showAppAlert('Only the business owner can publish this menu.', 'Access Denied');
+  const status = document.getElementById('kioskMenuStatus');
+  const selectedProductIds = Array.from(document.querySelectorAll('#kioskProductOptions input[type="checkbox"]:checked')).map(input => input.value);
+  const payload = {
+    selectedProductIds,
+    enabled: document.getElementById('kioskEnabledInput')?.checked === true,
+    allowAttendant: document.getElementById('kioskAttendantInput')?.checked === true,
+    rotateToken
+  };
+  try {
+    if (status) status.textContent = 'Publishing menu...';
+    const configure = httpsCallable(functions, 'configureKioskMenu');
+    const response = await configure(payload);
+    kioskSettingsCache = response.data || {};
+    if (status) status.textContent = kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Menu settings saved. The public menu is disabled.';
+    renderKioskQr();
+  } catch (error) {
+    if (status) status.textContent = getKioskBackendErrorMessage(error, 'Could not publish the menu.');
+  }
+}
+
+function rotateKioskMenuLink() {
+  const confirmed = window.confirm('Rotating the QR link immediately disables every QR code printed with the old link. Continue?');
+  if (confirmed) saveKioskMenuSettings(true);
+}
+
+function previewKioskMenu() {
+  const url = getKioskPublicUrl(kioskSettingsCache, document.getElementById('kioskTableInput')?.value.trim() || '');
+  if (!url) return showAppAlert('Publish the menu before previewing it.', 'Menu Not Published');
+  const previewUrl = new URL(url);
+  previewUrl.searchParams.set('preview', '1');
+  const modal = document.getElementById('kioskPreviewModal');
+  const frame = document.getElementById('kioskPreviewFrame');
+  if (!modal || !frame) return showAppAlert('The preview window is unavailable. Refresh YoShop and try again.', 'Preview Unavailable');
+  frame.src = previewUrl.toString();
+  modal.style.display = 'flex';
+  modal.setAttribute('aria-hidden', 'false');
+}
+
+function closeKioskPreview() {
+  const modal = document.getElementById('kioskPreviewModal');
+  const frame = document.getElementById('kioskPreviewFrame');
+  if (frame) frame.src = 'about:blank';
+  if (modal) {
+    modal.style.display = 'none';
+    modal.setAttribute('aria-hidden', 'true');
+  }
+}
+
+function printKioskQr() {
+  if (!getKioskPublicUrl()) return showAppAlert('Publish the menu before printing its QR code.', 'Menu Not Published');
+  document.body.classList.add('printing-kiosk-qr');
+  window.addEventListener('afterprint', () => document.body.classList.remove('printing-kiosk-qr'), {once: true});
+  window.print();
+}
+
+async function updateKioskOrderStatus(orderId, status) {
+  if (!currentUser || !requireActionPermission('kioskmenu.write', 'update a kiosk request') || !['accepted', 'preparing', 'ready', 'rejected'].includes(status)) return;
+  try {
+    await updateDoc(doc(dbFirestore, 'users', currentUser.uid, 'kioskOrders', orderId), {
+      status,
+      statusUpdatedAt: new Date().toISOString(),
+      updatedBy: currentLoggedInStaffName || currentUser.displayName || currentUser.email || 'staff'
+    });
+  } catch (error) {
+    await showAppAlert(error.message || 'Could not update this kiosk request.', 'Update Failed');
+  }
+}
+
+async function loadKioskOrderToPos(order) {
+  if (!requireActionPermission('sales.write', 'load a kiosk order into the POS')) return;
+  if (!currentUser || !Array.isArray(order.items) || !order.items.length) return;
+  const currentCart = activeOrders[CART_ID];
+  if (currentCart?.items?.length) {
+    return showAppAlert('Finish or clear the current POS cart before loading this kiosk order.', 'POS Cart In Use');
+  }
+  const posItems = order.items.map(orderItem => {
+    const product = menu.find(entry => getKioskProductId(entry) === String(orderItem.productId));
+    if (!product) return null;
+    const price = Number(orderItem.unitPrice) || 0;
+    return {...product, price, basePrice: price, qty: Number(orderItem.quantity) || 1, notes: String(orderItem.notes || ''), discountAmount: 0};
+  });
+  if (posItems.some(item => !item)) return showAppAlert('A product in this order is no longer available in the POS menu.', 'Product Unavailable');
+  activeOrders[CART_ID] = {items: posItems, server: currentLoggedInStaffName || '', kioskOrderId: order.id, table: order.table || '', source: 'kiosk'};
+  await saveData(false);
+  await updateDoc(doc(dbFirestore, 'users', currentUser.uid, 'kioskOrders', order.id), {
+    status: 'in_pos',
+    statusUpdatedAt: new Date().toISOString()
+  });
+  const menuButton = document.querySelector('nav button[onclick*="menuTab"]');
+  showTab('menuTab', menuButton);
+}
+
+async function enableKioskOrderPush() {
+  if (!currentUser) {
+    setKioskPushStatus('Sign in to register this device for order alerts.');
+    return;
+  }
+  if (FIREBASE_MESSAGING_VAPID_KEY === 'PASTE_FIREBASE_WEB_PUSH_PUBLIC_KEY_HERE') {
+    setKioskPushStatus('Add the Firebase Web Push public key to app.js before enabling order alerts.');
+    return;
+  }
+  try {
+    if (!('Notification' in window) || !('serviceWorker' in navigator) || !(await isSupported())) {
+      setKioskPushStatus('Push notifications are not supported by this browser.');
+      return;
+    }
+    const permission = Notification.permission === 'granted' ? 'granted' : await Notification.requestPermission();
+    if (permission !== 'granted') {
+      setKioskPushStatus('Allow notifications in browser settings to receive order alerts.');
+      return;
+    }
+    const registration = await navigator.serviceWorker.ready;
+    const messaging = getMessaging(app);
+    const token = await getToken(messaging, {vapidKey: FIREBASE_MESSAGING_VAPID_KEY, serviceWorkerRegistration: registration});
+    if (!token) throw new Error('No push token was returned for this device.');
+    await httpsCallable(functions, 'registerKioskDevice')({token, deviceLabel: navigator.userAgent.slice(0, 80)});
+    if (!kioskPushMessageUnsubscribe) {
+      kioskPushMessageUnsubscribe = onMessage(messaging, payload => {
+        const message = payload.notification?.body || 'A new kiosk request is waiting for staff.';
+        addNotification(message, 'alert');
+      });
+    }
+    setKioskPushStatus('This device will receive kiosk order alerts.');
+  } catch (error) {
+    console.error('[KIOSK] Push registration failed:', error);
+    setKioskPushStatus(error.message || 'Could not enable order alerts.');
+  }
+}
+
+async function disableKioskOrderPush() {
+  if (!currentUser || FIREBASE_MESSAGING_VAPID_KEY === 'PASTE_FIREBASE_WEB_PUSH_PUBLIC_KEY_HERE') {
+    setKioskPushStatus(currentUser ? 'Push notifications are not configured on this app.' : 'Sign in to manage this device registration.');
+    return;
+  }
+  try {
+    const messaging = getMessaging(app);
+    const registration = await navigator.serviceWorker.ready;
+    const token = await getToken(messaging, {vapidKey: FIREBASE_MESSAGING_VAPID_KEY, serviceWorkerRegistration: registration});
+    if (token) await httpsCallable(functions, 'unregisterKioskDevice')({token});
+    await deleteToken(messaging);
+    setKioskPushStatus('This device will no longer receive kiosk order alerts.');
+  } catch (error) {
+    console.error('[KIOSK] Push unregistration failed:', error);
+    setKioskPushStatus(error.message || 'Could not disable order alerts.');
+  }
+}
+
 // ===== Notification Functions =====
 function checkNotificationStatus() {
   const statusEl = document.getElementById('notificationStatus');
@@ -22192,4 +22604,6 @@ Object.assign(window, {
 
   // PRODUCTION: Monitoring & Debugging (Available in console)
   getAppHealthStatus, exportErrorLog, captureError, getCachedQuery, getShopsPageOptimized, requestCache, errorLog, clearImageFromCache
+  , initializeKioskMenuTab, saveKioskMenuSettings, rotateKioskMenuLink, renderKioskQr, previewKioskMenu, closeKioskPreview, printKioskQr,
+  updateKioskOrderStatus, loadKioskOrderToPos, enableKioskOrderPush, disableKioskOrderPush
 });
