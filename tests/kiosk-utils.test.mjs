@@ -38,3 +38,16 @@ test('sanitizeKioskOrder creates an item-free attendant request', () => {
 		requestType: 'attendant', table: 'Bar  2', items: [], subtotal: 0, tax: 0, total: 0
 	});
 });
+
+test('sanitizeKioskOrder excludes tax when kiosk tax is disabled', () => {
+	const result = sanitizeKioskOrder({
+		requestType: 'order',
+		items: [{productId: 'dish-1', quantity: 2}]
+	}, {
+		'dish-1': {name: 'Tea', price: 2.5}
+	}, 0);
+
+	assert.equal(result.subtotal, 5);
+	assert.equal(result.tax, 0);
+	assert.equal(result.total, 5);
+});

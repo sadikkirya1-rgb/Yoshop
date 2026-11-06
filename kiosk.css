@@ -53,6 +53,8 @@ textarea:focus-visible {
   font-weight: 600;
 }
 
+.kiosk-header-business-name { display: none; }
+
 .kiosk-wordmark {
   width: 34px;
   height: 34px;
@@ -355,7 +357,9 @@ textarea:focus-visible {
 }
 
 .kiosk-item-price {
+  display: block;
   flex: 0 0 auto;
+  margin-top: 4px;
   white-space: nowrap;
 }
 .kiosk-menu-item p { margin: 3px 0; color: var(--kiosk-muted); font-size: 0.78rem; line-height: 1.3; overflow-wrap: anywhere; }
@@ -409,7 +413,10 @@ textarea:focus-visible {
 .kiosk-cart-items { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 14px; margin: 20px 0; overflow-y: auto; }
 .kiosk-cart-empty { color: var(--kiosk-muted); font-size: 0.9rem; }
 
-.kiosk-cart-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; border-bottom: 1px solid var(--kiosk-border); padding-bottom: 12px; }
+.kiosk-cart-line { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; border-bottom: 1px solid var(--kiosk-border); padding-bottom: 12px; }
+.kiosk-cart-line-image-box { width: 56px; height: 56px; overflow: hidden; border-radius: 5px; background: var(--kiosk-mint); }
+.kiosk-cart-line-image-box.is-placeholder { border: 1px dashed var(--kiosk-border); }
+.kiosk-cart-line-image-box img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .kiosk-cart-line-heading { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 10px; }
 .kiosk-cart-line-title { min-width: 0; overflow-wrap: anywhere; font-size: 0.88rem; font-weight: 700; }
 .kiosk-cart-line-price { color: var(--kiosk-green); font-size: 0.85rem; font-weight: 700; }
@@ -455,21 +462,116 @@ textarea:focus-visible {
 .kiosk-cart-footnote { margin: 12px 0 0; color: var(--kiosk-muted); font-size: 0.75rem; line-height: 1.5; }
 .kiosk-footer { flex: 0 0 auto; padding: 12px 18px; border-top: 1px solid var(--kiosk-border); color: var(--kiosk-muted); text-align: center; font-size: 0.75rem; }
 
+.kiosk-cart-backdrop,
+.kiosk-mobile-cart,
+.kiosk-cart-close { display: none; }
+
+.kiosk-cart-close {
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid var(--kiosk-border);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--kiosk-ink);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+
 @media (max-width: 800px) {
   body { height: auto; min-height: 100vh; min-height: 100svh; overflow: auto; }
+  body.kiosk-cart-open { overflow: hidden; }
   .kiosk-header { position: sticky; top: 0; z-index: 5; }
+  .kiosk-header-business-name {
+    display: block;
+    min-width: 0;
+    margin-left: auto;
+    overflow: hidden;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .kiosk-intro { padding: 0; border: 0; }
+  .kiosk-intro .kiosk-kicker,
+  .kiosk-intro h1 { display: none; }
+  .kiosk-intro #kioskMessage:not(.kiosk-mobile-notice) { display: none; }
+  .kiosk-intro #kioskMessage.kiosk-mobile-notice { margin: 0; }
+  .kiosk-menu-controls { display: none; }
   .kiosk-layout {
     width: 100%;
     min-height: 0;
     flex: 1 0 auto;
     grid-template-columns: minmax(0, 1fr);
     gap: 24px;
-    padding: 20px clamp(12px, 4vw, 28px);
+    padding: 20px clamp(12px, 4vw, 28px) 96px;
   }
   .kiosk-menu-column { min-height: auto; order: 1; }
   .kiosk-menu-items { min-height: auto; flex: 0 0 auto; overflow: visible; }
-  .kiosk-cart-panel { min-height: auto; order: 2; }
-  .kiosk-cart-items { max-height: none; flex: 0 0 auto; overflow: visible; }
+  .kiosk-cart-panel {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 11;
+    width: 100%;
+    min-height: min(65dvh, 480px);
+    max-height: 85dvh;
+    overflow: hidden;
+    padding: 18px 16px max(16px, env(safe-area-inset-bottom));
+    border: 0;
+    border-radius: 18px 18px 0 0;
+    box-shadow: 0 -12px 36px rgba(16, 55, 47, 0.2);
+    transform: translateY(105%);
+    visibility: hidden;
+    transition: transform 0.24s ease, visibility 0.24s;
+  }
+  .kiosk-cart-panel.is-open { transform: translateY(0); visibility: visible; }
+  .kiosk-cart-items { max-height: none; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
+  .kiosk-cart-heading { flex: 0 0 auto; }
+  .kiosk-cart-close { display: grid; margin-left: auto; }
+  .kiosk-cart-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    display: block;
+    background: rgba(14, 25, 21, 0.52);
+    opacity: 0;
+    transition: opacity 0.24s ease;
+  }
+  .kiosk-cart-backdrop[hidden] { display: none; }
+  .kiosk-cart-backdrop:not([hidden]) { opacity: 1; }
+  .kiosk-mobile-cart {
+    position: fixed;
+    right: 12px;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 12px;
+    z-index: 8;
+    display: flex;
+    min-height: 56px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 10px 18px;
+    border: 0;
+    border-radius: 9px;
+    background: var(--kiosk-green);
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 6px 24px rgba(16, 55, 47, 0.3);
+  }
+  .kiosk-mobile-cart[hidden] { display: none; }
+  .kiosk-mobile-cart-label { display: flex; align-items: center; gap: 9px; }
+  .kiosk-mobile-cart-count {
+    display: inline-grid;
+    min-width: 25px;
+    height: 25px;
+    place-items: center;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.18);
+  }
+  .kiosk-mobile-cart strong { font-size: 1rem; }
+  body.kiosk-cart-open .kiosk-mobile-cart { visibility: hidden; }
   .kiosk-categories {
     position: sticky;
     top: 56px;
@@ -485,14 +587,9 @@ textarea:focus-visible {
   .kiosk-layout { gap: 18px; padding: 12px; }
   .kiosk-menu-item { grid-template-columns: 56px minmax(0, 1fr); gap: 8px; padding: 7px; }
   .kiosk-menu-item > .kiosk-item-image-wrap { grid-row: 1 / span 2; width: 56px; height: 56px; }
-  .kiosk-intro h1 { font-size: 2rem; }
   .kiosk-cart-panel { padding: 14px; }
-  .kiosk-menu-controls { grid-template-columns: minmax(0, 1fr); }
-  .kiosk-search-label, .kiosk-search, .kiosk-sort-label, .kiosk-sort { grid-column: 1; }
-  .kiosk-search-label { grid-row: 1; }
-  .kiosk-search { grid-row: 2; }
-  .kiosk-sort-label { grid-row: 3; }
-  .kiosk-sort { grid-row: 4; }
+  .kiosk-sort-label { grid-row: 1; }
+  .kiosk-sort { grid-row: 2; }
   .kiosk-menu-items[data-view-mode="grid"] {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;

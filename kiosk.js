@@ -19,7 +19,7 @@ const token = params.get('token') || '';
 const table = (params.get('table') || '').trim().slice(0, 40);
 const previewOnly = params.get('preview') === '1';
 const cart = new Map();
-let menuData = {items: [], currency: '$', taxRate: 0, allowAttendant: false};
+let menuData = {items: [], currency: '$', allowAttendant: false};
 let selectedCategory = 'All';
 let pendingSubmissionId = '';
 const VIEW_MODE_STORAGE_KEY = 'yoshop-kiosk-view-mode';
@@ -27,6 +27,7 @@ let menuViewMode = 'grid';
 
 const elements = {
   businessName: document.getElementById('businessName'),
+  headerBusinessName: document.getElementById('kioskHeaderBusinessName'),
   tableLabel: document.getElementById('kioskTableLabel'),
   message: document.getElementById('kioskMessage'),
   previewNotice: document.getElementById('kioskPreviewNotice'),
@@ -40,12 +41,16 @@ const elements = {
   cartItems: document.getElementById('kioskCartItems'),
   cartCount: document.getElementById('kioskCartCount'),
   subtotal: document.getElementById('kioskSubtotal'),
-  tax: document.getElementById('kioskTax'),
   total: document.getElementById('kioskTotal'),
   submit: document.getElementById('placeKioskOrder'),
   attendant: document.getElementById('requestAttendant'),
   retry: document.getElementById('kioskRetry'),
-  cartPanel: document.querySelector('.kiosk-cart-panel')
+  cartPanel: document.querySelector('.kiosk-cart-panel'),
+  cartBackdrop: document.getElementById('kioskCartBackdrop'),
+  mobileCart: document.getElementById('kioskMobileCart'),
+  mobileCartCount: document.getElementById('kioskMobileCartCount'),
+  mobileCartTotal: document.getElementById('kioskMobileCartTotal'),
+  cartClose: document.getElementById('kioskCartClose')
 };
 
 function formatMoney(value) {
@@ -55,6 +60,7 @@ function formatMoney(value) {
 function setMessage(message, isError = false) {
   elements.message.textContent = message;
   elements.message.classList.toggle('kiosk-error', isError);
+  elements.message.classList.toggle('kiosk-mobile-notice', isError || /\b(sending|sent)\b/i.test(message));
 }
 
 function createButton(text, className, handler, label = text) {
@@ -209,8 +215,9 @@ function renderMenu() {
     const price = document.createElement('span');
     price.className = 'kiosk-item-price';
     price.textContent = formatMoney(item.price);
-    titleRow.append(heading, price);
+    titleRow.appendChild(heading);
     detail.append(titleRow);
+    detail.appendChild(price);
     if (item.description) detail.appendChild(description);
     if (item.isAvailable === false) {
       const availability = document.createElement('span');
@@ -240,6 +247,24 @@ function renderCart() {
     const row = document.createElement('div');
     row.className = 'kiosk-cart-line';
     row.dataset.productId = item.id;
+    const imageBox = document.createElement('div');
+    imageBox.className = 'kiosk-cart-line-image-box';
+    if (item.image) {
+      const image = document.createElement('img');
+      image.src = item.image;
+      image.alt = '';
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.referrerPolicy = 'no-referrer';
+      image.onerror = () => {
+        image.remove();
+        imageBox.classList.add('is-placeholder');
+      };
+      imageBox.appendChild(image);
+    } else {
+      imageBox.classList.add('is-placeholder');
+    }
+    row.appendChild(imageBox);
     const info = document.createElement('div');
     const titleRow = document.createElement('div');
     titleRow.className = 'kiosk-cart-line-heading';
@@ -269,13 +294,35 @@ function renderCart() {
     row.append(info, quantityControls);
     elements.cartItems.appendChild(row);
   });
-  const taxCents = Math.round(subtotalCents * Math.min(30, Math.max(0, Number(menuData.taxRate) || 0)) / 100);
   elements.cartCount.textContent = String(quantityTotal);
+  elements.mobileCartCount.textContent = String(quantityTotal);
   elements.subtotal.textContent = formatMoney(subtotalCents / 100);
-  elements.tax.textContent = formatMoney(taxCents / 100);
-  const total = formatMoney((subtotalCents + taxCents) / 100);
+  const total = formatMoney(subtotalCents / 100);
   elements.total.textContent = total;
+  elements.mobileCartTotal.textContent = total;
+  elements.mobileCart.hidden = previewOnly || quantityTotal === 0;
+  elements.mobileCart.setAttribute('aria-label', `View cart, ${quantityTotal} ${quantityTotal === 1 ? 'item' : 'items'}, total ${total}`);
   elements.submit.disabled = previewOnly || cart.size === 0;
+}
+
+function setCartSheetOpen(open, restoreFocus = true) {
+  const isMobile = window.matchMedia('(max-width: 800px)').matches;
+  if (!isMobile) open = false;
+  const isHidden = isMobile && !open;
+  elements.cartPanel.classList.toggle('is-open', open);
+  elements.cartPanel.setAttribute('role', open ? 'dialog' : 'complementary');
+  elements.cartPanel.setAttribute('aria-hidden', String(isHidden));
+  elements.cartPanel.setAttribute('aria-modal', String(open));
+  elements.cartPanel.inert = isHidden;
+  elements.cartBackdrop.hidden = !open;
+  elements.mobileCart.setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('kiosk-cart-open', open);
+  if (open) {
+    elements.cartClose.focus();
+  } else if (restoreFocus) {
+    if (!elements.mobileCart.hidden) elements.mobileCart.focus();
+    else elements.businessName.focus();
+  }
 }
 
 async function submitRequest(requestType) {
@@ -297,6 +344,7 @@ async function submitRequest(requestType) {
     cart.clear();
     pendingSubmissionId = '';
     renderCart();
+    setCartSheetOpen(false, false);
     setMessage(requestType === 'attendant'
       ? 'Request sent. A staff member will be with you shortly.'
       : `Order sent${table ? ` for ${table}` : ''}. Your team will prepare it shortly. Pay your server or cashier when it is ready.`);
@@ -310,8 +358,32 @@ async function submitRequest(requestType) {
 
 async function initialize() {
   document.body.classList.toggle('kiosk-preview-mode', previewOnly);
-  document.getElementById('cartHeading').setAttribute('tabindex', '-1');
+  elements.businessName.setAttribute('tabindex', '-1');
   elements.retry.addEventListener('click', () => window.location.reload());
+  elements.mobileCart.addEventListener('click', () => setCartSheetOpen(true));
+  elements.cartClose.addEventListener('click', () => setCartSheetOpen(false));
+  elements.cartBackdrop.addEventListener('click', () => setCartSheetOpen(false));
+  document.addEventListener('keydown', event => {
+    if (!elements.cartPanel.classList.contains('is-open')) return;
+    if (event.key === 'Escape') {
+      setCartSheetOpen(false);
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const focusable = [...elements.cartPanel.querySelectorAll('button:not(:disabled):not([hidden]), [href], input:not(:disabled):not([hidden]), textarea:not(:disabled):not([hidden]), select:not(:disabled):not([hidden]), [tabindex]:not([tabindex="-1"])')];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+  window.addEventListener('resize', () => setCartSheetOpen(false, false));
+  setCartSheetOpen(false, false);
   if (!token) {
     setMessage('This menu link is incomplete. Please scan the QR code again.', true);
     elements.menu.replaceChildren();
@@ -351,6 +423,7 @@ async function initialize() {
       return;
     }
     elements.businessName.textContent = menuData.businessName || 'Menu';
+    elements.headerBusinessName.textContent = menuData.businessName || 'Menu';
     elements.attendant.hidden = previewOnly || menuData.allowAttendant === false;
     setMessage(table ? `Choose your items for ${table}.` : 'Choose your items and send your order to the team.');
     renderCategories();

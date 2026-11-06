@@ -158,7 +158,6 @@ exports.getKioskMenu = onCall(callableOptions, async (request) => {
 	return {
 		businessName: String(profileSettings.name || kiosk.userData.name || kiosk.config.businessName || "YoShop").trim().slice(0, 100),
 		currency: String(profileSettings.currency || "$").slice(0, 8),
-		taxRate: Number(profileSettings.taxRate) || 0,
 		allowAttendant: kiosk.config.allowAttendant !== false,
 		items: Object.values(catalog)
 	};
@@ -173,7 +172,7 @@ exports.submitKioskRequest = onCall(callableOptions, async (request) => {
 	const catalog = await getPublishedKioskCatalog(kiosk);
 	let order;
 	try {
-		order = sanitizeKioskOrder(requestData, catalog, Number(kiosk.profile.settings?.taxRate) || 0);
+		order = sanitizeKioskOrder(requestData, catalog, 0);
 	} catch (error) {
 		throw new HttpsError("invalid-argument", error.message);
 	}
