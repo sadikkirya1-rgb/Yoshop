@@ -22091,6 +22091,20 @@ function renderKioskOrderCards(orders = null) {
     meta.textContent = `${createdAt.toLocaleString()}${order.requestType === 'attendant' ? '' : ` · ${formatCurrency(Number(order.total) || 0)}`}`;
     card.appendChild(meta);
 
+    if (order.requestType !== 'attendant') {
+      const customerDetails = document.createElement('p');
+      const details = [
+        order.customerName ? `Customer: ${String(order.customerName)}` : '',
+        order.whatsappNumber ? `WhatsApp: ${String(order.whatsappNumber)}` : '',
+        order.waiterName ? `Waiter: ${String(order.waiterName)}` : ''
+      ].filter(Boolean);
+      if (details.length) {
+        customerDetails.className = 'kiosk-order-customer-details';
+        customerDetails.textContent = details.join(' · ');
+        card.appendChild(customerDetails);
+      }
+    }
+
     if (Array.isArray(order.items) && order.items.length) {
       const itemList = document.createElement('ul');
       order.items.forEach(item => {

@@ -5,8 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#174a3e">
   <title>Digital Menu | YoShop</title>
-  <link rel="stylesheet" href="kiosk.css?v=20261106-cart-image-placeholder-v1">
-  <script type="module" src="kiosk.js?v=20261106-mobile-header-v1"></script>
+  <link rel="stylesheet" href="kiosk.css?v=20261106-customer-details-v2">
+  <script type="module" src="kiosk.js?v=20261106-customer-details-v4"></script>
 </head>
 <body>
   <header class="kiosk-header">
@@ -58,7 +58,23 @@
         <span>Subtotal</span><strong id="kioskSubtotal">$0.00</strong>
         <span class="kiosk-total-label">Total</span><strong id="kioskTotal" class="kiosk-total-value">$0.00</strong>
       </div>
-      <button id="placeKioskOrder" class="kiosk-primary-button" type="button" disabled>Place order</button>
+      <button id="placeKioskOrder" class="kiosk-primary-button" type="button" disabled>Continue to customer details</button>
+      <form id="kioskCustomerDetails" class="kiosk-customer-details" hidden>
+        <h3>Customer details</h3>
+        <label for="kioskCustomerTable">Table number</label>
+        <input id="kioskCustomerTable" name="table" type="text" maxlength="40" autocomplete="off" required>
+        <label for="kioskCustomerName">Customer name</label>
+        <input id="kioskCustomerName" name="customerName" type="text" maxlength="100" autocomplete="name" required>
+        <label for="kioskCustomerWhatsApp">WhatsApp number</label>
+        <input id="kioskCustomerWhatsApp" name="whatsappNumber" type="tel" maxlength="30" autocomplete="tel" inputmode="tel" placeholder="+1234567890" required>
+        <label for="kioskWaiterName">Waiter name <span>(optional)</span></label>
+        <input id="kioskWaiterName" name="waiterName" type="text" maxlength="100" autocomplete="off">
+        <p id="kioskDetailsError" class="kiosk-details-error" role="alert" hidden></p>
+        <div class="kiosk-customer-details-actions">
+          <button id="kioskBackToCart" class="kiosk-secondary-button" type="button">Back to cart</button>
+          <button id="kioskConfirmOrder" class="kiosk-primary-button" type="submit">Confirm order</button>
+        </div>
+      </form>
       <button id="requestAttendant" class="kiosk-secondary-button" type="button" hidden>Request an attendant</button>
       <p class="kiosk-cart-footnote">Pay your server or cashier when your order is ready.</p>
     </aside>

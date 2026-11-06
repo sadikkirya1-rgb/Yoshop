@@ -407,6 +407,11 @@ textarea:focus-visible {
   box-shadow: 0 8px 28px rgba(23, 74, 62, 0.08);
 }
 
+.kiosk-cart-panel.is-entering-details .kiosk-cart-items,
+.kiosk-cart-panel.is-entering-details .kiosk-cart-total,
+.kiosk-cart-panel.is-entering-details .kiosk-cart-footnote,
+.kiosk-cart-panel.is-entering-details #requestAttendant { display: none; }
+
 .kiosk-cart-heading { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .kiosk-cart-heading h2 { font-size: 1.45rem; }
 .kiosk-cart-count { min-width: 28px; min-height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--kiosk-mint); color: var(--kiosk-green); font-weight: 700; }
@@ -444,6 +449,39 @@ textarea:focus-visible {
 .kiosk-cart-total strong { text-align: right; }
 .kiosk-cart-total .kiosk-total-label,
 .kiosk-cart-total .kiosk-total-value { padding-top: 8px; border-top: 1px solid var(--kiosk-border); color: var(--kiosk-ink); font-size: 1rem; }
+
+.kiosk-customer-details {
+  display: grid;
+  flex: 1 1 auto;
+  min-height: 0;
+  gap: 8px;
+  padding: 14px 0 2px;
+  overflow-y: auto;
+  border-top: 1px solid var(--kiosk-border);
+}
+
+.kiosk-customer-details[hidden] { display: none; }
+.kiosk-customer-details h3 { margin: 0 0 4px; font-size: 1.05rem; }
+.kiosk-customer-details label { color: var(--kiosk-ink); font-size: 0.8rem; font-weight: 650; }
+.kiosk-customer-details label span { color: var(--kiosk-muted); font-weight: 400; }
+.kiosk-customer-details input {
+  width: 100%;
+  min-height: 42px;
+  padding: 9px 10px;
+  border: 1px solid var(--kiosk-border);
+  border-radius: 5px;
+  background: #fff;
+  color: var(--kiosk-ink);
+}
+
+.kiosk-details-error {
+  margin: 0;
+  color: #b42318;
+  font-size: 0.82rem;
+}
+
+.kiosk-customer-details-actions { display: flex; gap: 8px; padding-top: 4px; }
+.kiosk-customer-details-actions button { flex: 1 1 0; margin-top: 0; }
 
 .kiosk-primary-button,
 .kiosk-secondary-button {
@@ -529,6 +567,7 @@ textarea:focus-visible {
   .kiosk-cart-panel.is-open { transform: translateY(0); visibility: visible; }
   .kiosk-cart-items { max-height: none; flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; }
   .kiosk-cart-heading { flex: 0 0 auto; }
+  .kiosk-customer-details { flex: 1 1 auto; }
   .kiosk-cart-close { display: grid; margin-left: auto; }
   .kiosk-cart-backdrop {
     position: fixed;

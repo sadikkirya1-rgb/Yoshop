@@ -50,7 +50,15 @@ const elements = {
   mobileCart: document.getElementById('kioskMobileCart'),
   mobileCartCount: document.getElementById('kioskMobileCartCount'),
   mobileCartTotal: document.getElementById('kioskMobileCartTotal'),
-  cartClose: document.getElementById('kioskCartClose')
+  cartClose: document.getElementById('kioskCartClose'),
+  customerDetails: document.getElementById('kioskCustomerDetails'),
+  customerTable: document.getElementById('kioskCustomerTable'),
+  customerName: document.getElementById('kioskCustomerName'),
+  customerWhatsApp: document.getElementById('kioskCustomerWhatsApp'),
+  waiterName: document.getElementById('kioskWaiterName'),
+  detailsError: document.getElementById('kioskDetailsError'),
+  backToCart: document.getElementById('kioskBackToCart'),
+  confirmOrder: document.getElementById('kioskConfirmOrder')
 };
 
 function formatMoney(value) {
@@ -325,18 +333,47 @@ function setCartSheetOpen(open, restoreFocus = true) {
   }
 }
 
-async function submitRequest(requestType) {
+function openCustomerDetails() {
+  if (!cart.size || previewOnly) return;
+  elements.customerTable.value = table;
+  elements.detailsError.hidden = true;
+  elements.customerDetails.hidden = false;
+  elements.cartPanel.classList.add('is-entering-details');
+  elements.submit.hidden = true;
+  if (!window.matchMedia('(max-width: 800px)').matches) {
+    elements.customerName.focus({preventScroll: true});
+  }
+}
+
+function closeCustomerDetails() {
+  elements.customerDetails.hidden = true;
+  elements.cartPanel.classList.remove('is-entering-details');
+  elements.submit.hidden = false;
+  elements.submit.focus();
+}
+
+function getCustomerOrderDetails() {
+  return {
+    table: elements.customerTable.value.trim(),
+    customerName: elements.customerName.value.trim(),
+    whatsappNumber: elements.customerWhatsApp.value.trim(),
+    waiterName: elements.waiterName.value.trim()
+  };
+}
+
+async function submitRequest(requestType, customerDetails = null) {
   if (previewOnly) return;
   if (requestType === 'order' && cart.size === 0) return;
   elements.submit.disabled = true;
   elements.attendant.disabled = true;
+  elements.confirmOrder.disabled = true;
   setMessage(requestType === 'attendant' ? 'Sending your request...' : 'Sending your order...');
   try {
     pendingSubmissionId ||= crypto.randomUUID();
     const payload = {
       token,
       requestType,
-      table,
+      ...(requestType === 'order' ? customerDetails : {table}),
       idempotencyKey: pendingSubmissionId,
       items: requestType === 'order' ? [...cart.values()].map(({item, quantity, notes}) => ({productId: item.id, quantity, notes})) : []
     };
@@ -344,15 +381,24 @@ async function submitRequest(requestType) {
     cart.clear();
     pendingSubmissionId = '';
     renderCart();
+    elements.customerDetails.hidden = true;
+    elements.cartPanel.classList.remove('is-entering-details');
+    elements.submit.hidden = false;
     setCartSheetOpen(false, false);
     setMessage(requestType === 'attendant'
       ? 'Request sent. A staff member will be with you shortly.'
-      : `Order sent${table ? ` for ${table}` : ''}. Your team will prepare it shortly. Pay your server or cashier when it is ready.`);
+      : `Order sent for ${customerDetails.table}. Your team will prepare it shortly. Pay your server or cashier when it is ready.`);
   } catch (error) {
-    setMessage(error.message || 'We could not send that request. Please try again.', true);
+    if (requestType === 'order') {
+      elements.detailsError.textContent = error.message || 'We could not send that order. Please try again.';
+      elements.detailsError.hidden = false;
+    } else {
+      setMessage(error.message || 'We could not send that request. Please try again.', true);
+    }
   } finally {
     elements.submit.disabled = previewOnly || cart.size === 0;
     elements.attendant.disabled = previewOnly;
+    elements.confirmOrder.disabled = false;
   }
 }
 
@@ -363,14 +409,23 @@ async function initialize() {
   elements.mobileCart.addEventListener('click', () => setCartSheetOpen(true));
   elements.cartClose.addEventListener('click', () => setCartSheetOpen(false));
   elements.cartBackdrop.addEventListener('click', () => setCartSheetOpen(false));
+  elements.submit.addEventListener('click', openCustomerDetails);
+  elements.backToCart.addEventListener('click', closeCustomerDetails);
+  elements.customerDetails.addEventListener('submit', event => {
+    event.preventDefault();
+    if (!elements.customerDetails.reportValidity()) return;
+    submitRequest('order', getCustomerOrderDetails());
+  });
   document.addEventListener('keydown', event => {
     if (!elements.cartPanel.classList.contains('is-open')) return;
     if (event.key === 'Escape') {
+      if (!elements.customerDetails.hidden) return;
       setCartSheetOpen(false);
       return;
     }
     if (event.key !== 'Tab') return;
-    const focusable = [...elements.cartPanel.querySelectorAll('button:not(:disabled):not([hidden]), [href], input:not(:disabled):not([hidden]), textarea:not(:disabled):not([hidden]), select:not(:disabled):not([hidden]), [tabindex]:not([tabindex="-1"])')];
+    const focusable = [...elements.cartPanel.querySelectorAll('button:not(:disabled), [href], input:not(:disabled), textarea:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])')]
+      .filter(element => !element.closest('[hidden]'));
     if (!focusable.length) return;
     const first = focusable[0];
     const last = focusable.at(-1);
@@ -382,7 +437,6 @@ async function initialize() {
       first.focus();
     }
   });
-  window.addEventListener('resize', () => setCartSheetOpen(false, false));
   setCartSheetOpen(false, false);
   if (!token) {
     setMessage('This menu link is incomplete. Please scan the QR code again.', true);
@@ -390,6 +444,7 @@ async function initialize() {
     return;
   }
   if (table) elements.tableLabel.textContent = `ORDER AT ${table.toUpperCase()}`;
+  elements.customerTable.value = table;
   elements.previewNotice.hidden = !previewOnly;
   elements.attendant.hidden = previewOnly;
   const loadingCards = Array.from({length: 3}, () => {
@@ -410,7 +465,6 @@ async function initialize() {
     menuViewMode = window.matchMedia('(max-width: 700px)').matches ? 'list' : 'grid';
   }
   setMenuViewMode(menuViewMode, false);
-  elements.submit.addEventListener('click', () => submitRequest('order'));
   elements.attendant.addEventListener('click', () => submitRequest('attendant'));
   try {
     if (previewOnly) await getAuth(app).authStateReady();

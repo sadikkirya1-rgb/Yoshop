@@ -500,6 +500,12 @@ body.dark-mode .dashboard-card:hover {
   overflow-wrap: anywhere;
 }
 
+.kiosk-order-customer-details {
+  color: #475569;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
 .kiosk-order-status {
   padding: 4px 8px;
   border-radius: 4px;
