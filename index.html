@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" href="assets/icons/android192x192.png">
   <!-- Using android192x192.png as the default favicon -->
   <link rel="canonical" href="https://yoshop.netlify.app/"> <!-- Updated canonical URL -->
-  <link rel="stylesheet" href="style.css?v=20261106-kiosk-v1">
+  <link rel="stylesheet" href="style.css?v=20261106-kiosk-responsive-v1">
   <script>
     const previewTunnel = location.hostname.endsWith('.github.dev') || location.hostname.endsWith('.app.github.dev');
     if (!previewTunnel) {
@@ -45,7 +45,7 @@
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script type="module" src="app.js?v=20261106-kiosk-v1"></script>
+  <script type="module" src="app.js?v=20261106-kiosk-link-v1"></script>
   <script>
     // Safety stubs to prevent ReferenceError from inline onclicks
     window.loginWithPIN = window.loginWithPIN || function() { console.warn('loginWithPIN called before app module loaded'); };
@@ -612,25 +612,48 @@
       </section>
 
       <section id="kioskMenuTab" class="kiosk-owner-tab">
-        <h3>Digital Menu & Orders</h3>
+        <div class="kiosk-workspace-heading">
+          <div>
+            <p class="kiosk-workspace-eyebrow">CUSTOMER ORDERING</p>
+            <h3>Digital Menu & Orders</h3>
+            <p>Choose what guests see, print table QR codes, and manage incoming requests.</p>
+          </div>
+          <div class="kiosk-workspace-status">
+            <span id="kioskPublishState" class="kiosk-publish-state is-offline">Menu paused</span>
+            <strong id="kioskNewOrderCount">0 new</strong>
+          </div>
+        </div>
         <div class="kiosk-owner-grid">
           <div class="form-panel kiosk-publish-panel">
-            <h4>Published menu</h4>
+            <div class="kiosk-panel-heading">
+              <div><h4>Menu builder</h4><p>Only selected items appear on the customer menu.</p></div>
+              <span id="kioskSelectedCount" class="kiosk-selection-count">0 selected</span>
+            </div>
             <label class="kiosk-toggle-row"><input id="kioskEnabledInput" type="checkbox"><span>Accept kiosk orders</span></label>
             <label class="kiosk-toggle-row"><input id="kioskAttendantInput" type="checkbox" checked><span>Allow attendant requests</span></label>
-            <div id="kioskProductOptions" class="kiosk-product-options" aria-label="Products shown in the kiosk menu"></div>
-            <div class="kiosk-action-row">
-              <button type="button" class="btn btn-success" onclick="saveKioskMenuSettings()">Publish menu</button>
-              <button type="button" class="btn btn-secondary" onclick="rotateKioskMenuLink()">Rotate QR link</button>
+            <div class="kiosk-product-toolbar">
+              <input id="kioskProductSearch" type="search" placeholder="Find a product" aria-label="Search products to publish">
+              <div class="kiosk-selection-actions">
+                <button type="button" class="btn btn-secondary" onclick="selectVisibleKioskProducts()">Select visible</button>
+                <button type="button" class="btn btn-secondary" onclick="clearKioskProductSelection()">Clear</button>
+              </div>
             </div>
-            <p id="kioskMenuStatus" class="kiosk-status-text" role="status">Loading kiosk settings...</p>
+            <div id="kioskProductOptions" class="kiosk-product-options" aria-label="Products shown in the kiosk menu"></div>
+            <div class="kiosk-publish-footer">
+              <p id="kioskMenuStatus" class="kiosk-status-text" role="status">Loading kiosk settings...</p>
+              <div class="kiosk-action-row">
+                <button type="button" class="btn btn-success" onclick="saveKioskMenuSettings()">Save & publish</button>
+                <button type="button" class="btn btn-secondary" onclick="rotateKioskMenuLink()">Rotate QR link</button>
+              </div>
+            </div>
           </div>
           <div class="form-panel kiosk-qr-panel">
-            <h4>QR menu link</h4>
+            <div class="kiosk-panel-heading">
+              <div><h4>Table QR code</h4><p>Print one QR for a table or use a general menu link.</p></div>
+            </div>
             <div class="input-row kiosk-table-row">
               <label for="kioskTableInput">Table or area</label>
-              <input id="kioskTableInput" type="text" maxlength="40" placeholder="Leave blank for a general QR">
-              <button type="button" class="btn btn-secondary" onclick="renderKioskQr()" title="Update QR code">Update</button>
+              <input id="kioskTableInput" type="text" maxlength="40" placeholder="e.g. Table 4 or Bar">
             </div>
             <div id="kioskQrPrintArea" class="kiosk-qr-print-area">
               <div id="kioskQrCode" aria-label="Kiosk menu QR code"></div>
@@ -640,16 +663,39 @@
             <div class="kiosk-action-row kiosk-qr-actions">
               <button type="button" class="btn" onclick="printKioskQr()">Print QR</button>
               <button type="button" class="btn btn-secondary" onclick="previewKioskMenu()">Preview menu</button>
+              <button type="button" class="btn btn-secondary" onclick="copyKioskMenuLink()">Copy link</button>
             </div>
-            <a id="kioskPublicLink" class="kiosk-public-link" target="_blank" rel="noopener"></a>
+            <p id="kioskLinkStatus" class="kiosk-status-text" role="status"></p>
+            <a id="kioskPublicLink" class="kiosk-public-link is-unavailable" aria-disabled="true" tabindex="-1">
+              <span class="kiosk-public-link-label">Publish the menu to create a QR link</span>
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                <path d="M11 3h6v6M17 3 9 11M15 11v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </a>
           </div>
         </div>
         <div class="kiosk-orders-heading">
-          <h4>Incoming kiosk requests</h4>
+          <div><h4>Incoming requests</h4><p>New orders and attendant calls from every table.</p></div>
           <div class="kiosk-action-row">
             <button type="button" class="btn btn-secondary" onclick="enableKioskOrderPush()">Enable alerts on this device</button>
             <span id="kioskOrdersConnection" role="status">Connecting...</span>
           </div>
+        </div>
+        <div class="kiosk-queue-toolbar">
+          <label for="kioskOrderFilter">Show requests</label>
+          <select id="kioskOrderFilter">
+            <option value="open">Open requests</option>
+            <option value="new">New</option>
+            <option value="accepted">Accepted</option>
+            <option value="preparing">Preparing</option>
+            <option value="ready">Ready</option>
+            <option value="in_pos">In POS</option>
+            <option value="paid">Paid</option>
+            <option value="resolved">Handled</option>
+            <option value="rejected">Rejected</option>
+            <option value="all">All requests</option>
+          </select>
+          <span id="kioskQueueCount" class="kiosk-selection-count">0 requests</span>
         </div>
         <p id="kioskQueuePushStatus" class="kiosk-status-text" role="status"></p>
         <div id="kioskOrdersList" class="kiosk-orders-list" aria-live="polite"></div>

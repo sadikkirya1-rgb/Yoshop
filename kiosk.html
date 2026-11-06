@@ -5,10 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#174a3e">
   <title>Digital Menu | YoShop</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600;9..144,700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="kiosk.css">
+  <link rel="stylesheet" href="kiosk.css?v=20261106-responsive-v1">
   <script type="module" src="kiosk.js"></script>
 </head>
 <body>
@@ -24,9 +21,25 @@
         <p id="kioskMessage" role="status">Loading menu...</p>
       </div>
       <div id="kioskPreviewNotice" class="kiosk-preview-notice" hidden>Preview mode</div>
-      <label class="kiosk-search-label" for="kioskSearch">Search the menu</label>
-      <input id="kioskSearch" class="kiosk-search" type="search" placeholder="Search dishes">
+      <div class="kiosk-menu-controls">
+        <label class="kiosk-search-label" for="kioskSearch">Search the menu</label>
+        <input id="kioskSearch" class="kiosk-search" type="search" placeholder="Search dishes">
+        <label class="kiosk-sort-label" for="kioskSort">Sort</label>
+        <select id="kioskSort" class="kiosk-sort">
+          <option value="featured">Featured</option>
+          <option value="name">Name A-Z</option>
+          <option value="price-low">Price: low to high</option>
+          <option value="price-high">Price: high to low</option>
+        </select>
+      </div>
       <div id="kioskCategories" class="kiosk-categories" role="group" aria-label="Menu categories"></div>
+      <div class="kiosk-menu-toolbar">
+        <span id="kioskResultsCount" class="kiosk-results-count" aria-live="polite">0 items</span>
+        <div class="kiosk-view-switch" role="group" aria-label="Menu layout">
+          <button id="kioskListView" type="button" aria-label="List view" title="List view" aria-pressed="false">☰</button>
+          <button id="kioskGridView" type="button" aria-label="Grid view" title="Grid view" aria-pressed="true">▦</button>
+        </div>
+      </div>
       <div id="kioskMenuItems" class="kiosk-menu-items"></div>
     </section>
     <aside class="kiosk-cart-panel" aria-labelledby="cartHeading">

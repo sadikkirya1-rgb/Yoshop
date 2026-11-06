@@ -19469,6 +19469,8 @@ async function mainInit() {
         if (kioskOrderUnsubscribe) kioskOrderUnsubscribe();
         kioskOrderUnsubscribe = null;
         kioskSettingsCache = null;
+        kioskOrdersCache = [];
+        kioskSelectedProductIds = new Set();
       }
 
       if (presenceHeartbeat) {
@@ -21901,6 +21903,10 @@ function setupRealTimeTransactionsSync(uid) {
 let kioskOrderUnsubscribe = null;
 let kioskOrdersInitialSnapshot = true;
 let kioskPushMessageUnsubscribe = null;
+let kioskOrdersCache = [];
+let kioskAvailableProducts = [];
+let kioskSelectedProductIds = new Set();
+let kioskSettingsCache = null;
 
 function getKioskProductId(product) {
   return String(product?.recordId || product?.id || '').trim();
@@ -21926,19 +21932,23 @@ function setKioskPushStatus(message) {
   });
 }
 
-function renderKioskProductOptions(selectedProductIds = []) {
+function renderKioskProductOptions(selectedProductIds = null) {
   const container = document.getElementById('kioskProductOptions');
   if (!container) return;
-  const selected = new Set(selectedProductIds.map(String));
-  const products = (Array.isArray(menu) ? menu : []).filter(product => {
+  if (Array.isArray(selectedProductIds)) kioskSelectedProductIds = new Set(selectedProductIds.map(String));
+  kioskAvailableProducts = (Array.isArray(menu) ? menu : []).filter(product => {
     const price = Number(product?.price);
     return getKioskProductId(product) && String(product?.name || '').trim() && Number.isFinite(price) && price >= 0 && !product.deleted;
   });
+  const search = document.getElementById('kioskProductSearch')?.value.trim().toLowerCase() || '';
+  const products = kioskAvailableProducts.filter(product => `${product.name} ${product.category || ''}`.toLowerCase().includes(search));
   container.replaceChildren();
+  const selectionCount = document.getElementById('kioskSelectedCount');
+  if (selectionCount) selectionCount.textContent = `${kioskSelectedProductIds.size} selected`;
   if (!products.length) {
     const empty = document.createElement('p');
     empty.className = 'kiosk-status-text';
-    empty.textContent = 'Add priced products before publishing a digital menu.';
+    empty.textContent = kioskAvailableProducts.length ? 'No products match this search.' : 'Add priced products before publishing a digital menu.';
     container.appendChild(empty);
     return;
   }
@@ -21948,12 +21958,31 @@ function renderKioskProductOptions(selectedProductIds = []) {
     const checkbox = document.createElement('input');
     checkbox.type = 'checkbox';
     checkbox.value = getKioskProductId(product);
-    checkbox.checked = selected.has(checkbox.value);
+    checkbox.checked = kioskSelectedProductIds.has(checkbox.value);
     const name = document.createElement('span');
     name.textContent = getKioskProductLabel(product);
     label.append(checkbox, name);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) kioskSelectedProductIds.add(checkbox.value);
+      else kioskSelectedProductIds.delete(checkbox.value);
+      const currentCount = document.getElementById('kioskSelectedCount');
+      if (currentCount) currentCount.textContent = `${kioskSelectedProductIds.size} selected`;
+    });
     container.appendChild(label);
   });
+}
+
+function selectVisibleKioskProducts() {
+  const search = document.getElementById('kioskProductSearch')?.value.trim().toLowerCase() || '';
+  kioskAvailableProducts
+    .filter(product => `${product.name} ${product.category || ''}`.toLowerCase().includes(search))
+    .forEach(product => kioskSelectedProductIds.add(getKioskProductId(product)));
+  renderKioskProductOptions();
+}
+
+function clearKioskProductSelection() {
+  kioskSelectedProductIds.clear();
+  renderKioskProductOptions();
 }
 
 function getKioskPublicUrl(config = kioskSettingsCache, table = '') {
@@ -21965,8 +21994,6 @@ function getKioskPublicUrl(config = kioskSettingsCache, table = '') {
   return url.toString();
 }
 
-let kioskSettingsCache = null;
-
 function renderKioskQr() {
   const qrContainer = document.getElementById('kioskQrCode');
   const table = document.getElementById('kioskTableInput')?.value.trim() || '';
@@ -21977,8 +22004,21 @@ function renderKioskQr() {
   if (businessName) businessName.textContent = kioskSettingsCache?.businessName || settings?.name || 'YoShop';
   if (tableLabel) tableLabel.textContent = table ? `Order from ${table}` : 'Scan to view our menu';
   if (link) {
-    link.href = url || '#';
-    link.textContent = url ? 'Open digital menu' : 'Publish the menu to create a QR link';
+    const label = link.querySelector('.kiosk-public-link-label');
+    if (label) label.textContent = url ? 'Open digital menu' : 'Publish the menu to create a QR link';
+    link.classList.toggle('is-unavailable', !url);
+    link.setAttribute('aria-disabled', String(!url));
+    if (url) {
+      link.href = url;
+      link.target = '_blank';
+      link.rel = 'noopener';
+      link.removeAttribute('tabindex');
+    } else {
+      link.removeAttribute('href');
+      link.removeAttribute('target');
+      link.removeAttribute('rel');
+      link.tabIndex = -1;
+    }
   }
   if (!qrContainer) return;
   qrContainer.replaceChildren();
@@ -21986,19 +22026,54 @@ function renderKioskQr() {
   new QRCode(qrContainer, {text: url, width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M});
 }
 
-function renderKioskOrderCards(orders = []) {
-  const container = document.getElementById('kioskOrdersList');
-  if (!container) return;
-  container.replaceChildren();
-  if (!orders.length) {
-    const empty = document.createElement('p');
-    empty.className = 'kiosk-status-text';
-    empty.textContent = 'No kiosk requests yet.';
-    container.appendChild(empty);
+async function copyKioskMenuLink() {
+  const url = getKioskPublicUrl(kioskSettingsCache, document.getElementById('kioskTableInput')?.value.trim() || '');
+  const status = document.getElementById('kioskLinkStatus');
+  if (!url) {
+    if (status) status.textContent = 'Publish the menu to create a shareable link.';
     return;
   }
-  const statusLabels = {new: 'New', accepted: 'Accepted', preparing: 'Preparing', ready: 'Ready', in_pos: 'In POS', paid: 'Paid', rejected: 'Rejected'};
-  orders.forEach(order => {
+  try {
+    await navigator.clipboard.writeText(url);
+    if (status) status.textContent = 'Menu link copied.';
+  } catch (error) {
+    if (status) status.textContent = 'Copy is unavailable in this browser. Open the menu link and copy it from the address bar.';
+  }
+}
+
+function updateKioskPublishState(enabled) {
+  const badge = document.getElementById('kioskPublishState');
+  if (!badge) return;
+  badge.textContent = enabled ? 'Accepting orders' : 'Menu paused';
+  badge.classList.toggle('is-live', enabled);
+  badge.classList.toggle('is-offline', !enabled);
+}
+
+function renderKioskOrderCards(orders = null) {
+  const container = document.getElementById('kioskOrdersList');
+  if (!container) return;
+  if (Array.isArray(orders)) kioskOrdersCache = orders;
+  const allOrders = kioskOrdersCache;
+  const selectedFilter = document.getElementById('kioskOrderFilter')?.value || 'open';
+  const openStatuses = new Set(['new', 'accepted', 'preparing', 'ready', 'in_pos']);
+  const visibleOrders = allOrders.filter(order => selectedFilter === 'all'
+    || (selectedFilter === 'open' ? openStatuses.has(order.status) : order.status === selectedFilter));
+  const newCount = allOrders.filter(order => order.status === 'new').length;
+  const newCountEl = document.getElementById('kioskNewOrderCount');
+  const queueCount = document.getElementById('kioskQueueCount');
+  if (newCountEl) newCountEl.textContent = `${newCount} new`;
+  if (queueCount) queueCount.textContent = `${visibleOrders.length} of ${allOrders.length} requests`;
+  container.replaceChildren();
+  if (!visibleOrders.length) {
+    const empty = document.createElement('p');
+    empty.className = 'kiosk-queue-empty';
+    empty.textContent = allOrders.length ? 'No requests match this filter.' : 'New customer requests will appear here.';
+    container.appendChild(empty);
+    updateKioskPublishState(document.getElementById('kioskEnabledInput')?.checked === true);
+    return;
+  }
+  const statusLabels = {new: 'New', accepted: 'Accepted', preparing: 'Preparing', ready: 'Ready', in_pos: 'In POS', paid: 'Paid', rejected: 'Rejected', resolved: 'Handled'};
+  visibleOrders.forEach(order => {
     const card = document.createElement('article');
     card.className = 'kiosk-order-card';
     const heading = document.createElement('div');
@@ -22041,7 +22116,8 @@ function renderKioskOrderCards(orders = []) {
       addAction('Accept', 'accepted', 'btn btn-success');
       addAction('Reject', 'rejected', 'btn btn-danger');
     } else if (order.status === 'accepted') {
-      addAction('Start preparing', 'preparing', 'btn btn-success');
+      if (order.requestType === 'attendant') addAction('Mark handled', 'resolved', 'btn btn-success');
+      else addAction('Start preparing', 'preparing', 'btn btn-success');
     } else if (order.status === 'preparing') {
       addAction('Mark ready', 'ready', 'btn btn-success');
     } else if (order.status === 'ready') {
@@ -22060,6 +22136,7 @@ function renderKioskOrderCards(orders = []) {
     if (actions.childElementCount) card.appendChild(actions);
     container.appendChild(card);
   });
+  updateKioskPublishState(document.getElementById('kioskEnabledInput')?.checked === true);
 }
 
 function listenForKioskOrders() {
@@ -22089,6 +22166,7 @@ function listenForKioskOrders() {
       });
     }
     kioskOrdersInitialSnapshot = false;
+    kioskOrdersCache = orders;
     renderKioskOrderCards(orders);
   }, error => {
     console.warn('[KIOSK] Could not listen for incoming requests:', error);
@@ -22108,6 +22186,26 @@ async function initializeKioskMenuTab() {
     return;
   }
   listenForKioskOrders();
+  const productSearch = document.getElementById('kioskProductSearch');
+  if (productSearch && productSearch.dataset.listenerBound !== 'true') {
+    productSearch.dataset.listenerBound = 'true';
+    productSearch.addEventListener('input', () => renderKioskProductOptions());
+  }
+  const tableInput = document.getElementById('kioskTableInput');
+  if (tableInput && tableInput.dataset.listenerBound !== 'true') {
+    tableInput.dataset.listenerBound = 'true';
+    tableInput.addEventListener('input', renderKioskQr);
+  }
+  const enabledInput = document.getElementById('kioskEnabledInput');
+  if (enabledInput && enabledInput.dataset.listenerBound !== 'true') {
+    enabledInput.dataset.listenerBound = 'true';
+    enabledInput.addEventListener('change', () => updateKioskPublishState(enabledInput.checked));
+  }
+  const orderFilter = document.getElementById('kioskOrderFilter');
+  if (orderFilter && orderFilter.dataset.listenerBound !== 'true') {
+    orderFilter.dataset.listenerBound = 'true';
+    orderFilter.addEventListener('change', () => renderKioskOrderCards());
+  }
   if (!isShopAdminRole()) {
     document.querySelector('.kiosk-publish-panel')?.style.setProperty('display', 'none');
     document.querySelector('.kiosk-qr-panel')?.style.setProperty('display', 'none');
@@ -22126,6 +22224,7 @@ async function initializeKioskMenuTab() {
     if (enabled) enabled.checked = kioskSettingsCache.enabled === true;
     if (attendant) attendant.checked = kioskSettingsCache.allowAttendant !== false;
     renderKioskProductOptions(kioskSettingsCache.selectedProductIds || []);
+    updateKioskPublishState(kioskSettingsCache.enabled === true);
     if (status) status.textContent = kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Select items and publish to activate the QR menu.';
     renderKioskQr();
   } catch (error) {
@@ -22137,7 +22236,7 @@ async function initializeKioskMenuTab() {
 async function saveKioskMenuSettings(rotateToken = false) {
   if (!currentUser || !isShopAdminRole()) return showAppAlert('Only the business owner can publish this menu.', 'Access Denied');
   const status = document.getElementById('kioskMenuStatus');
-  const selectedProductIds = Array.from(document.querySelectorAll('#kioskProductOptions input[type="checkbox"]:checked')).map(input => input.value);
+  const selectedProductIds = Array.from(kioskSelectedProductIds);
   const payload = {
     selectedProductIds,
     enabled: document.getElementById('kioskEnabledInput')?.checked === true,
@@ -22149,7 +22248,11 @@ async function saveKioskMenuSettings(rotateToken = false) {
     const configure = httpsCallable(functions, 'configureKioskMenu');
     const response = await configure(payload);
     kioskSettingsCache = response.data || {};
+    const enabled = document.getElementById('kioskEnabledInput');
+    if (enabled) enabled.checked = kioskSettingsCache.enabled === true;
     if (status) status.textContent = kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Menu settings saved. The public menu is disabled.';
+    updateKioskPublishState(kioskSettingsCache.enabled === true);
+    renderKioskProductOptions(kioskSettingsCache.selectedProductIds || []);
     renderKioskQr();
   } catch (error) {
     if (status) status.textContent = getKioskBackendErrorMessage(error, 'Could not publish the menu.');
@@ -22192,7 +22295,7 @@ function printKioskQr() {
 }
 
 async function updateKioskOrderStatus(orderId, status) {
-  if (!currentUser || !requireActionPermission('kioskmenu.write', 'update a kiosk request') || !['accepted', 'preparing', 'ready', 'rejected'].includes(status)) return;
+  if (!currentUser || !requireActionPermission('kioskmenu.write', 'update a kiosk request') || !['accepted', 'preparing', 'ready', 'rejected', 'resolved'].includes(status)) return;
   try {
     await updateDoc(doc(dbFirestore, 'users', currentUser.uid, 'kioskOrders', orderId), {
       status,
@@ -22605,5 +22708,6 @@ Object.assign(window, {
   // PRODUCTION: Monitoring & Debugging (Available in console)
   getAppHealthStatus, exportErrorLog, captureError, getCachedQuery, getShopsPageOptimized, requestCache, errorLog, clearImageFromCache
   , initializeKioskMenuTab, saveKioskMenuSettings, rotateKioskMenuLink, renderKioskQr, previewKioskMenu, closeKioskPreview, printKioskQr,
+  selectVisibleKioskProducts, clearKioskProductSelection, copyKioskMenuLink,
   updateKioskOrderStatus, loadKioskOrderToPos, enableKioskOrderPush, disableKioskOrderPush
 });

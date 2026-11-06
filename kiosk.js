@@ -22,6 +22,8 @@ const cart = new Map();
 let menuData = {items: [], currency: '$', taxRate: 0, allowAttendant: false};
 let selectedCategory = 'All';
 let pendingSubmissionId = '';
+const VIEW_MODE_STORAGE_KEY = 'yoshop-kiosk-view-mode';
+let menuViewMode = 'grid';
 
 const elements = {
   businessName: document.getElementById('businessName'),
@@ -29,8 +31,12 @@ const elements = {
   message: document.getElementById('kioskMessage'),
   previewNotice: document.getElementById('kioskPreviewNotice'),
   search: document.getElementById('kioskSearch'),
+  sort: document.getElementById('kioskSort'),
   categories: document.getElementById('kioskCategories'),
   menu: document.getElementById('kioskMenuItems'),
+  resultsCount: document.getElementById('kioskResultsCount'),
+  listView: document.getElementById('kioskListView'),
+  gridView: document.getElementById('kioskGridView'),
   cartItems: document.getElementById('kioskCartItems'),
   cartCount: document.getElementById('kioskCartCount'),
   subtotal: document.getElementById('kioskSubtotal'),
@@ -73,6 +79,20 @@ function renderCategories() {
   });
 }
 
+function setMenuViewMode(mode, persist = true) {
+  menuViewMode = mode === 'list' ? 'list' : 'grid';
+  elements.menu.dataset.viewMode = menuViewMode;
+  elements.listView.setAttribute('aria-pressed', String(menuViewMode === 'list'));
+  elements.gridView.setAttribute('aria-pressed', String(menuViewMode === 'grid'));
+  if (persist) {
+    try {
+      localStorage.setItem(VIEW_MODE_STORAGE_KEY, menuViewMode);
+    } catch (error) {
+      // The selected layout still applies for this page session.
+    }
+  }
+}
+
 function addItem(item) {
   const existing = cart.get(item.id);
   cart.set(item.id, {item, quantity: Math.min(20, (existing?.quantity || 0) + 1), notes: existing?.notes || ''});
@@ -81,11 +101,16 @@ function addItem(item) {
 
 function renderMenu() {
   const search = elements.search.value.trim().toLowerCase();
+  const sort = elements.sort.value;
   const items = menuData.items.filter(item => {
     const matchesCategory = selectedCategory === 'All' || (item.category || 'Menu') === selectedCategory;
     const matchesSearch = `${item.name} ${item.description || ''}`.toLowerCase().includes(search);
     return matchesCategory && matchesSearch;
   });
+  if (sort === 'name') items.sort((left, right) => left.name.localeCompare(right.name));
+  if (sort === 'price-low') items.sort((left, right) => Number(left.price) - Number(right.price));
+  if (sort === 'price-high') items.sort((left, right) => Number(right.price) - Number(left.price));
+  elements.resultsCount.textContent = `${items.length} ${items.length === 1 ? 'item' : 'items'}`;
   elements.menu.replaceChildren();
   if (!items.length) {
     const empty = document.createElement('p');
@@ -102,6 +127,8 @@ function renderMenu() {
       image.src = item.image;
       image.alt = '';
       image.loading = 'lazy';
+      image.decoding = 'async';
+      image.fetchPriority = 'low';
       image.referrerPolicy = 'no-referrer';
       image.onerror = () => image.remove();
       card.appendChild(image);
@@ -222,6 +249,16 @@ async function initialize() {
   elements.previewNotice.hidden = !previewOnly;
   elements.attendant.hidden = previewOnly;
   elements.search.addEventListener('input', renderMenu);
+  elements.sort.addEventListener('change', renderMenu);
+  elements.listView.addEventListener('click', () => setMenuViewMode('list'));
+  elements.gridView.addEventListener('click', () => setMenuViewMode('grid'));
+  try {
+    const storedMode = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
+    if (storedMode === 'list' || storedMode === 'grid') menuViewMode = storedMode;
+  } catch (error) {
+    menuViewMode = window.matchMedia('(max-width: 700px)').matches ? 'list' : 'grid';
+  }
+  setMenuViewMode(menuViewMode, false);
   elements.submit.addEventListener('click', () => submitRequest('order'));
   elements.attendant.addEventListener('click', () => submitRequest('attendant'));
   try {

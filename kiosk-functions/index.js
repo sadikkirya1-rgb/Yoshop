@@ -92,7 +92,7 @@ async function getPublishedKioskCatalog(kiosk) {
 			description: String(product.description || "").trim().slice(0, 240),
 			category: String(product.category || "Menu").trim().slice(0, 60),
 			price: Math.round(price * 100) / 100,
-			image: /^(https:\/\/|data:image\/)/i.test(image) ? image : ""
+			image: /^https:\/\//i.test(image) ? image : ""
 		};
 	});
 	return catalog;
