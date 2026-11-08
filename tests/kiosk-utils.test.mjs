@@ -8,6 +8,8 @@ test('sanitizeKioskOrder uses catalog prices and computes tax in cents', () => {
 	const result = sanitizeKioskOrder({
 		requestType: 'order',
 		table: 'T4',
+		orderMode: 'dine_in',
+		paymentMode: 'cash',
 		customerName: 'Alex Customer',
 		whatsappNumber: '+971 50 123 4567',
 		waiterName: 'Sam',
@@ -19,6 +21,9 @@ test('sanitizeKioskOrder uses catalog prices and computes tax in cents', () => {
 	assert.deepEqual(result, {
 		requestType: 'order',
 		table: 'T4',
+		orderMode: 'dine_in',
+		paymentMode: 'cash',
+		deliveryAddress: '',
 		customerName: 'Alex Customer',
 		whatsappNumber: '+971 50 123 4567',
 		waiterName: 'Sam',
@@ -62,6 +67,25 @@ test('sanitizeKioskOrder excludes tax when kiosk tax is disabled', () => {
 	assert.equal(result.total, 5);
 });
 
+test('sanitizeKioskOrder validates takeaway and delivery details and payment mode', () => {
+	const catalog = {'dish-1': {name: 'Tea', price: 2}};
+	const customer = {
+		requestType: 'order',
+		orderMode: 'takeaway',
+		paymentMode: 'card_at_counter',
+		customerName: 'Alex',
+		whatsappNumber: '+971501234567',
+		items: [{productId: 'dish-1', quantity: 1}]
+	};
+	const takeaway = sanitizeKioskOrder(customer, catalog);
+	assert.equal(takeaway.table, '');
+	assert.equal(takeaway.orderMode, 'takeaway');
+	assert.equal(takeaway.paymentMode, 'card_at_counter');
+	assert.throws(() => sanitizeKioskOrder({...customer, orderMode: 'delivery'}, catalog), /delivery address/);
+	assert.throws(() => sanitizeKioskOrder({...customer, paymentMode: 'bitcoin'}, catalog), /payment mode/);
+	assert.equal(sanitizeKioskOrder({...customer, orderMode: 'delivery', deliveryAddress: '<Block 4 & Apt 2>'}, catalog).deliveryAddress, 'Block 4  Apt 2');
+});
+
 test('sanitizeKioskOrder requires a valid table, customer name, and WhatsApp number', () => {
 	const catalog = {'dish-1': {name: 'Tea', price: 2}};
 	const items = [{productId: 'dish-1', quantity: 1}];
@@ -77,6 +101,8 @@ test('sanitizeKioskDisplayOrder includes only active public board fields', () =>
 		orderNumber: '20261106-007',
 		table: '<Patio & 2>',
 		status: 'preparing',
+		orderMode: 'dine_in',
+		paymentMode: 'cash',
 		items: [{name: 'Burger', quantity: 2}, {name: '<Tea>', quantity: 1}],
 		customerName: 'Private Customer',
 		whatsappNumber: '+971501234567',
@@ -86,6 +112,8 @@ test('sanitizeKioskDisplayOrder includes only active public board fields', () =>
 	assert.deepEqual(result, {
 		orderNumber: '20261106-007',
 		table: 'Patio  2',
+		orderMode: 'dine_in',
+		paymentMode: 'cash',
 		items: [{name: 'Burger', quantity: 2}, {name: 'Tea', quantity: 1}],
 		status: 'preparing',
 		createdAt: '2026-11-06T15:00:00.000Z'

@@ -53,7 +53,12 @@ const elements = {
   mobileCartTotal: document.getElementById('kioskMobileCartTotal'),
   cartClose: document.getElementById('kioskCartClose'),
   customerDetails: document.getElementById('kioskCustomerDetails'),
+  orderMode: document.getElementById('kioskOrderMode'),
+  paymentMode: document.getElementById('kioskPaymentMode'),
   customerTable: document.getElementById('kioskCustomerTable'),
+  customerTableLabel: document.getElementById('kioskCustomerTableLabel'),
+  deliveryAddress: document.getElementById('kioskDeliveryAddress'),
+  deliveryAddressLabel: document.getElementById('kioskDeliveryAddressLabel'),
   customerName: document.getElementById('kioskCustomerName'),
   customerWhatsApp: document.getElementById('kioskCustomerWhatsApp'),
   waiterName: document.getElementById('kioskWaiterName'),
@@ -367,9 +372,24 @@ function closeCustomerDetails() {
   elements.submit.focus();
 }
 
+function updateOrderModeFields() {
+  const isDineIn = elements.orderMode.value === 'dine_in';
+  const isDelivery = elements.orderMode.value === 'delivery';
+  elements.customerTable.required = isDineIn;
+  elements.customerTable.hidden = !isDineIn;
+  elements.customerTableLabel.hidden = !isDineIn;
+  elements.customerTableLabel.textContent = 'Table number';
+  elements.deliveryAddress.hidden = !isDelivery;
+  elements.deliveryAddressLabel.hidden = !isDelivery;
+  elements.deliveryAddress.required = isDelivery;
+}
+
 function getCustomerOrderDetails() {
   return {
-    table: elements.customerTable.value.trim(),
+    table: elements.orderMode.value === 'dine_in' ? elements.customerTable.value.trim() : '',
+    orderMode: elements.orderMode.value,
+    paymentMode: elements.paymentMode.value,
+    deliveryAddress: elements.orderMode.value === 'delivery' ? elements.deliveryAddress.value.trim() : '',
     customerName: elements.customerName.value.trim(),
     whatsappNumber: elements.customerWhatsApp.value.trim(),
     waiterName: elements.waiterName.value.trim()
@@ -397,6 +417,11 @@ async function submitRequest(requestType, customerDetails = null) {
     };
     const response = await httpsCallable(functions, 'submitKioskRequest')(payload);
     const orderNumber = String(response.data?.orderNumber || '');
+    const orderModeLabel = {
+      dine_in: 'dine-in',
+      takeaway: 'takeaway',
+      delivery: 'delivery'
+    }[customerDetails?.orderMode] || 'your';
     if (requestType === 'order' && pendingTrackingToken) {
       const trackingUrl = new URL('order-status.html', window.location.href);
       trackingUrl.hash = new URLSearchParams({tracking: pendingTrackingToken}).toString();
@@ -414,7 +439,7 @@ async function submitRequest(requestType, customerDetails = null) {
     setCartSheetOpen(false, false);
     setMessage(requestType === 'attendant'
       ? 'Request sent. A staff member will be with you shortly.'
-      : `Order${orderNumber ? ` #${orderNumber}` : ''} sent for ${customerDetails.table}. Your team will prepare it shortly.`);
+      : `Order${orderNumber ? ` #${orderNumber}` : ''} sent for ${orderModeLabel}. Your team will prepare it shortly.`);
   } catch (error) {
     if (requestType === 'order') {
       elements.detailsError.textContent = error.message || 'We could not send that order. Please try again.';
@@ -433,6 +458,7 @@ async function initialize() {
   document.body.classList.toggle('kiosk-preview-mode', previewOnly);
   elements.businessName.setAttribute('tabindex', '-1');
   elements.retry.addEventListener('click', () => window.location.reload());
+  elements.orderMode.addEventListener('change', updateOrderModeFields);
   elements.mobileCart.addEventListener('click', () => setCartSheetOpen(true));
   elements.cartClose.addEventListener('click', () => setCartSheetOpen(false));
   elements.cartBackdrop.addEventListener('click', () => setCartSheetOpen(false));
@@ -472,6 +498,8 @@ async function initialize() {
   }
   if (table) elements.tableLabel.textContent = `ORDER AT ${table.toUpperCase()}`;
   elements.customerTable.value = table;
+  if (!table) elements.orderMode.value = 'takeaway';
+  updateOrderModeFields();
   elements.previewNotice.hidden = !previewOnly;
   elements.attendant.hidden = previewOnly;
   const loadingCards = Array.from({length: 3}, () => {

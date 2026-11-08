@@ -7,8 +7,8 @@
   <title>Digital Menu | YoShop</title>
   <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
   <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com">
-  <link rel="stylesheet" href="kiosk.css?v=20261108-kiosk-product-images-v1">
-  <script type="module" src="kiosk.js?v=20261108-kiosk-product-images-v1"></script>
+  <link rel="stylesheet" href="kiosk.css?v=20261108-kiosk-order-modes-v1">
+  <script type="module" src="kiosk.js?v=20261108-kiosk-order-modes-v1"></script>
 </head>
 <body>
   <header class="kiosk-header">
@@ -64,8 +64,24 @@
       <button id="placeKioskOrder" class="kiosk-primary-button" type="button" disabled>Continue to customer details</button>
       <form id="kioskCustomerDetails" class="kiosk-customer-details" hidden>
         <h3>Customer details</h3>
-        <label for="kioskCustomerTable">Table number</label>
-        <input id="kioskCustomerTable" name="table" type="text" maxlength="40" autocomplete="off" required>
+        <label for="kioskOrderMode">Order type</label>
+        <select id="kioskOrderMode" name="orderMode" required>
+          <option value="dine_in">Dine-in</option>
+          <option value="takeaway">Takeaway</option>
+          <option value="delivery">Delivery</option>
+        </select>
+        <label for="kioskPaymentMode">Payment mode</label>
+        <select id="kioskPaymentMode" name="paymentMode" required>
+          <option value="cash">Cash</option>
+          <option value="card_at_counter">Card at counter</option>
+          <option value="pay_on_delivery">Pay on delivery</option>
+          <option value="online_payment">Online payment</option>
+        </select>
+        <p class="kiosk-details-privacy">Payment selection is recorded with your order; no payment is charged here.</p>
+        <label id="kioskCustomerTableLabel" for="kioskCustomerTable">Table number</label>
+        <input id="kioskCustomerTable" name="table" type="text" maxlength="40" autocomplete="off">
+        <label id="kioskDeliveryAddressLabel" for="kioskDeliveryAddress" hidden>Delivery address</label>
+        <textarea id="kioskDeliveryAddress" name="deliveryAddress" maxlength="250" autocomplete="street-address" hidden></textarea>
         <label for="kioskCustomerName">Customer name</label>
         <input id="kioskCustomerName" name="customerName" type="text" maxlength="100" autocomplete="name" required>
         <label for="kioskCustomerWhatsApp">WhatsApp number</label>

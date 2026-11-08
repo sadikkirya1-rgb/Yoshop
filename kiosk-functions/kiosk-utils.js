@@ -9,7 +9,15 @@ function sanitizeKioskOrder(requestData = {}, catalog = {}, taxRate = 0) {
 	const customerName = String(requestData.customerName || '').replace(/[<>&]/g, '').trim().slice(0, 100);
 	const whatsappNumber = String(requestData.whatsappNumber || '').trim().slice(0, 30);
 	const waiterName = String(requestData.waiterName || '').replace(/[<>&]/g, '').trim().slice(0, 100);
-	if (!table) throw new Error('Enter a table number.');
+	const orderModes = ['dine_in', 'takeaway', 'delivery'];
+	const paymentModes = ['cash', 'card_at_counter', 'pay_on_delivery', 'online_payment'];
+	const orderMode = requestData.orderMode === undefined ? 'dine_in' : String(requestData.orderMode);
+	const paymentMode = requestData.paymentMode === undefined ? 'cash' : String(requestData.paymentMode);
+	if (!orderModes.includes(orderMode)) throw new Error('Choose dine-in, takeaway, or delivery.');
+	if (!paymentModes.includes(paymentMode)) throw new Error('Choose a valid payment mode.');
+	const deliveryAddress = String(requestData.deliveryAddress || '').replace(/[<>&]/g, '').trim().slice(0, 250);
+	if (orderMode === 'dine_in' && !table) throw new Error('Enter a table number.');
+	if (orderMode === 'delivery' && !deliveryAddress) throw new Error('Enter the delivery address.');
 	if (!customerName) throw new Error('Enter the customer name.');
 	if (!/^\+?[0-9\s().-]{7,30}$/.test(whatsappNumber) || whatsappNumber.replace(/\D/g, '').length < 7 || whatsappNumber.replace(/\D/g, '').length > 15) {
 		throw new Error('Enter a valid WhatsApp number.');
@@ -45,6 +53,9 @@ function sanitizeKioskOrder(requestData = {}, catalog = {}, taxRate = 0) {
 	return {
 		requestType,
 		table,
+		orderMode,
+		paymentMode,
+		deliveryAddress,
 		customerName,
 		whatsappNumber,
 		waiterName,
@@ -71,6 +82,12 @@ function sanitizeKioskDisplayOrder(order = {}) {
 	return {
 		orderNumber: String(order.orderNumber || '').slice(0, 40),
 		table: String(order.table || '').replace(/[<>&]/g, '').trim().slice(0, 40),
+		orderMode: ['dine_in', 'takeaway', 'delivery'].includes(order.orderMode)
+			? order.orderMode
+			: (order.table ? 'dine_in' : 'takeaway'),
+		paymentMode: ['cash', 'card_at_counter', 'pay_on_delivery', 'online_payment'].includes(order.paymentMode)
+			? order.paymentMode
+			: 'not_specified',
 		items,
 		status,
 		createdAt: Number.isNaN(createdAt.valueOf()) ? '' : createdAt.toISOString()

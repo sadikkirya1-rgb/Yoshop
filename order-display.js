@@ -32,9 +32,25 @@ function createOrderCard(order) {
   const number = document.createElement('strong');
   number.className = 'board-order-number';
   number.textContent = order.orderNumber ? `#${order.orderNumber}` : 'Order';
+  const orderMode = document.createElement('span');
+  orderMode.className = 'board-order-mode';
+  orderMode.textContent = {
+    dine_in: 'Dine-in',
+    takeaway: 'Takeaway',
+    delivery: 'Delivery'
+  }[order.orderMode] || 'Takeaway';
+  const paymentMode = document.createElement('span');
+  paymentMode.className = 'board-order-payment';
+  paymentMode.textContent = {
+    cash: 'Cash',
+    card_at_counter: 'Card at counter',
+    pay_on_delivery: 'Pay on delivery',
+    online_payment: 'Online payment',
+    not_specified: 'Payment not specified'
+  }[order.paymentMode] || 'Payment not specified';
   const table = document.createElement('span');
   table.className = 'board-order-table';
-  table.textContent = order.table || 'Counter order';
+  table.textContent = order.orderMode === 'dine_in' && order.table ? `Table ${order.table}` : '';
   const details = document.createElement('span');
   details.className = 'board-order-details';
   details.textContent = Array.isArray(order.items) && order.items.length
@@ -49,8 +65,14 @@ function createOrderCard(order) {
     ? ''
     : createdAt.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
   card.tabIndex = 0;
-  card.setAttribute('aria-label', `${number.textContent}, ${table.textContent}, ${details.textContent}, ${time.textContent}`);
-  card.append(number, table, details, time);
+  card.setAttribute('aria-label', `${number.textContent}, ${orderMode.textContent}, ${paymentMode.textContent}, ${table.textContent}, ${details.textContent}, ${time.textContent}`);
+  const heading = document.createElement('div');
+  heading.className = 'board-order-heading';
+  heading.append(number, orderMode, paymentMode);
+  const content = document.createElement('div');
+  content.className = 'board-order-content';
+  content.append(table, details, time);
+  card.append(heading, content);
   return card;
 }
 

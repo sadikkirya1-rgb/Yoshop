@@ -523,7 +523,9 @@ textarea:focus-visible {
 .kiosk-customer-details h3 { margin: 0 0 4px; font-size: 1.05rem; }
 .kiosk-customer-details label { color: var(--kiosk-ink); font-size: 0.8rem; font-weight: 650; }
 .kiosk-customer-details label span { color: var(--kiosk-muted); font-weight: 400; }
-.kiosk-customer-details input {
+.kiosk-customer-details input,
+.kiosk-customer-details select,
+.kiosk-customer-details textarea {
   width: 100%;
   min-height: 42px;
   padding: 9px 10px;
@@ -532,6 +534,7 @@ textarea:focus-visible {
   background: #fff;
   color: var(--kiosk-ink);
 }
+.kiosk-customer-details textarea { min-height: 72px; resize: vertical; }
 
 .kiosk-details-error {
   margin: 0;
