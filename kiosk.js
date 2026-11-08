@@ -67,6 +67,17 @@ function formatMoney(value) {
   return `${menuData.currency || '$'}${(Number(value) || 0).toFixed(2)}`;
 }
 
+function setKioskImageFallback(image, fallbackUrl, onFailure) {
+  image.onerror = () => {
+    if (fallbackUrl && image.dataset.fallbackAttempted !== 'true') {
+      image.dataset.fallbackAttempted = 'true';
+      image.src = fallbackUrl;
+      return;
+    }
+    onFailure();
+  };
+}
+
 function createTrackingToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
@@ -189,10 +200,10 @@ function renderMenu() {
       image.loading = index < 4 ? 'eager' : 'lazy';
       image.decoding = 'async';
       image.fetchPriority = index < 4 ? 'high' : 'auto';
-      image.onerror = () => {
+      setKioskImageFallback(image, item.fallbackImage, () => {
         image.remove();
         imageWrap.classList.add('has-image-error');
-      };
+      });
       imageWrap.appendChild(image);
     } else {
       const placeholder = document.createElement('span');
@@ -257,10 +268,10 @@ function renderCart() {
       image.alt = '';
       image.loading = 'lazy';
       image.decoding = 'async';
-      image.onerror = () => {
+      setKioskImageFallback(image, item.fallbackImage, () => {
         image.remove();
         imageBox.classList.add('is-placeholder');
-      };
+      });
       imageBox.appendChild(image);
     } else {
       imageBox.classList.add('is-placeholder');

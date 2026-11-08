@@ -4,15 +4,20 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const crypto = require("node:crypto");
 const admin = require("firebase-admin");
 const {getFirestore} = require("firebase-admin/firestore");
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, isAuthorizedKioskTarget} = require("./kiosk-utils");
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isAuthorizedKioskTarget} = require("./kiosk-utils");
 
-admin.initializeApp();
+admin.initializeApp({storageBucket: "yoshop-b502f.firebasestorage.app"});
 const db = getFirestore(admin.app(), "yoshop");
+const storageBucket = admin.storage().bucket();
+const legacyStorageBucket = admin.storage().bucket("yoshop-b502f.appspot.com");
+const kioskImageBuckets = [storageBucket, legacyStorageBucket];
 const callableOptions = {region: "us-central1", cors: true};
 const KIOSK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const KIOSK_RATE_LIMIT_MAX_REQUESTS = 12;
+const KIOSK_IMAGE_URL_CACHE_MS = 6 * 24 * 60 * 60 * 1000;
 const MASTER_APP_ADMIN_UID = "Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2";
 const MASTER_APP_ADMIN_EMAIL = "sadikkirya@gmail.com";
+const kioskImageUrlCache = new Map();
 
 function hashKioskValue(value) {
 	return crypto.createHash("sha256").update(String(value)).digest("hex");
@@ -85,7 +90,9 @@ async function loadKioskByToken(token, previewUid = "") {
 async function getPublishedKioskCatalog(kiosk) {
 	const productIds = [...new Set((Array.isArray(kiosk.config.selectedProductIds) ? kiosk.config.selectedProductIds : [])
 		.map((productId) => String(productId || "").trim()).filter(Boolean))].slice(0, 100);
-	const snapshots = await Promise.all(productIds.map((productId) => db.collection("users").doc(kiosk.uid).collection("products").doc(productId).get()));
+	const snapshots = productIds.length
+		? await db.getAll(...productIds.map((productId) => db.collection("users").doc(kiosk.uid).collection("products").doc(productId)))
+		: [];
 	const catalog = {};
 	snapshots.forEach((snapshot, index) => {
 		if (!snapshot.exists) return;
@@ -93,8 +100,9 @@ async function getPublishedKioskCatalog(kiosk) {
 		if (product.deleted || !String(product.name || "").trim()) return;
 		const price = Number(product.price);
 		if (!Number.isFinite(price) || price < 0) return;
-		const image = /^https:\/\//i.test(String(product.image || ""))
-			? String(product.image)
+		const productImage = String(product.image || "");
+		const image = /^https:\/\//i.test(productImage) || productImage.startsWith("gs://")
+			? productImage
 			: String(kiosk.config.productImages?.[productIds[index]] || "");
 		catalog[productIds[index]] = {
 			id: productIds[index],
@@ -103,10 +111,49 @@ async function getPublishedKioskCatalog(kiosk) {
 			category: String(product.category || "Menu").trim().slice(0, 60),
 			price: Math.round(price * 100) / 100,
 			isAvailable: product.isAvailable !== false,
-			image: /^https:\/\//i.test(image) ? image : ""
+			imageSource: /^https:\/\//i.test(image) || image.startsWith("gs://") ? image : "",
+			fallbackImageSource: /^https:\/\//i.test(String(kiosk.config.productImages?.[productIds[index]] || ""))
+				&& String(kiosk.config.productImages[productIds[index]]) !== image
+				? String(kiosk.config.productImages[productIds[index]])
+				: ""
 		};
 	});
+
+	await Promise.all(Object.values(catalog).map(async (item) => {
+		item.image = await getKioskImageUrl(item.imageSource);
+		item.fallbackImage = item.fallbackImageSource
+			? await getKioskImageUrl(item.fallbackImageSource)
+			: "";
+		delete item.imageSource;
+		delete item.fallbackImageSource;
+	}));
 	return catalog;
+}
+
+async function getKioskImageUrl(imageSource) {
+	if (!imageSource) return "";
+	const imageBucket = kioskImageBuckets.find((bucket) => getFirebaseStorageObjectPath(imageSource, bucket.name));
+	const objectPath = imageBucket && getFirebaseStorageObjectPath(imageSource, imageBucket.name);
+	if (!objectPath) return /^https:\/\//i.test(imageSource) ? imageSource : "";
+
+	const cacheKey = `${imageBucket.name}/${objectPath}`;
+	const cached = kioskImageUrlCache.get(cacheKey);
+	if (cached && cached.expiresAt > Date.now()) return cached.url;
+	if (cached?.promise) return cached.promise;
+
+	const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
+	const promise = imageBucket.file(objectPath).getSignedUrl({action: "read", expires: expiresAt})
+		.then(([url]) => {
+			kioskImageUrlCache.set(cacheKey, {url, expiresAt: Date.now() + KIOSK_IMAGE_URL_CACHE_MS});
+			return url;
+		})
+		.catch((error) => {
+			kioskImageUrlCache.delete(cacheKey);
+			console.warn("[KIOSK] Could not create a public image URL; using the stored URL.", error);
+			return /^https:\/\//i.test(imageSource) ? imageSource : "";
+		});
+	kioskImageUrlCache.set(cacheKey, {promise, expiresAt: Date.now() + KIOSK_IMAGE_URL_CACHE_MS});
+	return promise;
 }
 
 exports.configureKioskMenu = onCall(callableOptions, async (request) => {

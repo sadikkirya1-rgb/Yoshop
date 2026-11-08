@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import kioskUtils from '../kiosk-functions/kiosk-utils.js';
 
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, isAuthorizedKioskTarget} = kioskUtils;
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isAuthorizedKioskTarget} = kioskUtils;
 
 test('sanitizeKioskOrder uses catalog prices and computes tax in cents', () => {
 	const result = sanitizeKioskOrder({
@@ -101,6 +101,15 @@ test('sanitizeKioskImageMap keeps secure image URLs only for selected products',
 	}, ['dish1', 'dish2', 'dish3']), {
 		dish1: 'https://storage.example.com/dish1.jpg'
 	});
+});
+
+test('getFirebaseStorageObjectPath extracts encoded paths only from the configured bucket', () => {
+	const bucket = 'yoshop-b502f.firebasestorage.app';
+	assert.equal(getFirebaseStorageObjectPath('https://firebasestorage.googleapis.com/v0/b/yoshop-b502f.firebasestorage.app/o/shops%2Fshop-1%2Fdishes%2Fphoto.jpg?alt=media&token=abc', bucket), 'shops/shop-1/dishes/photo.jpg');
+	assert.equal(getFirebaseStorageObjectPath('gs://yoshop-b502f.firebasestorage.app/users%2Fuser-1%2Fdishes%2Fphoto.jpg', bucket), 'users/user-1/dishes/photo.jpg');
+	assert.equal(getFirebaseStorageObjectPath('https://storage.googleapis.com/yoshop-b502f.firebasestorage.app/shops/shop-1/photo.jpg', bucket), 'shops/shop-1/photo.jpg');
+	assert.equal(getFirebaseStorageObjectPath('https://firebasestorage.googleapis.com/v0/b/other-bucket/o/photo.jpg', bucket), null);
+	assert.equal(getFirebaseStorageObjectPath('https://images.example.com/photo.jpg', bucket), null);
 });
 
 test('kiosk target access allows owners and the master app admin only', () => {

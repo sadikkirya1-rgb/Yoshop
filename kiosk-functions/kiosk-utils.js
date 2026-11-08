@@ -85,6 +85,40 @@ function sanitizeKioskImageMap(imageMap = {}, selectedProductIds = []) {
 	return result;
 }
 
+function getFirebaseStorageObjectPath(value = '', expectedBucketName = '') {
+	if (typeof value !== 'string' || !value.trim() || !expectedBucketName) return null;
+	try {
+		if (value.startsWith('gs://')) {
+			const match = value.match(/^gs:\/\/([^/]+)\/(.+)$/);
+			return match && match[1] === expectedBucketName ? decodeURIComponent(match[2]) : null;
+		}
+
+		const url = new URL(value);
+		if (url.protocol !== 'https:') return null;
+		let bucketName = '';
+		let encodedPath = '';
+		if (url.hostname === 'firebasestorage.googleapis.com') {
+			const match = url.pathname.match(/^\/v0\/b\/([^/]+)\/o\/(.+)$/);
+			if (!match) return null;
+			bucketName = decodeURIComponent(match[1]);
+			encodedPath = match[2];
+		} else if (url.hostname === 'storage.googleapis.com') {
+			const match = url.pathname.match(/^\/([^/]+)\/(.+)$/);
+			if (!match) return null;
+			bucketName = decodeURIComponent(match[1]);
+			encodedPath = match[2];
+		} else {
+			return null;
+		}
+
+		if (bucketName !== expectedBucketName) return null;
+		const objectPath = decodeURIComponent(encodedPath);
+		return objectPath && !objectPath.startsWith('/') ? objectPath : null;
+	} catch (error) {
+		return null;
+	}
+}
+
 function isAuthorizedKioskTarget(auth = null, targetUid = '', masterAdminUid = '', masterAdminEmail = '') {
 	if (!auth?.uid || typeof targetUid !== 'string' || !targetUid.trim() || targetUid.length > 128) return false;
 	if (targetUid === auth.uid) return true;
@@ -92,4 +126,4 @@ function isAuthorizedKioskTarget(auth = null, targetUid = '', masterAdminUid = '
 	return auth.uid === masterAdminUid || email === masterAdminEmail.toLowerCase();
 }
 
-module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, isAuthorizedKioskTarget};
+module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isAuthorizedKioskTarget};
