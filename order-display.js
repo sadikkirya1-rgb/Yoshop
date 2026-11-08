@@ -157,16 +157,16 @@ function createOrderCard(order, currency = '$') {
   card.setAttribute('aria-label', `${number.textContent}, ${orderMode.textContent}, ${paymentMode.textContent}, ${paymentStatus.textContent}, ${location.textContent}, ${wait.textContent}, ${placed.textContent}, ${summary.textContent}, ${total.textContent}`);
   const heading = document.createElement('div');
   heading.className = 'board-order-heading';
-  const modePayment = document.createElement('div');
-  modePayment.className = 'board-order-mode-payment';
-  modePayment.append(orderMode, paymentMode, placed);
-  heading.append(number, modePayment);
+  const identity = document.createElement('div');
+  identity.className = 'board-order-identity';
+  identity.append(number, orderMode);
+  heading.append(identity, wait);
   const content = document.createElement('div');
   content.className = 'board-order-content';
   const meta = document.createElement('div');
   meta.className = 'board-order-meta';
-  meta.append(paymentStatus, location, wait);
-  content.append(meta, details, total);
+  meta.append(paymentMode, paymentStatus, location, placed);
+  content.append(details, total, meta);
   card.append(heading, content);
   return card;
 }
