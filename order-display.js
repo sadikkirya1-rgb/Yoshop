@@ -12,7 +12,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const getOrderDisplay = httpsCallable(getFunctions(app, 'us-central1'), 'getKioskOrderDisplay');
+const getOrderDisplay = httpsCallable(getFunctions(app, 'europe-west1'), 'getKioskOrderDisplay');
 const displayToken = new URLSearchParams(window.location.hash.slice(1)).get('display') || '';
 const columns = {
   received: {list: document.getElementById('receivedOrders'), count: document.getElementById('receivedCount')},

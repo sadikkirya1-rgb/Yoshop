@@ -12,7 +12,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const getOrderStatus = httpsCallable(getFunctions(app, 'us-central1'), 'getKioskOrderStatus');
+const getOrderStatus = httpsCallable(getFunctions(app, 'europe-west1'), 'getKioskOrderStatus');
 const trackingToken = new URLSearchParams(window.location.hash.slice(1)).get('tracking') || '';
 const elements = {
   message: document.getElementById('orderStatusMessage'),

@@ -171,6 +171,7 @@ console.log("Firebase initialized for project:", firebaseConfig.projectId);
 const storage = getStorage(app);
 const auth = getAuth(app);
 const functions = getFunctions(app);
+const kioskFunctions = getFunctions(app, 'europe-west1');
 let currentUser = null;
 let emailLoginSuccessFeedbackPending = false;
 let userMetadata = null; // Stores status and subscription info
@@ -22244,7 +22245,7 @@ async function initializeKioskMenuTab() {
   document.querySelector('.kiosk-order-display-queue')?.removeAttribute('hidden');
   if (status) status.textContent = 'Loading kiosk settings...';
   try {
-    const configure = httpsCallable(functions, 'configureKioskMenu');
+    const configure = httpsCallable(kioskFunctions, 'configureKioskMenu');
     const response = await configure({targetUid: getKioskTargetUid()});
     kioskSettingsCache = response.data || {};
     const enabled = document.getElementById('kioskEnabledInput');
@@ -22284,7 +22285,7 @@ async function saveKioskMenuSettings(rotateToken = false) {
   };
   try {
     if (status) status.textContent = 'Publishing menu...';
-    const configure = httpsCallable(functions, 'configureKioskMenu');
+    const configure = httpsCallable(kioskFunctions, 'configureKioskMenu');
     const response = await configure(payload);
     kioskSettingsCache = response.data || {};
     const enabled = document.getElementById('kioskEnabledInput');
@@ -22349,7 +22350,7 @@ async function openKioskOrderDisplay() {
   displayWindow.document.title = 'Opening order display';
   displayWindow.document.body.textContent = 'Connecting to the order display...';
   try {
-    const response = await httpsCallable(functions, 'getKioskOrderDisplayLink')({targetUid: getKioskTargetUid()});
+    const response = await httpsCallable(kioskFunctions, 'getKioskOrderDisplayLink')({targetUid: getKioskTargetUid()});
     const displayUrl = new URL('order-display.html', window.location.href);
     displayUrl.hash = new URLSearchParams({display: String(response.data?.displayToken || '')}).toString();
     displayWindow.location.replace(displayUrl.toString());
@@ -22426,7 +22427,7 @@ async function enableKioskOrderPush() {
     const messaging = getMessaging(app);
     const token = await getToken(messaging, {vapidKey: FIREBASE_MESSAGING_VAPID_KEY, serviceWorkerRegistration: registration});
     if (!token) throw new Error('No push token was returned for this device.');
-    await httpsCallable(functions, 'registerKioskDevice')({targetUid: getKioskTargetUid(), token, deviceLabel: navigator.userAgent.slice(0, 80)});
+    await httpsCallable(kioskFunctions, 'registerKioskDevice')({targetUid: getKioskTargetUid(), token, deviceLabel: navigator.userAgent.slice(0, 80)});
     if (!kioskPushMessageUnsubscribe) {
       kioskPushMessageUnsubscribe = onMessage(messaging, payload => {
         const message = payload.notification?.body || 'A new kiosk request is waiting for staff.';
@@ -22449,7 +22450,7 @@ async function disableKioskOrderPush() {
     const messaging = getMessaging(app);
     const registration = await navigator.serviceWorker.ready;
     const token = await getToken(messaging, {vapidKey: FIREBASE_MESSAGING_VAPID_KEY, serviceWorkerRegistration: registration});
-    if (token) await httpsCallable(functions, 'unregisterKioskDevice')({targetUid: getKioskTargetUid(), token});
+    if (token) await httpsCallable(kioskFunctions, 'unregisterKioskDevice')({targetUid: getKioskTargetUid(), token});
     await deleteToken(messaging);
     setKioskPushStatus('This device will no longer receive kiosk order alerts.');
   } catch (error) {

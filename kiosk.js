@@ -13,7 +13,7 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const functions = getFunctions(app, 'us-central1');
+const functions = getFunctions(app, 'europe-west1');
 const params = new URLSearchParams(window.location.search);
 const token = params.get('token') || '';
 const table = (params.get('table') || '').trim().slice(0, 40);

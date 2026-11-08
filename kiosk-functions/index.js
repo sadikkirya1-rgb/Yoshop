@@ -11,7 +11,7 @@ const db = getFirestore(admin.app(), "yoshop");
 const storageBucket = admin.storage().bucket();
 const legacyStorageBucket = admin.storage().bucket("yoshop-b502f.appspot.com");
 const kioskImageBuckets = [storageBucket, legacyStorageBucket];
-const callableOptions = {region: "us-central1", cors: true};
+const callableOptions = {region: "europe-west1", cors: true};
 const KIOSK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const KIOSK_RATE_LIMIT_MAX_REQUESTS = 12;
 const KIOSK_IMAGE_URL_CACHE_MS = 6 * 24 * 60 * 60 * 1000;
@@ -441,7 +441,7 @@ exports.unregisterKioskDevice = onCall(callableOptions, async (request) => {
 
 exports.sendKioskOrderPush = onDocumentCreated({
 	database: "yoshop",
-	region: "us-central1",
+	region: "europe-west1",
 	document: "users/{uid}/kioskOrders/{orderId}"
 }, async (event) => {
 	const order = event.data?.data();
