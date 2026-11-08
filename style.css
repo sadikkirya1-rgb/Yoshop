@@ -580,6 +580,11 @@ body.dark-mode .dashboard-card:hover {
   gap: 6px;
 }
 
+.kiosk-order-card-meta .is-paid {
+  background: #dcfce7;
+  color: #166534;
+}
+
 .kiosk-order-card p,
 .kiosk-order-card ul {
   margin: 0;
@@ -591,6 +596,35 @@ body.dark-mode .dashboard-card:hover {
   font-size: 0.84rem;
   font-weight: 600;
   line-height: 1.45;
+}
+
+.kiosk-order-delivery-address {
+  padding: 9px 10px;
+  border-radius: 7px;
+  background: #f7f5ef;
+  color: #675a3f;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.kiosk-order-pricing {
+  display: grid;
+  gap: 5px;
+  padding-top: 9px;
+  border-top: 1px solid #edf1ef;
+  color: #64746c;
+  font-size: 0.8rem;
+}
+
+.kiosk-order-pricing > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kiosk-order-pricing strong {
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
 }
 
 .kiosk-order-status {

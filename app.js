@@ -22179,25 +22179,31 @@ function renderKioskOrderCards(orders = null) {
     if (order.requestType !== 'attendant') {
       const total = document.createElement('strong');
       total.className = 'kiosk-order-card-total';
-      total.textContent = formatCurrency(Number(order.total) || 0);
+      total.textContent = order.total !== undefined && order.total !== null && Number.isFinite(Number(order.total))
+        ? formatCurrency(Number(order.total))
+        : 'Total unavailable';
+      total.setAttribute('aria-label', `Order total: ${total.textContent}`);
       facts.appendChild(total);
     }
     card.appendChild(facts);
 
-    if (order.requestType !== 'attendant') {
-      const orderMeta = document.createElement('div');
-      orderMeta.className = 'kiosk-order-card-meta';
-      [
-        order.table ? `Table ${String(order.table)}` : '',
+    const orderMeta = document.createElement('div');
+    orderMeta.className = 'kiosk-order-card-meta';
+    [
+      order.table ? `Table ${String(order.table)}` : (order.requestType === 'attendant' ? 'Location not provided' : ''),
+      ...(order.requestType === 'attendant' ? [] : [
         paymentModeLabels[order.paymentMode] || '',
-        order.paymentStatus === 'paid' ? 'Paid' : ''
-      ].filter(Boolean).forEach(label => {
-        const chip = document.createElement('span');
-        chip.textContent = label;
-        orderMeta.appendChild(chip);
-      });
-      if (orderMeta.childElementCount) card.appendChild(orderMeta);
+        order.paymentStatus === 'paid' ? 'Paid' : 'Payment pending'
+      ])
+    ].filter(Boolean).forEach(label => {
+      const chip = document.createElement('span');
+      chip.textContent = label;
+      if (order.paymentStatus === 'paid' && label === 'Paid') chip.classList.add('is-paid');
+      orderMeta.appendChild(chip);
+    });
+    if (orderMeta.childElementCount) card.appendChild(orderMeta);
 
+    if (order.requestType !== 'attendant') {
       const customerDetails = document.createElement('p');
       const details = [
         order.customerName ? String(order.customerName) : '',
@@ -22209,6 +22215,29 @@ function renderKioskOrderCards(orders = null) {
         customerDetails.textContent = details.join(' · ');
         card.appendChild(customerDetails);
       }
+
+      if (order.orderMode === 'delivery') {
+        const deliveryAddress = document.createElement('p');
+        deliveryAddress.className = 'kiosk-order-delivery-address';
+        deliveryAddress.textContent = `Deliver to: ${String(order.deliveryAddress || 'Address not provided')}`;
+        card.appendChild(deliveryAddress);
+      }
+
+      const pricingDetails = document.createElement('div');
+      pricingDetails.className = 'kiosk-order-pricing';
+      [
+        ['Subtotal', order.subtotal]
+      ].forEach(([label, amount]) => {
+        if (amount === undefined || amount === null || !Number.isFinite(Number(amount))) return;
+        const price = document.createElement('span');
+        const priceLabel = document.createElement('span');
+        priceLabel.textContent = label;
+        const priceValue = document.createElement('strong');
+        priceValue.textContent = formatCurrency(Number(amount));
+        price.append(priceLabel, priceValue);
+        pricingDetails.appendChild(price);
+      });
+      if (pricingDetails.childElementCount) card.appendChild(pricingDetails);
     }
 
     if (Array.isArray(order.items) && order.items.length) {
