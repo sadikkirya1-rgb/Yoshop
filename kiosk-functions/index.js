@@ -650,16 +650,20 @@ exports.sendKioskOrderPush = onDocumentCreated({
 	const devicesSnapshot = await db.collection("users").doc(event.params.uid).collection("kioskDevices").get();
 	const devices = devicesSnapshot.docs;
 	if (!devices.length) return;
+	const attentionSnapshot = await db.collection("users").doc(event.params.uid).collection("kioskOrders")
+		.where("status", "==", "new").count().get();
+	const attentionCount = attentionSnapshot.data().count;
 	const tableLabel = order.table ? ` at ${String(order.table).slice(0, 40)}` : "";
 	const body = order.requestType === "attendant"
 		? `A customer requested assistance${tableLabel}.`
 		: `A new order${tableLabel} is waiting for staff.`;
+	const title = `${attentionCount} kiosk request${attentionCount === 1 ? "" : "s"} need attention`;
 	for (let offset = 0; offset < devices.length; offset += 500) {
 		const batch = devices.slice(offset, offset + 500);
 		const response = await admin.messaging().sendEachForMulticast({
 			tokens: batch.map((snapshot) => String(snapshot.data().token || "")).filter(Boolean),
-			notification: {title: order.requestType === "attendant" ? "Attendant requested" : "New kiosk order", body},
-			data: {type: "kiosk-order", orderId: event.params.orderId}
+			notification: {title, body},
+			data: {type: "kiosk-order", orderId: event.params.orderId, attentionCount: String(attentionCount)}
 		});
 		const invalidTokens = [];
 		response.responses.forEach((sendResponse, index) => {

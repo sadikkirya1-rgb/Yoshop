@@ -217,7 +217,7 @@ self.addEventListener('push', (event) => {
   event.waitUntil(self.registration.showNotification(notification.title || 'YoShop order alert', {
     body: notification.body || 'A new kiosk request is waiting for staff.',
     icon: '/assets/icons/icon.png',
-    tag: data.orderId ? `kiosk-${data.orderId}` : 'kiosk-order-alert',
+    tag: data.type === 'kiosk-order' ? 'kiosk-attention' : 'kiosk-order-alert',
     data
   }));
 });

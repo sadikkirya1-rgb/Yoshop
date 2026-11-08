@@ -426,6 +426,13 @@ body.dark-mode .dashboard-card:hover {
   transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
 }
 
+.kiosk-workspace-status .kiosk-header-menu-link {
+  min-height: 36px;
+  margin-top: 0;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+
 .kiosk-public-link svg {
   width: 18px;
   height: 18px;
@@ -1070,6 +1077,7 @@ nav.open {
 }
 
 nav button {
+  position: relative;
   border: none;
   border-top: 3px solid transparent;
   padding: 5px 10px;
@@ -1090,6 +1098,22 @@ nav button {
   justify-content: center;
   gap: 2px;
   flex-shrink: 0;
+}
+
+.nav-attention-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #e53935;
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 nav button span:first-child {

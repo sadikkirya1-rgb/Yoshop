@@ -560,7 +560,9 @@
     <nav>
       <button class="active" onclick="showTab('dashboardTab', this)"><span>📊</span><span>Dashboard</span></button>
       <button onclick="showTab('menuTab', this)"><span>🛒</span><span>Shop</span></button>
-      <button id="nav-kiosk-menu-btn" onclick="showTab('kioskMenuTab', this)"><span>▦</span><span>Kiosk Menu</span></button>
+      <button id="nav-kiosk-menu-btn" onclick="showTab('kioskMenuTab', this)" aria-label="Kiosk Menu">
+        <span>▦</span><span>Kiosk Menu</span><span id="kiosk-menu-attention-badge" class="nav-attention-badge" hidden></span>
+      </button>
       <button onclick="showTab('addDishTab', this)"><span>🛍️</span><span>Products</span></button>
       <button onclick="showTab('categoryTab', this)"><span>🏷️</span><span>Categories</span></button>
       <button onclick="showTab('unitTab', this)"><span>📏</span><span>Units</span></button>
@@ -621,6 +623,12 @@
           <div class="kiosk-workspace-status">
             <span id="kioskPublishState" class="kiosk-publish-state is-offline">Menu paused</span>
             <strong id="kioskNewOrderCount">0 new</strong>
+            <a id="kioskPublicLink" class="kiosk-public-link kiosk-header-menu-link is-unavailable" aria-disabled="true" tabindex="-1">
+              <span class="kiosk-public-link-label">Publish the menu to create a QR link</span>
+              <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
+                <path d="M11 3h6v6M17 3 9 11M15 11v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </a>
             <button type="button" class="btn btn-success kiosk-order-display-open" onclick="openKioskOrderDisplay()">Open order display</button>
             <button type="button" class="btn btn-secondary kiosk-order-display-queue" onclick="openKioskOrderDisplay()">Open customer display</button>
             <button type="button" class="btn btn-secondary" onclick="enableKioskOrderPush()">Enable alerts on this device</button>
@@ -691,12 +699,6 @@
                 <button type="button" class="btn btn-secondary" onclick="copyKioskMenuLink()">Copy link</button>
               </div>
               <p id="kioskLinkStatus" class="kiosk-status-text" role="status"></p>
-              <a id="kioskPublicLink" class="kiosk-public-link is-unavailable" aria-disabled="true" tabindex="-1">
-                <span class="kiosk-public-link-label">Publish the menu to create a QR link</span>
-                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none">
-                  <path d="M11 3h6v6M17 3 9 11M15 11v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </a>
             </div>
           </details>
         </div>

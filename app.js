@@ -19471,6 +19471,7 @@ async function mainInit() {
         kioskOrderUnsubscribe = null;
         kioskSettingsCache = null;
         kioskOrdersCache = [];
+        updateKioskAttentionNotifications(0);
         kioskSelectedProductIds = new Set();
       }
 
@@ -21905,6 +21906,7 @@ let kioskOrderUnsubscribe = null;
 let kioskOrdersInitialSnapshot = true;
 let kioskPushMessageUnsubscribe = null;
 let kioskOrdersCache = [];
+let kioskAttentionCount = 0;
 let kioskAvailableProducts = [];
 let kioskSelectedProductIds = new Set();
 let kioskSettingsCache = null;
@@ -22126,6 +22128,7 @@ function renderKioskOrderCards(orders = null) {
   const queueCount = document.getElementById('kioskQueueCount');
   if (newCountEl) newCountEl.textContent = `${newCount} new`;
   if (queueCount) queueCount.textContent = `${visibleOrders.length} of ${allOrders.length} requests`;
+  updateKioskAttentionNotifications(newCount);
   container.replaceChildren();
   if (!visibleOrders.length) {
     const empty = document.createElement('p');
@@ -22310,20 +22313,23 @@ function listenForKioskOrders() {
     const orders = snapshot.docs.map(orderDocument => ({id: orderDocument.id, ...orderDocument.data()}));
     const connection = document.getElementById('kioskOrdersConnection');
     if (connection) connection.textContent = 'Live';
+    const newCount = orders.filter(order => order.status === 'new').length;
     if (!kioskOrdersInitialSnapshot) {
       snapshot.docChanges().filter(change => change.type === 'added').forEach(change => {
         const order = change.doc.data();
-        const message = order.requestType === 'attendant'
+        const detail = order.requestType === 'attendant'
           ? `Attendant requested${order.table ? ` at ${order.table}` : ''}.`
           : `New kiosk order${order.table ? ` at ${order.table}` : ''}.`;
-        addNotification(message, 'alert');
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-          navigator.serviceWorker?.ready.then(registration => registration.showNotification('YoShop order alert', {
-            body: message,
-            icon: 'assets/icons/icon.png',
-            tag: `kiosk-${change.doc.id}`,
-            data: {type: 'kiosk-order', orderId: change.doc.id}
-          })).catch(() => {});
+          navigator.serviceWorker?.ready.then(registration => registration.showNotification(
+            `${newCount} kiosk request${newCount === 1 ? '' : 's'} need attention`,
+            {
+              body: detail,
+              icon: 'assets/icons/icon.png',
+              tag: 'kiosk-attention',
+              data: {type: 'kiosk-order', orderId: change.doc.id, attentionCount: String(newCount)}
+            }
+          )).catch(() => {});
         }
       });
     }
@@ -22803,9 +22809,12 @@ function openAdminNoticeFromNotification(id = 'admin-notice') {
 function updateNotificationBadge() {
   const badge = document.getElementById('update-badge');
   const btn = document.getElementById('update-notification-btn');
-  if (appNotifications.length > 0) {
+  if (!badge || !btn) return;
+  const nonKioskNotificationCount = appNotifications.filter(notification => notification.type !== 'kiosk-attention').length;
+  const notificationCount = nonKioskNotificationCount + kioskAttentionCount;
+  if (notificationCount > 0) {
     badge.style.display = 'block';
-    badge.textContent = appNotifications.length > 9 ? '9+' : appNotifications.length;
+    badge.textContent = String(notificationCount);
     badge.style.width = 'auto';
     badge.style.minWidth = '16px';
     badge.style.height = '16px';
@@ -22819,6 +22828,40 @@ function updateNotificationBadge() {
     badge.style.display = 'none';
     btn.classList.remove('ringing');
   }
+}
+
+function updateKioskAttentionNotifications(count) {
+  kioskAttentionCount = count;
+  const navBadge = document.getElementById('kiosk-menu-attention-badge');
+  const navButton = document.getElementById('nav-kiosk-menu-btn');
+  if (navBadge) {
+    navBadge.textContent = String(count);
+    navBadge.hidden = count === 0;
+  }
+  if (navButton) {
+    navButton.setAttribute('aria-label', count > 0
+      ? `Kiosk Menu, ${count} request${count === 1 ? '' : 's'} need attention`
+      : 'Kiosk Menu');
+  }
+
+  const existingIndex = appNotifications.findIndex(notification => notification.type === 'kiosk-attention');
+  if (count > 0) {
+    const message = `${count} kiosk request${count === 1 ? '' : 's'} need attention.`;
+    const existing = existingIndex >= 0 ? appNotifications[existingIndex] : null;
+    const notification = {
+      id: 'kiosk-attention',
+      message,
+      type: 'kiosk-attention',
+      action: "showTab('kioskMenuTab', document.getElementById('nav-kiosk-menu-btn'))",
+      date: existing?.date || new Date()
+    };
+    if (existingIndex >= 0) appNotifications[existingIndex] = notification;
+    else appNotifications.unshift(notification);
+  } else if (existingIndex >= 0) {
+    appNotifications.splice(existingIndex, 1);
+  }
+  updateNotificationBadge();
+  renderNotifications();
 }
 
 function toggleNotifications() {
@@ -22839,7 +22882,7 @@ function renderNotifications() {
     const actionBtn = n.action ? `<button class="btn" onclick="${n.action}" style="font-size: 0.8em; padding: 4px 8px; margin-top: 5px; background: var(--primary);">${actionLabel}</button>` : '';
     const background = n.type === 'alert' ? 'rgba(255,0,0,0.05)' : (n.type === 'admin-notice' ? 'rgba(255, 0, 0, 0.08)' : (n.type === 'sync-pending' ? 'rgba(245,158,11,0.12)' : 'transparent'));
     const encodedId = typeof n.id === 'string' ? JSON.stringify(n.id) : n.id;
-    const dismissBtn = n.type === 'sync-pending' ? '' : `<button onclick="dismissNotification(${encodedId})" style="background: none; border: none; cursor: pointer; color: #888; font-size: 1.2em; padding: 0 5px;">&times;</button>`;
+    const dismissBtn = n.type === 'sync-pending' || n.type === 'kiosk-attention' ? '' : `<button onclick="dismissNotification(${encodedId})" style="background: none; border: none; cursor: pointer; color: #888; font-size: 1.2em; padding: 0 5px;">&times;</button>`;
     return `
             <div style="padding: 10px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: start; background: ${background};">
                 <div style="font-size: 0.9em; flex-grow: 1;">
