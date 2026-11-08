@@ -187,4 +187,17 @@ function isAuthorizedKioskTarget(auth = null, targetUid = '', masterAdminUid = '
 	return auth.uid === masterAdminUid || email === masterAdminEmail.toLowerCase();
 }
 
-module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget};
+function createKioskMenuSlug(businessName = '', uniqueSuffix = '') {
+	const base = String(businessName || '')
+		.normalize('NFKD')
+		.replace(/[\u0300-\u036f]/g, '')
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, '-')
+		.replace(/^-+|-+$/g, '')
+		.slice(0, 50)
+		.replace(/-+$/g, '') || 'restaurant';
+	const suffix = String(uniqueSuffix || '').toLowerCase().replace(/[^a-f0-9]/g, '').slice(0, 12);
+	return suffix ? `${base}-${suffix}` : base;
+}
+
+module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget, createKioskMenuSlug};

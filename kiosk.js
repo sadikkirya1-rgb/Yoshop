@@ -15,7 +15,10 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const functions = getFunctions(app, 'europe-west1');
 const params = new URLSearchParams(window.location.search);
-const token = params.get('token') || '';
+let token = params.get('token') || '';
+const menuSlug = window.location.pathname.startsWith('/menu/')
+  ? window.location.pathname.slice('/menu/'.length).replace(/\/+$/, '')
+  : '';
 const table = (params.get('table') || '').trim().slice(0, 40);
 const previewOnly = params.get('preview') === '1';
 const cart = new Map();
@@ -469,7 +472,7 @@ async function submitRequest(requestType, customerDetails = null) {
       delivery: 'delivery'
     }[customerDetails?.orderMode] || 'your';
     if (requestType === 'order' && pendingTrackingToken) {
-      const trackingUrl = new URL('order-status.html', window.location.href);
+      const trackingUrl = new URL('/order-status.html', window.location.origin);
       trackingUrl.hash = new URLSearchParams({tracking: pendingTrackingToken}).toString();
       elements.trackOrder.href = trackingUrl.toString();
       elements.trackOrder.textContent = orderNumber ? `Track order #${orderNumber}` : 'Track your order';
@@ -547,12 +550,28 @@ async function initialize() {
     }
   });
   setCartSheetOpen(false, false);
+  if (menuSlug) {
+    elements.manifest.href = `/kiosk-manifest?slug=${encodeURIComponent(menuSlug)}`;
+    elements.appleTouchIcon.href = `/kiosk-icon?slug=${encodeURIComponent(menuSlug)}&size=192`;
+    try {
+      const response = await httpsCallable(functions, 'resolveKioskMenuSlug')({slug: menuSlug});
+      token = String(response.data?.token || '');
+    } catch (error) {
+      setMessage(error.message || 'This digital menu is unavailable.', true);
+      elements.menu.replaceChildren();
+      elements.retry.hidden = false;
+      return;
+    }
+  }
   if (!token) {
     setMessage('This menu link is incomplete. Please scan the QR code again.', true);
     elements.menu.replaceChildren();
     return;
   }
-  elements.manifest.href = `/kiosk-manifest?token=${encodeURIComponent(token)}`;
+  if (!menuSlug) {
+    elements.manifest.href = `/kiosk-manifest?token=${encodeURIComponent(token)}`;
+    elements.appleTouchIcon.href = `/kiosk-icon?token=${encodeURIComponent(token)}&size=192`;
+  }
   updateInstallButton();
   if (table) elements.tableLabel.textContent = `ORDER AT ${table.toUpperCase()}`;
   elements.customerTable.value = table;
@@ -593,7 +612,6 @@ async function initialize() {
     elements.headerBusinessName.textContent = menuData.businessName || 'Menu';
     document.title = `${menuData.businessName || 'Restaurant'} Digital Menu`;
     elements.appleTitle.content = (menuData.businessName || 'Digital Menu').slice(0, 30);
-    elements.appleTouchIcon.href = `/kiosk-icon?token=${encodeURIComponent(token)}&size=192`;
     updateInstallButton();
     elements.attendant.hidden = previewOnly || menuData.allowAttendant === false;
     setMessage(table ? `Choose your items for ${table}.` : 'Choose your items and send your order to the team.');

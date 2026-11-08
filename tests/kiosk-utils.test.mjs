@@ -2,7 +2,14 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import kioskUtils from '../kiosk-functions/kiosk-utils.js';
 
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget} = kioskUtils;
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget, createKioskMenuSlug} = kioskUtils;
+
+test('createKioskMenuSlug makes a readable unique URL-safe restaurant slug', () => {
+	assert.equal(createKioskMenuSlug('Café & Grill', 'a1b2c3d4e5f67890'), 'cafe-grill-a1b2c3d4e5f6');
+	assert.equal(createKioskMenuSlug('東京', '0123456789ab'), 'restaurant-0123456789ab');
+	assert.match(createKioskMenuSlug('A'.repeat(100), 'abcdef123456'), /^a{1,50}-abcdef123456$/);
+	assert.match(createKioskMenuSlug(`Restaurant ${'dinner '.repeat(15)}`, 'abcdef123456'), /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+});
 
 test('sanitizeKioskOrder uses catalog prices and computes tax in cents', () => {
 	const result = sanitizeKioskOrder({

@@ -22043,6 +22043,12 @@ function clearKioskProductSelection() {
 }
 
 function getKioskPublicUrl(config = kioskSettingsCache, table = '') {
+  const publicSlug = String(config?.publicSlug || '').trim();
+  if (publicSlug) {
+    const url = new URL(`/menu/${encodeURIComponent(publicSlug)}`, 'https://yoshop.web.app');
+    if (table) url.searchParams.set('table', String(table).trim().slice(0, 40));
+    return url.toString();
+  }
   const token = String(config?.publicToken || '');
   if (!token) return '';
   const url = new URL('https://yoshop.web.app/kiosk.html');

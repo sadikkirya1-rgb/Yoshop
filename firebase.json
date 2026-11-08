@@ -80,6 +80,10 @@
     ],
     "rewrites": [
       {
+        "source": "/menu/**",
+        "destination": "/kiosk.html"
+      },
+      {
         "source": "/kiosk-manifest",
         "function": {
           "functionId": "getKioskManifest",

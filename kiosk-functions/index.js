@@ -4,7 +4,7 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const crypto = require("node:crypto");
 const admin = require("firebase-admin");
 const {getFirestore} = require("firebase-admin/firestore");
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget} = require("./kiosk-utils");
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget, createKioskMenuSlug} = require("./kiosk-utils");
 
 admin.initializeApp({storageBucket: "yoshop-b502f.firebasestorage.app"});
 const db = getFirestore(admin.app(), "yoshop");
@@ -59,6 +59,10 @@ async function assertKioskOwner(request) {
 
 async function loadKioskByToken(token, previewUid = "") {
 	const tokenHash = getKioskTokenHash(token);
+	return loadKioskByTokenHash(tokenHash, previewUid);
+}
+
+async function loadKioskByTokenHash(tokenHash, previewUid = "") {
 	const publicRef = db.collection("kioskPublic").doc(tokenHash);
 	const publicSnapshot = await publicRef.get();
 	const publicData = publicSnapshot.data() || {};
@@ -85,6 +89,25 @@ async function loadKioskByToken(token, previewUid = "") {
 		throw new HttpsError("not-found", "This digital menu is unavailable.");
 	}
 	return {uid, tokenHash, userData, profile, config: configSnapshot.data()};
+}
+
+async function loadKioskBySlug(slug) {
+	const normalizedSlug = String(slug || "").trim().toLowerCase();
+	if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedSlug) || normalizedSlug.length > 64) {
+		throw new HttpsError("invalid-argument", "A valid restaurant menu link is required.");
+	}
+	const slugSnapshot = await db.collection("kioskMenuSlugs").doc(normalizedSlug).get();
+	const slugData = slugSnapshot.data() || {};
+	if (!slugSnapshot.exists || slugData.enabled !== true || !/^[a-f0-9]{64}$/.test(String(slugData.tokenHash || ""))) {
+		throw new HttpsError("not-found", "This digital menu is unavailable.");
+	}
+	return loadKioskByTokenHash(String(slugData.tokenHash));
+}
+
+async function loadKioskFromRequest(data = {}, previewUid = "") {
+	return data.token
+		? loadKioskByToken(data.token, previewUid)
+		: loadKioskBySlug(data.slug);
 }
 
 async function getPublishedKioskCatalog(kiosk) {
@@ -181,6 +204,15 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 	const shouldRotate = data.rotateToken === true || !current.publicToken;
 	const token = shouldRotate ? createKioskToken() : String(current.publicToken);
 	const tokenHash = hashKioskValue(token);
+	const businessName = String(profile.settings?.name || userData.name || "YoShop").trim().slice(0, 100);
+	const publicSlug = current.publicSlug && !shouldRotate
+		? String(current.publicSlug)
+		: createKioskMenuSlug(businessName, tokenHash);
+	const slugRef = db.collection("kioskMenuSlugs").doc(publicSlug);
+	const existingSlug = await slugRef.get();
+	if (existingSlug.exists && existingSlug.data()?.uid !== uid) {
+		throw new HttpsError("already-exists", "Could not create a unique restaurant menu link. Please contact support.");
+	}
 	const selectedProductIds = Array.isArray(data.selectedProductIds)
 		? [...new Set(data.selectedProductIds.map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 100)
 		: (Array.isArray(current.selectedProductIds) ? current.selectedProductIds : []);
@@ -210,13 +242,20 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 		publicToken: token,
 		tokenHash,
 		updatedAt: now,
-		businessName: String(profile.settings?.name || userData.name || "YoShop").trim().slice(0, 100)
+		businessName,
+		publicSlug
 	}, {merge: true});
 
 	const publicRef = db.collection("kioskPublic").doc(tokenHash);
-	const writes = [publicRef.set({uid, enabled, updatedAt: now})];
+	const writes = [
+		publicRef.set({uid, enabled, updatedAt: now}),
+		slugRef.set({uid, tokenHash, enabled, updatedAt: now})
+	];
 	if (current.tokenHash && current.tokenHash !== tokenHash) {
 		writes.push(db.collection("kioskPublic").doc(String(current.tokenHash)).set({uid, enabled: false, updatedAt: now}, {merge: true}));
+	}
+	if (current.publicSlug && current.publicSlug !== publicSlug) {
+		writes.push(db.collection("kioskMenuSlugs").doc(String(current.publicSlug)).set({uid, enabled: false, updatedAt: now}, {merge: true}));
 	}
 	await Promise.all(writes);
 	return {
@@ -225,7 +264,8 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 		selectedProductIds,
 		productImages,
 		publicToken: token,
-		businessName: String(profile.settings?.name || userData.name || "YoShop").trim().slice(0, 100)
+		businessName,
+		publicSlug
 	};
 });
 
@@ -274,38 +314,46 @@ exports.getKioskMenu = onCall(callableOptions, async (request) => {
 	};
 });
 
+exports.resolveKioskMenuSlug = onCall(callableOptions, async (request) => {
+	const kiosk = await loadKioskBySlug(request.data?.slug);
+	return {token: String(kiosk.config.publicToken || "")};
+});
+
 exports.getKioskManifest = onRequest({region: "europe-west1"}, async (request, response) => {
 	if (request.method !== "GET") {
 		response.set("Allow", "GET").status(405).send("Method not allowed.");
 		return;
 	}
-	const token = String(request.query.token || "");
 	try {
-		const kiosk = await loadKioskByToken(token);
+		const menuId = request.query.slug
+			? {slug: String(request.query.slug)}
+			: {token: String(request.query.token || "")};
+		const kiosk = await loadKioskFromRequest(menuId);
 		const profileSettings = kiosk.profile.settings || {};
 		const businessName = String(profileSettings.name || kiosk.userData.name || kiosk.config.businessName || "").trim().slice(0, 100) || "Digital Menu";
 		const logoSource = String(profileSettings.logo || "");
 		const logoPath = kioskImageBuckets
 			.map((bucket) => ({bucket, path: getFirebaseStorageObjectPath(logoSource, bucket.name)}))
 			.find(({path}) => path);
-		const tokenParam = encodeURIComponent(token);
+		const slug = String(kiosk.config.publicSlug || "");
+		const token = String(kiosk.config.publicToken || "");
+		const menuPath = slug ? `/menu/${encodeURIComponent(slug)}` : `/kiosk.html?token=${encodeURIComponent(token)}`;
 		const iconVersion = hashKioskValue(logoSource).slice(0, 12);
 		const icons = logoPath
 			? [192, 512].map((size) => ({
-				src: `/kiosk-icon?token=${tokenParam}&size=${size}&v=${iconVersion}`,
+				src: `/kiosk-icon?${slug ? `slug=${encodeURIComponent(slug)}` : `token=${encodeURIComponent(token)}`}&size=${size}&v=${iconVersion}`,
 				purpose: "any"
 			}))
 			: [
 				{src: "/assets/icons/android192x192.png", sizes: "192x192", type: "image/png", purpose: "any"},
 				{src: "/assets/icons/android512x512.png", sizes: "512x512", type: "image/png", purpose: "any"}
 			];
-		const menuUrl = `/kiosk.html?token=${tokenParam}`;
 		const manifest = {
-			id: menuUrl,
+			id: menuPath,
 			name: businessName,
 			short_name: businessName.slice(0, 30) || "Digital Menu",
 			description: `Browse the menu and order from ${businessName}.`,
-			start_url: `${menuUrl}&source=homescreen`,
+			start_url: `${menuPath}${menuPath.includes("?") ? "&" : "?"}source=homescreen`,
 			scope: "/",
 			display: "standalone",
 			background_color: "#f8faf8",
@@ -338,7 +386,10 @@ exports.getKioskIcon = onRequest({region: "europe-west1"}, async (request, respo
 		return;
 	}
 	try {
-		const kiosk = await loadKioskByToken(String(request.query.token || ""));
+		const menuId = request.query.slug
+			? {slug: String(request.query.slug)}
+			: {token: String(request.query.token || "")};
+		const kiosk = await loadKioskFromRequest(menuId);
 		const logoSource = String(kiosk.profile.settings?.logo || "");
 		const logoFile = kioskImageBuckets
 			.map((bucket) => ({bucket, path: getFirebaseStorageObjectPath(logoSource, bucket.name)}))
