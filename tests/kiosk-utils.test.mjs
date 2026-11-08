@@ -77,6 +77,7 @@ test('sanitizeKioskDisplayOrder includes only active public board fields', () =>
 		orderNumber: '20261106-007',
 		table: '<Patio & 2>',
 		status: 'preparing',
+		items: [{name: 'Burger', quantity: 2}, {name: '<Tea>', quantity: 1}],
 		customerName: 'Private Customer',
 		whatsappNumber: '+971501234567',
 		createdAt: new Date('2026-11-06T15:00:00.000Z')
@@ -85,11 +86,24 @@ test('sanitizeKioskDisplayOrder includes only active public board fields', () =>
 	assert.deepEqual(result, {
 		orderNumber: '20261106-007',
 		table: 'Patio  2',
+		items: [{name: 'Burger', quantity: 2}, {name: 'Tea', quantity: 1}],
 		status: 'preparing',
 		createdAt: '2026-11-06T15:00:00.000Z'
 	});
 	assert.equal(sanitizeKioskDisplayOrder({source: 'kiosk', requestType: 'attendant', status: 'new'}), null);
-	assert.equal(sanitizeKioskDisplayOrder({source: 'kiosk', requestType: 'order', status: 'paid'}), null);
+	assert.equal(sanitizeKioskDisplayOrder({source: 'kiosk', requestType: 'order', status: 'draft'}), null);
+});
+
+test('sanitizeKioskDisplayOrder exposes completed and cancelled kiosk orders', () => {
+	for (const status of ['paid', 'completed', 'rejected', 'cancelled', 'canceled']) {
+		assert.equal(sanitizeKioskDisplayOrder({
+			source: 'kiosk',
+			requestType: 'order',
+			status,
+			orderNumber: '20261108-001',
+			createdAt: new Date('2026-11-08T10:00:00.000Z')
+		})?.status, status);
+	}
 });
 
 test('sanitizeKioskImageMap keeps secure image URLs only for selected products', () => {

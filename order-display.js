@@ -17,7 +17,9 @@ const displayToken = new URLSearchParams(window.location.hash.slice(1)).get('dis
 const columns = {
   received: {list: document.getElementById('receivedOrders'), count: document.getElementById('receivedCount')},
   preparing: {list: document.getElementById('preparingOrders'), count: document.getElementById('preparingCount')},
-  ready: {list: document.getElementById('readyOrders'), count: document.getElementById('readyCount')}
+  ready: {list: document.getElementById('readyOrders'), count: document.getElementById('readyCount')},
+  completed: {list: document.getElementById('completedOrders'), count: document.getElementById('completedCount')},
+  cancelled: {list: document.getElementById('cancelledOrders'), count: document.getElementById('cancelledCount')}
 };
 const message = document.getElementById('boardMessage');
 const boardColumns = document.getElementById('boardColumns');
@@ -33,7 +35,22 @@ function createOrderCard(order) {
   const table = document.createElement('span');
   table.className = 'board-order-table';
   table.textContent = order.table || 'Counter order';
-  card.append(number, table);
+  const details = document.createElement('span');
+  details.className = 'board-order-details';
+  details.textContent = Array.isArray(order.items) && order.items.length
+    ? order.items.map(item => `${item.quantity}× ${item.name}`).join(', ')
+    : 'No item details';
+  details.setAttribute('aria-label', `Order items: ${details.textContent}`);
+  const time = document.createElement('time');
+  time.className = 'board-order-time';
+  const createdAt = new Date(order.createdAt);
+  time.dateTime = Number.isNaN(createdAt.valueOf()) ? '' : createdAt.toISOString();
+  time.textContent = Number.isNaN(createdAt.valueOf())
+    ? ''
+    : createdAt.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
+  card.tabIndex = 0;
+  card.setAttribute('aria-label', `${number.textContent}, ${table.textContent}, ${details.textContent}, ${time.textContent}`);
+  card.append(number, table, details, time);
   return card;
 }
 
@@ -56,6 +73,8 @@ function renderDisplay(data) {
   renderColumn(columns.received, orders.filter(order => order.status === 'new'));
   renderColumn(columns.preparing, orders.filter(order => ['accepted', 'preparing', 'in_pos'].includes(order.status)));
   renderColumn(columns.ready, orders.filter(order => order.status === 'ready'));
+  renderColumn(columns.completed, orders.filter(order => ['paid', 'completed'].includes(order.status)));
+  renderColumn(columns.cancelled, orders.filter(order => ['rejected', 'cancelled', 'canceled'].includes(order.status)));
   boardColumns.hidden = false;
   message.textContent = orders.length ? '' : 'No active orders right now.';
   updated.textContent = `Updated ${new Date().toLocaleTimeString([], {hour: 'numeric', minute: '2-digit', second: '2-digit'})}`;

@@ -57,13 +57,21 @@ function sanitizeKioskOrder(requestData = {}, catalog = {}, taxRate = 0) {
 
 function sanitizeKioskDisplayOrder(order = {}) {
 	const status = String(order.status || '');
-	if (order.source !== 'kiosk' || order.requestType !== 'order' || !['new', 'accepted', 'preparing', 'ready', 'in_pos'].includes(status)) {
+	if (order.source !== 'kiosk' || order.requestType !== 'order' || !['new', 'accepted', 'preparing', 'ready', 'in_pos', 'paid', 'completed', 'rejected', 'cancelled', 'canceled'].includes(status)) {
 		return null;
 	}
 	const createdAt = order.createdAt?.toDate?.() || new Date(order.createdAt || 0);
+	const items = (Array.isArray(order.items) ? order.items : [])
+		.slice(0, 20)
+		.map((item) => ({
+			name: String(item?.name || 'Menu item').replace(/[<>&]/g, '').trim().slice(0, 60),
+			quantity: Number(item?.quantity)
+		}))
+		.filter((item) => item.name && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 20);
 	return {
 		orderNumber: String(order.orderNumber || '').slice(0, 40),
 		table: String(order.table || '').replace(/[<>&]/g, '').trim().slice(0, 40),
+		items,
 		status,
 		createdAt: Number.isNaN(createdAt.valueOf()) ? '' : createdAt.toISOString()
 	};

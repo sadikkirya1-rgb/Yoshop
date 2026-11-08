@@ -6,8 +6,8 @@
   <meta name="theme-color" content="#10372f">
   <meta name="referrer" content="no-referrer">
   <title>Live order display | YoShop</title>
-  <link rel="stylesheet" href="order-display.css">
-  <script type="module" src="order-display.js"></script>
+  <link rel="stylesheet" href="order-display.css?v=20261108-order-display-details-v1">
+  <script type="module" src="order-display.js?v=20261108-order-display-details-v1"></script>
 </head>
 <body>
   <header class="board-header">
@@ -32,6 +32,14 @@
       <section class="board-column board-ready" aria-labelledby="readyHeading">
         <header><h2 id="readyHeading">Ready</h2><span id="readyCount">0</span></header>
         <div id="readyOrders" class="board-order-list"></div>
+      </section>
+      <section class="board-column board-completed" aria-labelledby="completedHeading">
+        <header><h2 id="completedHeading">Completed</h2><span id="completedCount">0</span></header>
+        <div id="completedOrders" class="board-order-list"></div>
+      </section>
+      <section class="board-column board-cancelled" aria-labelledby="cancelledHeading">
+        <header><h2 id="cancelledHeading">Cancelled</h2><span id="cancelledCount">0</span></header>
+        <div id="cancelledOrders" class="board-order-list"></div>
       </section>
     </div>
     <p id="boardUpdated" class="board-updated"></p>
