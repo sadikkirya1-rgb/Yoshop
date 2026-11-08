@@ -147,6 +147,42 @@ body.dark-mode .dashboard-card:hover {
 .kiosk-order-display-open[hidden],
 .kiosk-order-display-queue[hidden] { display: none; }
 
+.kiosk-order-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.kiosk-order-summary-card {
+  display: flex;
+  min-width: 0;
+  min-height: 72px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-color);
+  border-top: 4px solid #829188;
+  border-radius: 8px;
+  background: var(--card);
+  color: #64748b;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.kiosk-order-summary-card strong {
+  color: var(--text);
+  font-size: 1.6rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.kiosk-order-summary-new { border-top-color: #ecb858; }
+.kiosk-order-summary-preparing { border-top-color: #69aef2; }
+.kiosk-order-summary-ready { border-top-color: #62d494; }
+.kiosk-order-summary-completed { border-top-color: #55c5b4; }
+.kiosk-order-summary-cancelled { border-top-color: #ed8178; }
+
 .kiosk-order-history {
   margin-top: 24px;
   padding: 18px;
@@ -868,6 +904,9 @@ body.printing-kiosk-qr #kioskQrPrintArea {
 @media (max-width: 760px) {
   .kiosk-workspace-heading { align-items: flex-start; }
   .kiosk-workspace-status { flex: 1 1 100%; justify-content: flex-start; gap: 8px; }
+  .kiosk-order-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .kiosk-order-summary-card { min-height: 60px; padding: 10px; font-size: 0.8rem; }
+  .kiosk-order-summary-card:last-child { grid-column: 1 / -1; }
   .kiosk-owner-grid {
     grid-template-columns: minmax(0, 1fr);
   }

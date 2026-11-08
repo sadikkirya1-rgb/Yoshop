@@ -22169,6 +22169,21 @@ function renderKioskOrderHistory(orders) {
   });
 }
 
+function renderKioskOrderSummary(orders) {
+  const kioskOrders = orders.filter(order => order.requestType === 'order');
+  const counts = {
+    kioskSummaryNew: kioskOrders.filter(order => order.status === 'new').length,
+    kioskSummaryPreparing: kioskOrders.filter(order => ['accepted', 'preparing', 'in_pos'].includes(order.status)).length,
+    kioskSummaryReady: kioskOrders.filter(order => order.status === 'ready').length,
+    kioskSummaryCompleted: kioskOrders.filter(order => ['paid', 'completed'].includes(order.status)).length,
+    kioskSummaryCancelled: kioskOrders.filter(order => ['rejected', 'cancelled', 'canceled'].includes(order.status)).length
+  };
+  Object.entries(counts).forEach(([id, count]) => {
+    const element = document.getElementById(id);
+    if (element) element.textContent = String(count);
+  });
+}
+
 function renderKioskOrderCards(orders = null) {
   const container = document.getElementById('kioskOrdersList');
   if (!container) return;
@@ -22184,6 +22199,7 @@ function renderKioskOrderCards(orders = null) {
   if (newCountEl) newCountEl.textContent = `${newCount} new`;
   if (queueCount) queueCount.textContent = `${visibleOrders.length} of ${allOrders.length} requests`;
   updateKioskAttentionNotifications(newCount);
+  renderKioskOrderSummary(allOrders);
   renderKioskOrderHistory(allOrders);
   container.replaceChildren();
   if (!visibleOrders.length) {
