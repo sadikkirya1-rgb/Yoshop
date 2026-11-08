@@ -157,7 +157,6 @@ function renderMenu() {
   const search = elements.search.value.trim().toLowerCase();
   const sort = elements.sort.value;
   const items = menuData.items.filter(item => {
-    if (!item.image && !item.fallbackImage) return false;
     const matchesCategory = selectedCategory === 'All' || (item.category || 'Menu') === selectedCategory;
     const matchesSearch = `${item.name} ${item.description || ''}`.toLowerCase().includes(search);
     return matchesCategory && matchesSearch;
@@ -176,7 +175,6 @@ function renderMenu() {
   }
   items.forEach((item, index) => {
     const imageUrl = item.image || item.fallbackImage;
-    if (!imageUrl) return;
     const quantity = cart.get(item.id)?.quantity || 0;
     const card = document.createElement('article');
     card.className = `menu-item kiosk-menu-item${quantity > 0 ? ' active' : ''}`;
@@ -196,19 +194,26 @@ function renderMenu() {
     }
     const imageWrap = document.createElement('div');
     imageWrap.className = 'kiosk-item-image-wrap';
-    const image = document.createElement('img');
-    image.src = imageUrl;
-    image.alt = '';
-    image.loading = index < 4 ? 'eager' : 'lazy';
-    image.decoding = 'async';
-    image.fetchPriority = index < 4 ? 'high' : 'auto';
-    setKioskImageFallback(image, item.image && item.fallbackImage !== item.image ? item.fallbackImage : '', () => {
-      if (!card.isConnected) return;
-      card.remove();
-      const visibleCount = elements.menu.querySelectorAll('.kiosk-menu-item').length;
-      elements.resultsCount.textContent = `${visibleCount} ${visibleCount === 1 ? 'item' : 'items'}`;
-    });
-    imageWrap.appendChild(image);
+    if (imageUrl) {
+      const image = document.createElement('img');
+      image.src = imageUrl;
+      image.alt = '';
+      image.loading = index < 4 ? 'eager' : 'lazy';
+      image.decoding = 'async';
+      image.fetchPriority = index < 4 ? 'high' : 'auto';
+      setKioskImageFallback(image, item.image && item.fallbackImage !== item.image ? item.fallbackImage : '', () => {
+        const placeholder = document.createElement('span');
+        placeholder.className = 'kiosk-item-image-placeholder';
+        placeholder.textContent = 'No photo';
+        image.replaceWith(placeholder);
+      });
+      imageWrap.appendChild(image);
+    } else {
+      const placeholder = document.createElement('span');
+      placeholder.className = 'kiosk-item-image-placeholder';
+      placeholder.textContent = 'No photo';
+      imageWrap.appendChild(placeholder);
+    }
     card.appendChild(imageWrap);
     card.classList.add('has-image');
     let selectedCount = null;

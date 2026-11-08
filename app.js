@@ -1674,7 +1674,7 @@ async function uploadImage(base64Data, path) {
       await showImageSizeError(error.message);
     }
     console.error("Image upload failed:", error);
-    return base64Data; // Return original (likely placeholder) on failure
+    throw error;
   }
 }
 
@@ -21949,6 +21949,18 @@ function getKioskProductImageUrl(product) {
   return candidates.find(isKioskProductImageUrl) || '';
 }
 
+function getKioskProductImageDataUrl(product) {
+  const cardImage = Array.from(document.querySelectorAll('.menu-item[data-product-name]'))
+    .find(card => card.dataset.productName === product?.name)
+    ?.querySelector('img');
+  const candidates = [
+    product?.image,
+    getCachedDishImage(product?.name),
+    cardImage?.currentSrc || cardImage?.src
+  ];
+  return candidates.find(image => typeof image === 'string' && image.startsWith('data:image/')) || '';
+}
+
 function getKioskBackendErrorMessage(error, fallback) {
   const details = `${error?.code || ''} ${error?.message || ''}`.toLowerCase();
   if (/functions\/internal|\binternal\b|cors|failed to fetch|networkerror/.test(details)) {
@@ -22304,23 +22316,31 @@ async function saveKioskMenuSettings(rotateToken = false) {
   const selectedProductIds = Array.from(kioskSelectedProductIds);
   const productImages = {};
   const productsWithoutImages = [];
-  selectedProductIds.forEach(productId => {
-    const product = kioskAvailableProducts.find(item => getKioskProductId(item) === productId);
-    if (!product) return;
-    const image = getKioskProductImageUrl(product);
-    if (image) productImages[productId] = image;
-    else productsWithoutImages.push(String(product.name || 'Unnamed product'));
-  });
-  const payload = {
-    targetUid: getKioskTargetUid(),
-    selectedProductIds,
-    productImages,
-    enabled: document.getElementById('kioskEnabledInput')?.checked === true,
-    allowAttendant: document.getElementById('kioskAttendantInput')?.checked === true,
-    rotateToken
-  };
   try {
     if (status) status.textContent = 'Publishing menu...';
+    for (const productId of selectedProductIds) {
+      const product = kioskAvailableProducts.find(item => getKioskProductId(item) === productId);
+      if (!product) continue;
+      let image = getKioskProductImageUrl(product);
+      if (!image) {
+        const localImage = getKioskProductImageDataUrl(product);
+        if (localImage) {
+          const upload = httpsCallable(kioskFunctions, 'uploadKioskProductImage');
+          const response = await upload({targetUid: getKioskTargetUid(), imageData: localImage});
+          image = String(response.data?.image || '');
+        }
+      }
+      if (image) productImages[productId] = image;
+      else productsWithoutImages.push(String(product.name || 'Unnamed product'));
+    }
+    const payload = {
+      targetUid: getKioskTargetUid(),
+      selectedProductIds,
+      productImages,
+      enabled: document.getElementById('kioskEnabledInput')?.checked === true,
+      allowAttendant: document.getElementById('kioskAttendantInput')?.checked === true,
+      rotateToken
+    };
     const configure = httpsCallable(kioskFunctions, 'configureKioskMenu');
     const response = await configure(payload);
     kioskSettingsCache = response.data || {};

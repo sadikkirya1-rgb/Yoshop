@@ -127,9 +127,6 @@ async function getPublishedKioskCatalog(kiosk) {
 		delete item.imageSource;
 		delete item.fallbackImageSource;
 	}));
-	Object.entries(catalog).forEach(([productId, item]) => {
-		if (!item.image && !item.fallbackImage) delete catalog[productId];
-	});
 	return catalog;
 }
 
@@ -230,6 +227,38 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 		publicToken: token,
 		businessName: String(profile.settings?.name || userData.name || "YoShop").trim().slice(0, 100)
 	};
+});
+
+exports.uploadKioskProductImage = onCall(callableOptions, async (request) => {
+	const {uid, userData, profile} = await assertKioskOwner(request);
+	const imageData = String(request.data?.imageData || "");
+	const imageMatch = imageData.match(/^data:image\/(jpeg|jpg|png|gif|webp);base64,([A-Za-z0-9+/]+={0,2})$/i);
+	if (!imageMatch || imageData.length > 1_400_000) {
+		throw new HttpsError("invalid-argument", "Choose a valid product image up to 1 MB.");
+	}
+	const imageBuffer = Buffer.from(imageMatch[2], "base64");
+	if (!imageBuffer.length || imageBuffer.length > 1_048_576) {
+		throw new HttpsError("invalid-argument", "Choose a valid product image up to 1 MB.");
+	}
+
+	const settings = profile.settings || {};
+	const businessId = String(
+		userData.businessId || userData.shopId || profile.businessId || profile.shopId || settings.businessId || ""
+	).trim();
+	const storageRoot = businessId ? `shops/${businessId}` : `users/${uid}`;
+	const extension = imageMatch[1].toLowerCase() === "jpg" ? "jpeg" : imageMatch[1].toLowerCase();
+	const contentType = `image/${extension}`;
+	const objectPath = `${storageRoot}/dishes/kiosk/${crypto.randomUUID()}.${extension}`;
+	const token = crypto.randomUUID();
+	await storageBucket.file(objectPath).save(imageBuffer, {
+		metadata: {
+			contentType,
+			metadata: {firebaseStorageDownloadTokens: token}
+		},
+		resumable: false
+	});
+
+	return {image: buildFirebaseStorageDownloadUrl(storageBucket.name, objectPath, token)};
 });
 
 exports.getKioskMenu = onCall(callableOptions, async (request) => {
