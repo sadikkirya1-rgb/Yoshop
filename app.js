@@ -22136,31 +22136,72 @@ function renderKioskOrderCards(orders = null) {
     return;
   }
   const statusLabels = {new: 'New', accepted: 'Accepted', preparing: 'Preparing', ready: 'Ready', in_pos: 'In POS', paid: 'Paid', rejected: 'Rejected', resolved: 'Handled'};
+  const orderModeLabels = {dine_in: 'Dine-in', takeaway: 'Takeaway', delivery: 'Delivery'};
+  const paymentModeLabels = {cash: 'Cash', card_at_counter: 'Card at counter', pay_on_delivery: 'Pay on delivery', online_payment: 'Online payment'};
   visibleOrders.forEach(order => {
     const card = document.createElement('article');
-    card.className = 'kiosk-order-card';
+    const cardStatus = Object.hasOwn(statusLabels, order.status) ? order.status : 'new';
+    card.className = `kiosk-order-card kiosk-order-card--${cardStatus}`;
     const heading = document.createElement('div');
     heading.className = 'kiosk-order-card-heading';
+    const identity = document.createElement('div');
+    identity.className = 'kiosk-order-card-identity';
     const title = document.createElement('strong');
+    title.className = 'kiosk-order-card-title';
     title.textContent = order.requestType === 'attendant'
       ? 'Attendant request'
-      : `Order${order.orderNumber ? ` #${order.orderNumber}` : ''}${order.table ? ` · ${order.table}` : ''}`;
+      : order.orderNumber ? `Order #${order.orderNumber}` : 'Customer order';
+    identity.appendChild(title);
+    if (order.requestType !== 'attendant' && order.orderMode) {
+      const mode = document.createElement('span');
+      mode.className = 'kiosk-order-mode';
+      mode.textContent = orderModeLabels[order.orderMode] || 'Order';
+      identity.appendChild(mode);
+    }
     const status = document.createElement('span');
-    status.className = `kiosk-order-status status-${order.status || 'new'}`;
-    status.textContent = statusLabels[order.status] || 'New';
-    heading.append(title, status);
+    status.className = `kiosk-order-status status-${cardStatus}`;
+    status.textContent = statusLabels[cardStatus];
+    heading.append(identity, status);
     card.appendChild(heading);
 
-    const meta = document.createElement('p');
-    const createdAt = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || Date.now());
-    meta.textContent = `${createdAt.toLocaleString()}${order.requestType === 'attendant' ? '' : ` · ${formatCurrency(Number(order.total) || 0)}`}`;
-    card.appendChild(meta);
+    const facts = document.createElement('div');
+    facts.className = 'kiosk-order-card-facts';
+    const createdAt = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || '');
+    const date = document.createElement('time');
+    date.className = 'kiosk-order-card-date';
+    if (Number.isFinite(createdAt.valueOf())) {
+      date.dateTime = createdAt.toISOString();
+      date.textContent = createdAt.toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'});
+    } else {
+      date.textContent = 'Time unavailable';
+    }
+    facts.appendChild(date);
+    if (order.requestType !== 'attendant') {
+      const total = document.createElement('strong');
+      total.className = 'kiosk-order-card-total';
+      total.textContent = formatCurrency(Number(order.total) || 0);
+      facts.appendChild(total);
+    }
+    card.appendChild(facts);
 
     if (order.requestType !== 'attendant') {
+      const orderMeta = document.createElement('div');
+      orderMeta.className = 'kiosk-order-card-meta';
+      [
+        order.table ? `Table ${String(order.table)}` : '',
+        paymentModeLabels[order.paymentMode] || '',
+        order.paymentStatus === 'paid' ? 'Paid' : ''
+      ].filter(Boolean).forEach(label => {
+        const chip = document.createElement('span');
+        chip.textContent = label;
+        orderMeta.appendChild(chip);
+      });
+      if (orderMeta.childElementCount) card.appendChild(orderMeta);
+
       const customerDetails = document.createElement('p');
       const details = [
-        order.customerName ? `Customer: ${String(order.customerName)}` : '',
-        order.whatsappNumber ? `WhatsApp: ${String(order.whatsappNumber)}` : '',
+        order.customerName ? String(order.customerName) : '',
+        order.whatsappNumber ? `WhatsApp ${String(order.whatsappNumber)}` : '',
         order.waiterName ? `Waiter: ${String(order.waiterName)}` : ''
       ].filter(Boolean);
       if (details.length) {
@@ -22172,9 +22213,22 @@ function renderKioskOrderCards(orders = null) {
 
     if (Array.isArray(order.items) && order.items.length) {
       const itemList = document.createElement('ul');
+      itemList.className = 'kiosk-order-items';
       order.items.forEach(item => {
         const row = document.createElement('li');
-        row.textContent = `${Number(item.quantity) || 0} × ${String(item.name || 'Menu item')}${item.notes ? ` · ${String(item.notes)}` : ''}`;
+        const quantity = document.createElement('span');
+        quantity.className = 'kiosk-order-item-quantity';
+        quantity.textContent = `${Number(item.quantity) || 0}×`;
+        const itemName = document.createElement('span');
+        itemName.className = 'kiosk-order-item-name';
+        itemName.textContent = String(item.name || 'Menu item');
+        row.append(quantity, itemName);
+        if (item.notes) {
+          const notes = document.createElement('span');
+          notes.className = 'kiosk-order-item-notes';
+          notes.textContent = String(item.notes);
+          row.appendChild(notes);
+        }
         itemList.appendChild(row);
       });
       card.appendChild(itemList);
@@ -22185,24 +22239,24 @@ function renderKioskOrderCards(orders = null) {
     const addAction = (label, nextStatus, className = 'btn btn-secondary') => {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = className;
+      button.className = `btn ${className}`;
       button.textContent = label;
       button.dataset.actionPermission = 'kioskmenu.write';
       button.addEventListener('click', () => updateKioskOrderStatus(order.id, nextStatus));
       actions.appendChild(button);
     };
     if (order.status === 'new') {
-      addAction('Accept', 'accepted', 'btn btn-success');
-      addAction('Reject', 'rejected', 'btn btn-danger');
+      addAction('Accept order', 'accepted', 'kiosk-order-action kiosk-order-action--accept');
+      addAction('Reject', 'rejected', 'kiosk-order-action kiosk-order-action--reject');
     } else if (order.status === 'accepted') {
-      if (order.requestType === 'attendant') addAction('Mark handled', 'resolved', 'btn btn-success');
-      else addAction('Start preparing', 'preparing', 'btn btn-success');
+      if (order.requestType === 'attendant') addAction('Mark handled', 'resolved', 'kiosk-order-action kiosk-order-action--accept');
+      else addAction('Start preparing', 'preparing', 'kiosk-order-action kiosk-order-action--accept');
     } else if (order.status === 'preparing') {
-      addAction('Mark ready', 'ready', 'btn btn-success');
+      addAction('Mark ready', 'ready', 'kiosk-order-action kiosk-order-action--accept');
     } else if (order.status === 'ready') {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = 'btn btn-success';
+      button.className = 'btn kiosk-order-action kiosk-order-action--accept';
       button.textContent = 'Load to POS';
       button.addEventListener('click', () => loadKioskOrderToPos(order));
       actions.appendChild(button);

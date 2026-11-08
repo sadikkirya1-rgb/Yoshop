@@ -485,16 +485,30 @@ body.dark-mode .dashboard-card:hover {
 .kiosk-orders-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
-  gap: 10px;
+  gap: 14px;
 }
 
 .kiosk-order-card {
+  position: relative;
   min-width: 0;
-  padding: 14px;
+  display: grid;
+  gap: 12px;
+  padding: 16px;
   border: 1px solid var(--border-color);
-  border-radius: 5px;
+  border-radius: 12px;
   background: var(--card);
+  box-shadow: 0 3px 12px rgba(16, 24, 40, 0.06);
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
 }
+
+.kiosk-order-card:hover { border-color: #b7c8c0; box-shadow: 0 8px 22px rgba(16, 24, 40, 0.1); transform: translateY(-1px); }
+.kiosk-order-card--new { border-inline-start: 4px solid #e8a12b; }
+.kiosk-order-card--accepted { border-inline-start: 4px solid #4888dc; }
+.kiosk-order-card--preparing { border-inline-start: 4px solid #7864d8; }
+.kiosk-order-card--ready { border-inline-start: 4px solid #16845a; }
+.kiosk-order-card--in_pos { border-inline-start: 4px solid #16845a; }
+.kiosk-order-card--paid, .kiosk-order-card--resolved { border-inline-start: 4px solid #92a39b; }
+.kiosk-order-card--rejected { border-inline-start: 4px solid #d65353; }
 
 .kiosk-queue-empty {
   grid-column: 1 / -1;
@@ -506,16 +520,77 @@ body.dark-mode .dashboard-card:hover {
   text-align: center;
 }
 
+.kiosk-order-card-heading {
+  align-items: flex-start;
+}
+
+.kiosk-order-card-identity {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.kiosk-order-card-title {
+  color: var(--text);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.kiosk-order-mode,
+.kiosk-order-card-meta span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 25px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #f0f4f2;
+  color: #43544c;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.kiosk-order-card-facts {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.kiosk-order-card-date {
+  color: #64748b;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.kiosk-order-card-total {
+  flex: 0 0 auto;
+  color: var(--text);
+  font-size: 1.12rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+}
+
+.kiosk-order-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .kiosk-order-card p,
 .kiosk-order-card ul {
-  margin: 8px 0;
+  margin: 0;
   overflow-wrap: anywhere;
 }
 
 .kiosk-order-customer-details {
-  color: #475569;
+  color: #53645c;
   font-size: 0.84rem;
   font-weight: 600;
+  line-height: 1.45;
 }
 
 .kiosk-order-status {
@@ -543,8 +618,75 @@ body.dark-mode .dashboard-card:hover {
   color: #234b87;
 }
 
+.kiosk-order-items {
+  display: grid;
+  gap: 7px;
+  padding: 10px 0;
+  border-top: 1px solid #edf1ef;
+  border-bottom: 1px solid #edf1ef;
+  list-style: none;
+}
+
+.kiosk-order-items li {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 7px;
+  color: var(--text);
+  font-size: 0.88rem;
+  line-height: 1.35;
+}
+
+.kiosk-order-item-quantity {
+  color: #52635b;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 800;
+}
+
+.kiosk-order-item-name { font-weight: 650; }
+.kiosk-order-item-notes {
+  grid-column: 2;
+  color: #737f79;
+  font-size: 0.77rem;
+}
+
 .kiosk-order-actions {
-  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 0;
+}
+
+.kiosk-order-actions .kiosk-order-action {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  font-size: 0.84rem;
+  font-weight: 750;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+
+.kiosk-order-actions .kiosk-order-action--accept {
+  background: #13784e;
+  color: #fff;
+}
+
+.kiosk-order-actions .kiosk-order-action--accept:hover { background: #0e633f; }
+
+.kiosk-order-actions .kiosk-order-action--reject {
+  border-color: #e8caca;
+  background: #fff;
+  color: #a53d3d;
+}
+
+.kiosk-order-actions .kiosk-order-action--reject:hover { background: #fff2f2; }
+
+@media (max-width: 520px) {
+  .kiosk-orders-list { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .kiosk-order-card { padding: 13px; }
+  .kiosk-order-actions .kiosk-order-action { flex: 1 1 120px; }
 }
 
 body.printing-kiosk-qr * {
