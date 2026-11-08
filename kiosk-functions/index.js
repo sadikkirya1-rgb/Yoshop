@@ -127,6 +127,9 @@ async function getPublishedKioskCatalog(kiosk) {
 		delete item.imageSource;
 		delete item.fallbackImageSource;
 	}));
+	Object.entries(catalog).forEach(([productId, item]) => {
+		if (!item.image && !item.fallbackImage) delete catalog[productId];
+	});
 	return catalog;
 }
 

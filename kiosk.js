@@ -157,6 +157,7 @@ function renderMenu() {
   const search = elements.search.value.trim().toLowerCase();
   const sort = elements.sort.value;
   const items = menuData.items.filter(item => {
+    if (!item.image && !item.fallbackImage) return false;
     const matchesCategory = selectedCategory === 'All' || (item.category || 'Menu') === selectedCategory;
     const matchesSearch = `${item.name} ${item.description || ''}`.toLowerCase().includes(search);
     return matchesCategory && matchesSearch;
@@ -174,6 +175,8 @@ function renderMenu() {
     return;
   }
   items.forEach((item, index) => {
+    const imageUrl = item.image || item.fallbackImage;
+    if (!imageUrl) return;
     const quantity = cart.get(item.id)?.quantity || 0;
     const card = document.createElement('article');
     card.className = `menu-item kiosk-menu-item${quantity > 0 ? ' active' : ''}`;
@@ -193,22 +196,21 @@ function renderMenu() {
     }
     const imageWrap = document.createElement('div');
     imageWrap.className = 'kiosk-item-image-wrap';
-    const imageUrl = item.image || item.fallbackImage;
-    if (imageUrl) {
-      const image = document.createElement('img');
-      image.src = imageUrl;
-      image.alt = '';
-      image.loading = index < 4 ? 'eager' : 'lazy';
-      image.decoding = 'async';
-      image.fetchPriority = index < 4 ? 'high' : 'auto';
-      setKioskImageFallback(image, item.image && item.fallbackImage !== item.image ? item.fallbackImage : '', () => {
-        imageWrap.remove();
-        card.classList.remove('has-image');
-      });
-      imageWrap.appendChild(image);
-      card.appendChild(imageWrap);
-      card.classList.add('has-image');
-    }
+    const image = document.createElement('img');
+    image.src = imageUrl;
+    image.alt = '';
+    image.loading = index < 4 ? 'eager' : 'lazy';
+    image.decoding = 'async';
+    image.fetchPriority = index < 4 ? 'high' : 'auto';
+    setKioskImageFallback(image, item.image && item.fallbackImage !== item.image ? item.fallbackImage : '', () => {
+      if (!card.isConnected) return;
+      card.remove();
+      const visibleCount = elements.menu.querySelectorAll('.kiosk-menu-item').length;
+      elements.resultsCount.textContent = `${visibleCount} ${visibleCount === 1 ? 'item' : 'items'}`;
+    });
+    imageWrap.appendChild(image);
+    card.appendChild(imageWrap);
+    card.classList.add('has-image');
     let selectedCount = null;
     if (!previewOnly && quantity > 0) {
       selectedCount = document.createElement('span');
@@ -216,6 +218,7 @@ function renderMenu() {
       selectedCount.textContent = String(quantity);
       selectedCount.setAttribute('aria-live', 'polite');
       selectedCount.setAttribute('aria-label', `${quantity} selected`);
+      imageWrap.appendChild(selectedCount);
     }
     const detail = document.createElement('div');
     detail.className = 'menu-item-body kiosk-item-details';
@@ -228,7 +231,6 @@ function renderMenu() {
     price.textContent = formatMoney(item.price);
     heading.append(title, price);
     detail.appendChild(heading);
-    if (selectedCount) detail.appendChild(selectedCount);
     if (item.isAvailable === false) {
       const availability = document.createElement('span');
       availability.className = 'kiosk-sold-out';
@@ -288,14 +290,22 @@ function renderCart() {
     quantityControls.className = 'kiosk-cart-quantity-controls';
     quantityControls.setAttribute('role', 'group');
     quantityControls.setAttribute('aria-label', `${item.name} quantity`);
-    const decrease = createButton('−', 'kiosk-cart-quantity-button', () => changeCartQuantity(item, -1), `Remove one ${item.name}`);
+    const decrease = createButton('−', 'kiosk-cart-quantity-button', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      changeCartQuantity(item, -1);
+    }, `Remove one ${item.name}`);
     decrease.dataset.quantityAction = 'decrement';
     const count = document.createElement('span');
     count.className = 'kiosk-cart-line-quantity';
     count.textContent = String(quantity);
     count.setAttribute('aria-live', 'polite');
     count.setAttribute('aria-label', `${quantity} selected`);
-    const increase = createButton('+', 'kiosk-cart-quantity-button', () => changeCartQuantity(item, 1), `Add one ${item.name}`);
+    const increase = createButton('+', 'kiosk-cart-quantity-button', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      changeCartQuantity(item, 1);
+    }, `Add one ${item.name}`);
     increase.dataset.quantityAction = 'increment';
     increase.disabled = quantity >= 20;
     quantityControls.append(decrease, count, increase);

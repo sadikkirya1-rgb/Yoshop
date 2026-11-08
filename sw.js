@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v92';
+const CACHE_NAME = 'yoshop-v93';
 
 const APP_SHELL_URLS = [
   '/',
@@ -11,9 +11,9 @@ const APP_SHELL_URLS = [
   '/order-display.css',
   '/order-display.js',
   '/kiosk.css',
-  '/kiosk.css?v=20261108-kiosk-title-price-v1',
+  '/kiosk.css?v=20261108-kiosk-quantity-controls-v1',
   '/kiosk.js',
-  '/kiosk.js?v=20261108-kiosk-title-price-v1',
+  '/kiosk.js?v=20261108-kiosk-quantity-controls-v1',
   '/manifest.json',
   '/assetlinks.json',
 
