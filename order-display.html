@@ -6,15 +6,25 @@
   <meta name="theme-color" content="#10372f">
   <meta name="referrer" content="no-referrer">
   <title>Live order display | YoShop</title>
-  <link rel="stylesheet" href="order-display.css?v=20261108-order-display-modes-v1">
-  <script type="module" src="order-display.js?v=20261108-order-display-modes-v1"></script>
+  <link rel="stylesheet" href="order-display.css?v=20261108-order-display-four-line-cards-v1">
+  <script type="module" src="order-display.js?v=20261108-order-display-four-line-cards-v1"></script>
 </head>
 <body>
   <header class="board-header">
     <div class="board-brand"><span class="board-mark">Y</span><div><p>LIVE ORDER BOARD</p><h1 id="boardBusinessName">Order display</h1></div></div>
     <div class="board-header-actions">
-      <span class="board-live"><span></span> LIVE</span>
+      <span id="boardConnection" class="board-connection is-connecting" role="status"><span></span> Connecting</span>
       <time id="boardClock"></time>
+      <label class="board-prep-target" for="boardPrepTarget">Prep target
+        <select id="boardPrepTarget">
+          <option value="10">10 min</option>
+          <option value="15" selected>15 min</option>
+          <option value="20">20 min</option>
+          <option value="30">30 min</option>
+        </select>
+      </label>
+      <button id="boardSound" type="button" aria-pressed="false">Enable alerts</button>
+      <button id="boardCompact" type="button" aria-pressed="false">Compact view</button>
       <button id="boardFullscreen" type="button">Full screen</button>
     </div>
   </header>
@@ -42,7 +52,7 @@
         <div id="cancelledOrders" class="board-order-list"></div>
       </section>
     </div>
-    <p id="boardUpdated" class="board-updated"></p>
+    <p id="boardUpdated" class="board-updated">Waiting for the first successful update.</p>
   </main>
   <script>
     if ('serviceWorker' in navigator) {

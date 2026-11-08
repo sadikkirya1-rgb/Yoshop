@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import kioskUtils from '../kiosk-functions/kiosk-utils.js';
 
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget} = kioskUtils;
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget} = kioskUtils;
 
 test('sanitizeKioskOrder uses catalog prices and computes tax in cents', () => {
 	const result = sanitizeKioskOrder({
@@ -103,7 +103,10 @@ test('sanitizeKioskDisplayOrder includes only active public board fields', () =>
 		status: 'preparing',
 		orderMode: 'dine_in',
 		paymentMode: 'cash',
-		items: [{name: 'Burger', quantity: 2}, {name: '<Tea>', quantity: 1}],
+		orderId: 'order-123',
+		paymentStatus: 'paid',
+		total: 25.5,
+		items: [{name: 'Burger', quantity: 2, notes: '<No onion>'}, {name: '<Tea>', quantity: 1}],
 		customerName: 'Private Customer',
 		whatsappNumber: '+971501234567',
 		createdAt: new Date('2026-11-06T15:00:00.000Z')
@@ -112,11 +115,16 @@ test('sanitizeKioskDisplayOrder includes only active public board fields', () =>
 	assert.deepEqual(result, {
 		orderNumber: '20261106-007',
 		table: 'Patio  2',
+		orderId: 'order-123',
+		deliveryAddress: '',
 		orderMode: 'dine_in',
 		paymentMode: 'cash',
-		items: [{name: 'Burger', quantity: 2}, {name: 'Tea', quantity: 1}],
+		paymentStatus: 'paid',
+		items: [{name: 'Burger', quantity: 2, notes: 'No onion'}, {name: 'Tea', quantity: 1, notes: ''}],
+		total: 25.5,
 		status: 'preparing',
-		createdAt: '2026-11-06T15:00:00.000Z'
+		createdAt: '2026-11-06T15:00:00.000Z',
+		statusUpdatedAt: '2026-11-06T15:00:00.000Z'
 	});
 	assert.equal(sanitizeKioskDisplayOrder({source: 'kiosk', requestType: 'attendant', status: 'new'}), null);
 	assert.equal(sanitizeKioskDisplayOrder({source: 'kiosk', requestType: 'order', status: 'draft'}), null);
@@ -132,6 +140,44 @@ test('sanitizeKioskDisplayOrder exposes completed and cancelled kiosk orders', (
 			createdAt: new Date('2026-11-08T10:00:00.000Z')
 		})?.status, status);
 	}
+});
+
+test('sanitizeKioskDisplayOrder includes staff details without exposing customer contact data', () => {
+	const result = sanitizeKioskDisplayOrder({
+		source: 'kiosk',
+		requestType: 'order',
+		status: 'new',
+		orderId: 'order-123',
+		orderNumber: '20261108-002',
+		orderMode: 'delivery',
+		deliveryAddress: '<Block 4 & Apartment 2>',
+		paymentMode: 'pay_on_delivery',
+		items: [{name: 'Meal', quantity: 1, notes: '<No spice>'}],
+		total: 12.5,
+		createdAt: new Date('2026-11-08T10:00:00.000Z'),
+		whatsappNumber: '+971501234567'
+	});
+
+	assert.equal(result.orderId, 'order-123');
+	assert.equal(result.orderNumber, '20261108-002');
+	assert.equal(result.deliveryAddress, 'Block 4  Apartment 2');
+	assert.equal(result.paymentStatus, 'pending');
+	assert.equal(result.items[0].notes, 'No spice');
+	assert.equal(result.total, 12.5);
+	assert.equal(Object.hasOwn(result, 'whatsappNumber'), false);
+});
+
+test('completed kiosk orders stay on the display for 24 hours after their last status update', () => {
+	const now = new Date('2026-11-08T10:00:00.000Z').valueOf();
+	assert.equal(isKioskDisplayOrderVisible({status: 'new'}, now), true);
+	assert.equal(isKioskDisplayOrderVisible({
+		status: 'completed',
+		statusUpdatedAt: new Date(now - 23 * 60 * 60 * 1000).toISOString()
+	}, now), true);
+	assert.equal(isKioskDisplayOrderVisible({
+		status: 'cancelled',
+		statusUpdatedAt: new Date(now - 25 * 60 * 60 * 1000).toISOString()
+	}, now), false);
 });
 
 test('sanitizeKioskImageMap keeps secure image URLs only for selected products', () => {

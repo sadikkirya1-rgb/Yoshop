@@ -4,7 +4,7 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const crypto = require("node:crypto");
 const admin = require("firebase-admin");
 const {getFirestore} = require("firebase-admin/firestore");
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget} = require("./kiosk-utils");
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget} = require("./kiosk-utils");
 
 admin.initializeApp({storageBucket: "yoshop-b502f.firebasestorage.app"});
 const db = getFirestore(admin.app(), "yoshop");
@@ -458,11 +458,13 @@ exports.getKioskOrderDisplay = onCall(callableOptions, async (request) => {
 	]);
 	const profile = profileSnapshot.data() || {};
 	const orders = ordersSnapshot.docs
-		.map(document => sanitizeKioskDisplayOrder(document.data() || {}))
+		.map(document => sanitizeKioskDisplayOrder({...document.data(), orderId: document.id}))
 		.filter(Boolean);
+	const visibleOrders = orders.filter((order) => isKioskDisplayOrderVisible(order));
 	return {
 		businessName: String(profile.settings?.name || "Order display").trim().slice(0, 100),
-		orders
+		currency: String(profile.settings?.currency || "$").slice(0, 8),
+		orders: visibleOrders
 	};
 });
 

@@ -71,27 +71,44 @@ function sanitizeKioskDisplayOrder(order = {}) {
 	if (order.source !== 'kiosk' || order.requestType !== 'order' || !['new', 'accepted', 'preparing', 'ready', 'in_pos', 'paid', 'completed', 'rejected', 'cancelled', 'canceled'].includes(status)) {
 		return null;
 	}
-	const createdAt = order.createdAt?.toDate?.() || new Date(order.createdAt || 0);
+	const createdAt = order.createdAt?.toDate?.() || (order.createdAt ? new Date(order.createdAt) : null);
+	const statusUpdatedAt = order.statusUpdatedAt?.toDate?.()
+		|| (order.statusUpdatedAt ? new Date(order.statusUpdatedAt) : createdAt);
 	const items = (Array.isArray(order.items) ? order.items : [])
 		.slice(0, 20)
 		.map((item) => ({
 			name: String(item?.name || 'Menu item').replace(/[<>&]/g, '').trim().slice(0, 60),
-			quantity: Number(item?.quantity)
+			quantity: Number(item?.quantity),
+			notes: String(item?.notes || '').replace(/[<>&]/g, '').trim().slice(0, 120)
 		}))
 		.filter((item) => item.name && Number.isInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 20);
+	const paymentStatus = String(order.paymentStatus || '').toLowerCase();
 	return {
+		orderId: String(order.orderId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 100),
 		orderNumber: String(order.orderNumber || '').slice(0, 40),
 		table: String(order.table || '').replace(/[<>&]/g, '').trim().slice(0, 40),
+		deliveryAddress: String(order.orderMode === 'delivery' ? order.deliveryAddress || '' : '').replace(/[<>&]/g, '').trim().slice(0, 250),
 		orderMode: ['dine_in', 'takeaway', 'delivery'].includes(order.orderMode)
 			? order.orderMode
 			: (order.table ? 'dine_in' : 'takeaway'),
 		paymentMode: ['cash', 'card_at_counter', 'pay_on_delivery', 'online_payment'].includes(order.paymentMode)
 			? order.paymentMode
 			: 'not_specified',
+		paymentStatus: paymentStatus === 'paid' || order.paidAt ? 'paid' : 'pending',
 		items,
+		total: order.total !== undefined && order.total !== null && Number.isFinite(Number(order.total)) && Number(order.total) >= 0
+			? Math.round(Number(order.total) * 100) / 100
+			: null,
 		status,
-		createdAt: Number.isNaN(createdAt.valueOf()) ? '' : createdAt.toISOString()
+		createdAt: createdAt && !Number.isNaN(createdAt.valueOf()) ? createdAt.toISOString() : '',
+		statusUpdatedAt: statusUpdatedAt && !Number.isNaN(statusUpdatedAt.valueOf()) ? statusUpdatedAt.toISOString() : ''
 	};
+}
+
+function isKioskDisplayOrderVisible(order = {}, now = Date.now()) {
+	if (!['paid', 'completed', 'rejected', 'cancelled', 'canceled'].includes(order.status)) return true;
+	const statusUpdatedAt = new Date(order.statusUpdatedAt || '').valueOf();
+	return Number.isFinite(statusUpdatedAt) && statusUpdatedAt >= now - 24 * 60 * 60 * 1000;
 }
 
 function sanitizeKioskImageMap(imageMap = {}, selectedProductIds = []) {
@@ -170,4 +187,4 @@ function isAuthorizedKioskTarget(auth = null, targetUid = '', masterAdminUid = '
 	return auth.uid === masterAdminUid || email === masterAdminEmail.toLowerCase();
 }
 
-module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget};
+module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget};
