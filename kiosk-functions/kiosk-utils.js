@@ -85,4 +85,11 @@ function sanitizeKioskImageMap(imageMap = {}, selectedProductIds = []) {
 	return result;
 }
 
-module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap};
+function isAuthorizedKioskTarget(auth = null, targetUid = '', masterAdminUid = '', masterAdminEmail = '') {
+	if (!auth?.uid || typeof targetUid !== 'string' || !targetUid.trim() || targetUid.length > 128) return false;
+	if (targetUid === auth.uid) return true;
+	const email = String(auth.token?.email || '').trim().toLowerCase();
+	return auth.uid === masterAdminUid || email === masterAdminEmail.toLowerCase();
+}
+
+module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, isAuthorizedKioskTarget};

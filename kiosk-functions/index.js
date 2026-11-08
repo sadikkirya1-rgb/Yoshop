@@ -4,13 +4,15 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const crypto = require("node:crypto");
 const admin = require("firebase-admin");
 const {getFirestore} = require("firebase-admin/firestore");
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap} = require("./kiosk-utils");
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, isAuthorizedKioskTarget} = require("./kiosk-utils");
 
 admin.initializeApp();
 const db = getFirestore(admin.app(), "yoshop");
 const callableOptions = {region: "us-central1", cors: true};
 const KIOSK_RATE_LIMIT_WINDOW_MS = 60 * 1000;
 const KIOSK_RATE_LIMIT_MAX_REQUESTS = 12;
+const MASTER_APP_ADMIN_UID = "Y0N3Ny1AX9VZEQb6AdRwhK8xpkg2";
+const MASTER_APP_ADMIN_EMAIL = "sadikkirya@gmail.com";
 
 function hashKioskValue(value) {
 	return crypto.createHash("sha256").update(String(value)).digest("hex");
@@ -30,7 +32,13 @@ function getKioskTokenHash(token) {
 
 async function assertKioskOwner(request) {
 	if (!request.auth) throw new HttpsError("unauthenticated", "Sign in to manage kiosk ordering.");
-	const userRef = db.collection("users").doc(request.auth.uid);
+	const targetUid = request.data?.targetUid === undefined
+		? request.auth.uid
+		: String(request.data.targetUid).trim();
+	if (!isAuthorizedKioskTarget(request.auth, targetUid, MASTER_APP_ADMIN_UID, MASTER_APP_ADMIN_EMAIL)) {
+		throw new HttpsError("permission-denied", "You are not allowed to manage kiosk ordering for this business.");
+	}
+	const userRef = db.collection("users").doc(targetUid);
 	const profileRef = userRef.collection("data").doc("shop_profile");
 	const [userSnapshot, profileSnapshot] = await Promise.all([userRef.get(), profileRef.get()]);
 	if (!userSnapshot.exists) throw new HttpsError("permission-denied", "This account does not own a registered business.");
@@ -41,7 +49,7 @@ async function assertKioskOwner(request) {
 	if (["pending", "suspended", "deactivated", "deleted"].includes(accountStatus) || ["suspended", "deactivated"].includes(shopStatus)) {
 		throw new HttpsError("permission-denied", "This business is not currently allowed to use kiosk ordering.");
 	}
-	return {uid: request.auth.uid, userData, profile};
+	return {uid: targetUid, userData, profile};
 }
 
 async function loadKioskByToken(token, previewUid = "") {

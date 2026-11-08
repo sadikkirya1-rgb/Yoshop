@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import kioskUtils from '../kiosk-functions/kiosk-utils.js';
 
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap} = kioskUtils;
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, isAuthorizedKioskTarget} = kioskUtils;
 
 test('sanitizeKioskOrder uses catalog prices and computes tax in cents', () => {
 	const result = sanitizeKioskOrder({
@@ -101,4 +101,14 @@ test('sanitizeKioskImageMap keeps secure image URLs only for selected products',
 	}, ['dish1', 'dish2', 'dish3']), {
 		dish1: 'https://storage.example.com/dish1.jpg'
 	});
+});
+
+test('kiosk target access allows owners and the master app admin only', () => {
+	const masterUid = 'master-admin';
+	const masterEmail = 'admin@example.com';
+	assert.equal(isAuthorizedKioskTarget({uid: 'business-1'}, 'business-1', masterUid, masterEmail), true);
+	assert.equal(isAuthorizedKioskTarget({uid: masterUid}, 'business-1', masterUid, masterEmail), true);
+	assert.equal(isAuthorizedKioskTarget({uid: 'admin-user', token: {email: 'ADMIN@example.com'}}, 'business-1', masterUid, masterEmail), true);
+	assert.equal(isAuthorizedKioskTarget({uid: 'other-user', token: {email: 'other@example.com'}}, 'business-1', masterUid, masterEmail), false);
+	assert.equal(isAuthorizedKioskTarget({uid: 'master-admin'}, '', masterUid, masterEmail), false);
 });

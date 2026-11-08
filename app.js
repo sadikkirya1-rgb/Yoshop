@@ -21908,6 +21908,14 @@ let kioskAvailableProducts = [];
 let kioskSelectedProductIds = new Set();
 let kioskSettingsCache = null;
 
+function canManageKioskMenu() {
+  return isShopAdminRole() || (isAppAdminRole() && isMonitoringMode && isMasterAdminUser());
+}
+
+function getKioskTargetUid() {
+  return getEffectiveUid() || currentUser?.uid || '';
+}
+
 function getKioskProductId(product) {
   return String(product?.recordId || product?.id || '').trim();
 }
@@ -22159,7 +22167,7 @@ function listenForKioskOrders() {
   if (!currentUser || !dbFirestore) return;
   if (kioskOrderUnsubscribe) kioskOrderUnsubscribe();
   kioskOrdersInitialSnapshot = true;
-  const ordersQuery = query(collection(dbFirestore, 'users', currentUser.uid, 'kioskOrders'), orderBy('createdAt', 'desc'), limit(50));
+  const ordersQuery = query(collection(dbFirestore, 'users', getKioskTargetUid(), 'kioskOrders'), orderBy('createdAt', 'desc'), limit(50));
   kioskOrderUnsubscribe = onSnapshot(ordersQuery, snapshot => {
     const orders = snapshot.docs.map(orderDocument => ({id: orderDocument.id, ...orderDocument.data()}));
     const connection = document.getElementById('kioskOrdersConnection');
@@ -22222,7 +22230,7 @@ async function initializeKioskMenuTab() {
     orderFilter.dataset.listenerBound = 'true';
     orderFilter.addEventListener('change', () => renderKioskOrderCards());
   }
-  if (!isShopAdminRole()) {
+  if (!canManageKioskMenu()) {
     document.querySelector('.kiosk-publish-panel')?.style.setProperty('display', 'none');
     document.querySelector('.kiosk-qr-panel')?.style.setProperty('display', 'none');
     document.querySelector('.kiosk-order-display-open')?.setAttribute('hidden', '');
@@ -22237,7 +22245,7 @@ async function initializeKioskMenuTab() {
   if (status) status.textContent = 'Loading kiosk settings...';
   try {
     const configure = httpsCallable(functions, 'configureKioskMenu');
-    const response = await configure({});
+    const response = await configure({targetUid: getKioskTargetUid()});
     kioskSettingsCache = response.data || {};
     const enabled = document.getElementById('kioskEnabledInput');
     const attendant = document.getElementById('kioskAttendantInput');
@@ -22254,7 +22262,7 @@ async function initializeKioskMenuTab() {
 }
 
 async function saveKioskMenuSettings(rotateToken = false) {
-  if (!currentUser || !isShopAdminRole()) return showAppAlert('Only the business owner can publish this menu.', 'Access Denied');
+  if (!currentUser || !canManageKioskMenu()) return showAppAlert('Only the business owner can publish this menu.', 'Access Denied');
   const status = document.getElementById('kioskMenuStatus');
   const selectedProductIds = Array.from(kioskSelectedProductIds);
   const productImages = {};
@@ -22267,6 +22275,7 @@ async function saveKioskMenuSettings(rotateToken = false) {
     if (typeof image === 'string' && image.startsWith('https://')) productImages[productId] = image;
   });
   const payload = {
+    targetUid: getKioskTargetUid(),
     selectedProductIds,
     productImages,
     enabled: document.getElementById('kioskEnabledInput')?.checked === true,
@@ -22329,7 +22338,7 @@ function closeKioskPreview() {
 }
 
 async function openKioskOrderDisplay() {
-  if (!currentUser || !isShopAdminRole()) {
+  if (!currentUser || !canManageKioskMenu()) {
     return showAppAlert('Only the business owner can open the customer order display.', 'Access Denied');
   }
   const displayWindow = window.open('about:blank', '_blank');
@@ -22340,7 +22349,7 @@ async function openKioskOrderDisplay() {
   displayWindow.document.title = 'Opening order display';
   displayWindow.document.body.textContent = 'Connecting to the order display...';
   try {
-    const response = await httpsCallable(functions, 'getKioskOrderDisplayLink')({});
+    const response = await httpsCallable(functions, 'getKioskOrderDisplayLink')({targetUid: getKioskTargetUid()});
     const displayUrl = new URL('order-display.html', window.location.href);
     displayUrl.hash = new URLSearchParams({display: String(response.data?.displayToken || '')}).toString();
     displayWindow.location.replace(displayUrl.toString());
@@ -22360,7 +22369,7 @@ function printKioskQr() {
 async function updateKioskOrderStatus(orderId, status) {
   if (!currentUser || !requireActionPermission('kioskmenu.write', 'update a kiosk request') || !['accepted', 'preparing', 'ready', 'rejected', 'resolved'].includes(status)) return;
   try {
-    await updateDoc(doc(dbFirestore, 'users', currentUser.uid, 'kioskOrders', orderId), {
+    await updateDoc(doc(dbFirestore, 'users', getKioskTargetUid(), 'kioskOrders', orderId), {
       status,
       statusUpdatedAt: new Date().toISOString(),
       updatedBy: currentLoggedInStaffName || currentUser.displayName || currentUser.email || 'staff'
@@ -22386,7 +22395,7 @@ async function loadKioskOrderToPos(order) {
   if (posItems.some(item => !item)) return showAppAlert('A product in this order is no longer available in the POS menu.', 'Product Unavailable');
   activeOrders[CART_ID] = {items: posItems, server: currentLoggedInStaffName || '', kioskOrderId: order.id, table: order.table || '', source: 'kiosk'};
   await saveData(false);
-  await updateDoc(doc(dbFirestore, 'users', currentUser.uid, 'kioskOrders', order.id), {
+  await updateDoc(doc(dbFirestore, 'users', getKioskTargetUid(), 'kioskOrders', order.id), {
     status: 'in_pos',
     statusUpdatedAt: new Date().toISOString()
   });
@@ -22417,7 +22426,7 @@ async function enableKioskOrderPush() {
     const messaging = getMessaging(app);
     const token = await getToken(messaging, {vapidKey: FIREBASE_MESSAGING_VAPID_KEY, serviceWorkerRegistration: registration});
     if (!token) throw new Error('No push token was returned for this device.');
-    await httpsCallable(functions, 'registerKioskDevice')({token, deviceLabel: navigator.userAgent.slice(0, 80)});
+    await httpsCallable(functions, 'registerKioskDevice')({targetUid: getKioskTargetUid(), token, deviceLabel: navigator.userAgent.slice(0, 80)});
     if (!kioskPushMessageUnsubscribe) {
       kioskPushMessageUnsubscribe = onMessage(messaging, payload => {
         const message = payload.notification?.body || 'A new kiosk request is waiting for staff.';
@@ -22440,7 +22449,7 @@ async function disableKioskOrderPush() {
     const messaging = getMessaging(app);
     const registration = await navigator.serviceWorker.ready;
     const token = await getToken(messaging, {vapidKey: FIREBASE_MESSAGING_VAPID_KEY, serviceWorkerRegistration: registration});
-    if (token) await httpsCallable(functions, 'unregisterKioskDevice')({token});
+    if (token) await httpsCallable(functions, 'unregisterKioskDevice')({targetUid: getKioskTargetUid(), token});
     await deleteToken(messaging);
     setKioskPushStatus('This device will no longer receive kiosk order alerts.');
   } catch (error) {
