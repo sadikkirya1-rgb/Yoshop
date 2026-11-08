@@ -82,9 +82,10 @@ body.dark-mode .dashboard-card:hover {
 
 .kiosk-owner-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(280px, 0.75fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: start;
+  margin-top: 24px;
 }
 
 .kiosk-workspace-heading {
@@ -121,8 +122,19 @@ body.dark-mode .dashboard-card:hover {
   display: flex;
   flex: 0 0 auto;
   align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 12px;
 }
+
+.kiosk-workspace-status #kioskOrdersConnection {
+  color: #64746c;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kiosk-workspace-status .kiosk-queue-toolbar { display: contents; }
 
 .kiosk-workspace-status > strong,
 .kiosk-selection-count {
@@ -168,10 +180,38 @@ body.dark-mode .dashboard-card:hover {
 
 .kiosk-panel-heading {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  margin: 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.kiosk-panel-heading::-webkit-details-marker { display: none; }
+
+.kiosk-panel-heading::after {
+  flex: 0 0 auto;
+  color: #64746c;
+  content: "+";
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kiosk-publish-panel[open] .kiosk-panel-heading,
+.kiosk-qr-panel[open] .kiosk-panel-heading {
+  margin-bottom: 14px;
+}
+
+.kiosk-publish-panel[open] .kiosk-panel-heading::after,
+.kiosk-qr-panel[open] .kiosk-panel-heading::after {
+  content: "−";
+}
+
+.kiosk-panel-content {
+  display: grid;
+  gap: 8px;
 }
 
 .kiosk-panel-heading h4 {
@@ -742,7 +782,7 @@ body.printing-kiosk-qr #kioskQrPrintArea {
 
 @media (max-width: 760px) {
   .kiosk-workspace-heading { align-items: flex-start; }
-  .kiosk-workspace-status { flex-direction: column; align-items: flex-end; gap: 5px; }
+  .kiosk-workspace-status { flex: 1 1 100%; justify-content: flex-start; gap: 8px; }
   .kiosk-owner-grid {
     grid-template-columns: minmax(0, 1fr);
   }
