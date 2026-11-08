@@ -339,6 +339,14 @@ body.dark-mode .dashboard-card:hover {
 .kiosk-product-option:hover { background: var(--bg); }
 .kiosk-product-option input { flex: 0 0 auto; }
 .kiosk-product-option span { min-width: 0; }
+.kiosk-product-option-image {
+  width: 36px;
+  height: 36px;
+  flex: 0 0 36px;
+  border-radius: 4px;
+  object-fit: cover;
+  background: var(--bg);
+}
 
 .kiosk-publish-footer {
   display: flex;

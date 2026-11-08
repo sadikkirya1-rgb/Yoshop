@@ -182,9 +182,9 @@ function renderMenu() {
       card.tabIndex = 0;
       card.setAttribute('role', 'button');
       card.setAttribute('aria-label', `${item.name}, ${formatMoney(item.price)}. Tap to add one. ${quantity} selected.`);
-      card.addEventListener('click', () => addItem(item));
+      card.addEventListener('click', () => addItem(item), {capture: true});
       card.addEventListener('keydown', event => {
-        if (event.target !== card || !['Enter', ' '].includes(event.key)) return;
+        if (!['Enter', ' '].includes(event.key)) return;
         event.preventDefault();
         addItem(item);
       });
@@ -193,38 +193,34 @@ function renderMenu() {
     }
     const imageWrap = document.createElement('div');
     imageWrap.className = 'kiosk-item-image-wrap';
-    if (item.image) {
+    const imageUrl = item.image || item.fallbackImage;
+    if (imageUrl) {
       const image = document.createElement('img');
-      image.src = item.image;
+      image.src = imageUrl;
       image.alt = '';
       image.loading = index < 4 ? 'eager' : 'lazy';
       image.decoding = 'async';
       image.fetchPriority = index < 4 ? 'high' : 'auto';
-      setKioskImageFallback(image, item.fallbackImage, () => {
-        image.remove();
-        imageWrap.classList.add('has-image-error');
+      setKioskImageFallback(image, item.image && item.fallbackImage !== item.image ? item.fallbackImage : '', () => {
+        imageWrap.remove();
+        card.classList.remove('has-image');
       });
       imageWrap.appendChild(image);
-    } else {
-      const placeholder = document.createElement('span');
-      placeholder.className = 'kiosk-item-image-placeholder';
-      placeholder.setAttribute('aria-hidden', 'true');
-      imageWrap.appendChild(placeholder);
+      card.appendChild(imageWrap);
+      card.classList.add('has-image');
     }
+    let selectedCount = null;
     if (!previewOnly && quantity > 0) {
-      const selectedCount = document.createElement('span');
+      selectedCount = document.createElement('span');
       selectedCount.className = 'kiosk-selected-count';
       selectedCount.textContent = String(quantity);
       selectedCount.setAttribute('aria-live', 'polite');
       selectedCount.setAttribute('aria-label', `${quantity} selected`);
-      imageWrap.appendChild(selectedCount);
     }
-    card.appendChild(imageWrap);
     const detail = document.createElement('div');
     detail.className = 'menu-item-body kiosk-item-details';
     const heading = document.createElement('div');
-    const isLongProductName = item.name.trim().length >= 18;
-    heading.className = `menu-item-header ${isLongProductName ? 'menu-item-header-stacked' : 'menu-item-header-inline'}`;
+    heading.className = 'menu-item-header menu-item-header-inline';
     const title = document.createElement('h4');
     title.textContent = item.name;
     const price = document.createElement('p');
@@ -232,6 +228,7 @@ function renderMenu() {
     price.textContent = formatMoney(item.price);
     heading.append(title, price);
     detail.appendChild(heading);
+    if (selectedCount) detail.appendChild(selectedCount);
     if (item.isAvailable === false) {
       const availability = document.createElement('span');
       availability.className = 'kiosk-sold-out';
@@ -258,25 +255,24 @@ function renderCart() {
     quantityTotal += quantity;
     subtotalCents += Math.round(Number(item.price) * 100) * quantity;
     const row = document.createElement('div');
-    row.className = 'kiosk-cart-line';
+    row.className = `kiosk-cart-line${item.image ? ' has-image' : ''}`;
     row.dataset.productId = item.id;
     const imageBox = document.createElement('div');
     imageBox.className = 'kiosk-cart-line-image-box';
-    if (item.image) {
+    const imageUrl = item.image || item.fallbackImage;
+    if (imageUrl) {
       const image = document.createElement('img');
-      image.src = item.image;
+      image.src = imageUrl;
       image.alt = '';
       image.loading = 'lazy';
       image.decoding = 'async';
-      setKioskImageFallback(image, item.fallbackImage, () => {
-        image.remove();
-        imageBox.classList.add('is-placeholder');
+      setKioskImageFallback(image, item.image && item.fallbackImage !== item.image ? item.fallbackImage : '', () => {
+        imageBox.remove();
+        row.classList.remove('has-image');
       });
       imageBox.appendChild(image);
-    } else {
-      imageBox.classList.add('is-placeholder');
+      row.appendChild(imageBox);
     }
-    row.appendChild(imageBox);
     const info = document.createElement('div');
     const titleRow = document.createElement('div');
     titleRow.className = 'kiosk-cart-line-heading';

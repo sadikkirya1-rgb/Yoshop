@@ -21926,6 +21926,29 @@ function getKioskProductLabel(product) {
   return `${String(product?.name || 'Menu item')} · ${formatCurrency(Number.isFinite(price) ? price : 0)}`;
 }
 
+function isKioskProductImageUrl(image) {
+  if (typeof image !== 'string' || !image.startsWith('https://') || !isValidMenuImage(image)) return false;
+  try {
+    return new URL(image, location.href).pathname !== PLACEHOLDER_IMAGE;
+  } catch {
+    return false;
+  }
+}
+
+function getKioskProductImageUrl(product) {
+  const productId = getKioskProductId(product);
+  const cardImage = Array.from(document.querySelectorAll('.menu-item[data-product-name]'))
+    .find(card => card.dataset.productName === product?.name)
+    ?.querySelector('img');
+  const candidates = [
+    product?.image,
+    getCachedDishImage(product?.name),
+    cardImage?.currentSrc || cardImage?.src,
+    kioskSettingsCache?.productImages?.[productId]
+  ];
+  return candidates.find(isKioskProductImageUrl) || '';
+}
+
 function getKioskBackendErrorMessage(error, fallback) {
   const details = `${error?.code || ''} ${error?.message || ''}`.toLowerCase();
   if (/functions\/internal|\binternal\b|cors|failed to fetch|networkerror/.test(details)) {
@@ -21968,9 +21991,22 @@ function renderKioskProductOptions(selectedProductIds = null) {
     checkbox.type = 'checkbox';
     checkbox.value = getKioskProductId(product);
     checkbox.checked = kioskSelectedProductIds.has(checkbox.value);
+    const imageUrl = getKioskProductImageUrl(product);
+    let image = null;
+    if (imageUrl) {
+      image = document.createElement('img');
+      image.className = 'kiosk-product-option-image';
+      image.alt = `${String(product.name).trim()} photo`;
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.src = imageUrl;
+      image.addEventListener('error', () => image.remove(), {once: true});
+    }
     const name = document.createElement('span');
     name.textContent = getKioskProductLabel(product);
-    label.append(checkbox, name);
+    label.append(checkbox);
+    if (image) label.append(image);
+    label.append(name);
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) kioskSelectedProductIds.add(checkbox.value);
       else kioskSelectedProductIds.delete(checkbox.value);
@@ -22267,13 +22303,13 @@ async function saveKioskMenuSettings(rotateToken = false) {
   const status = document.getElementById('kioskMenuStatus');
   const selectedProductIds = Array.from(kioskSelectedProductIds);
   const productImages = {};
+  const productsWithoutImages = [];
   selectedProductIds.forEach(productId => {
     const product = kioskAvailableProducts.find(item => getKioskProductId(item) === productId);
     if (!product) return;
-    const image = typeof product.image === 'string' && product.image.startsWith('https://')
-      ? product.image
-      : getCachedDishImage(product.name);
-    if (typeof image === 'string' && image.startsWith('https://')) productImages[productId] = image;
+    const image = getKioskProductImageUrl(product);
+    if (image) productImages[productId] = image;
+    else productsWithoutImages.push(String(product.name || 'Unnamed product'));
   });
   const payload = {
     targetUid: getKioskTargetUid(),
@@ -22290,7 +22326,12 @@ async function saveKioskMenuSettings(rotateToken = false) {
     kioskSettingsCache = response.data || {};
     const enabled = document.getElementById('kioskEnabledInput');
     if (enabled) enabled.checked = kioskSettingsCache.enabled === true;
-    if (status) status.textContent = kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Menu settings saved. The public menu is disabled.';
+    if (status) {
+      const publishMessage = kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Menu settings saved. The public menu is disabled.';
+      status.textContent = productsWithoutImages.length
+        ? `${publishMessage} No product photo was found for: ${productsWithoutImages.join(', ')}.`
+        : publishMessage;
+    }
     updateKioskPublishState(kioskSettingsCache.enabled === true);
     renderKioskProductOptions(kioskSettingsCache.selectedProductIds || []);
     renderKioskQr();

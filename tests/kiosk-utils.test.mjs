@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import kioskUtils from '../kiosk-functions/kiosk-utils.js';
 
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isAuthorizedKioskTarget} = kioskUtils;
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget} = kioskUtils;
 
 test('sanitizeKioskOrder uses catalog prices and computes tax in cents', () => {
 	const result = sanitizeKioskOrder({
@@ -110,6 +110,22 @@ test('getFirebaseStorageObjectPath extracts encoded paths only from the configur
 	assert.equal(getFirebaseStorageObjectPath('https://storage.googleapis.com/yoshop-b502f.firebasestorage.app/shops/shop-1/photo.jpg', bucket), 'shops/shop-1/photo.jpg');
 	assert.equal(getFirebaseStorageObjectPath('https://firebasestorage.googleapis.com/v0/b/other-bucket/o/photo.jpg', bucket), null);
 	assert.equal(getFirebaseStorageObjectPath('https://images.example.com/photo.jpg', bucket), null);
+});
+
+test('isFirebaseStorageDownloadUrl preserves tokenized links only for the configured bucket', () => {
+	const bucket = 'yoshop-b502f.firebasestorage.app';
+	assert.equal(isFirebaseStorageDownloadUrl('https://firebasestorage.googleapis.com/v0/b/yoshop-b502f.firebasestorage.app/o/shops%2Fshop-1%2Fphoto.jpg?alt=media&token=abc', bucket), true);
+	assert.equal(isFirebaseStorageDownloadUrl('https://firebasestorage.googleapis.com/v0/b/yoshop-b502f.firebasestorage.app/o/photo.jpg?alt=media', bucket), false);
+	assert.equal(isFirebaseStorageDownloadUrl('https://firebasestorage.googleapis.com/v0/b/other-bucket/o/photo.jpg?token=abc', bucket), false);
+	assert.equal(isFirebaseStorageDownloadUrl('http://firebasestorage.googleapis.com/v0/b/yoshop-b502f.firebasestorage.app/o/photo.jpg?token=abc', bucket), false);
+});
+
+test('buildFirebaseStorageDownloadUrl encodes the bucket, object path, and token', () => {
+	assert.equal(
+		buildFirebaseStorageDownloadUrl('yoshop-b502f.firebasestorage.app', 'shops/shop 1/dishes/a photo.jpg', 'token+/='),
+		'https://firebasestorage.googleapis.com/v0/b/yoshop-b502f.firebasestorage.app/o/shops%2Fshop%201%2Fdishes%2Fa%20photo.jpg?alt=media&token=token%2B%2F%3D'
+	);
+	assert.equal(buildFirebaseStorageDownloadUrl('', 'photo.jpg', 'token'), '');
 });
 
 test('kiosk target access allows owners and the master app admin only', () => {

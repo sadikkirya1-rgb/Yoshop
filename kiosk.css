@@ -242,7 +242,7 @@ textarea:focus-visible {
 
 .kiosk-menu-item {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
   min-height: 88px;
@@ -251,6 +251,8 @@ textarea:focus-visible {
   border-radius: 6px;
   background: #fff;
 }
+
+.kiosk-menu-item.has-image { grid-template-columns: 72px minmax(0, 1fr) auto; }
 
 .kiosk-menu-items[data-view-mode="grid"] {
   grid-template-columns: repeat(auto-fit, minmax(170px, 170px));
@@ -284,7 +286,6 @@ textarea:focus-visible {
   height: 68px;
   overflow: hidden;
   border-radius: 4px;
-  background: var(--kiosk-mint);
 }
 
 .kiosk-menu-items[data-view-mode="grid"] .kiosk-item-image-wrap {
@@ -299,20 +300,11 @@ textarea:focus-visible {
   padding: 10px;
 }
 
-.kiosk-item-image-wrap img,
-.kiosk-item-image-placeholder {
+.kiosk-item-image-wrap img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: cover;
-  background: var(--kiosk-mint);
-}
-
-.kiosk-item-image-wrap.has-image-error::before {
-  display: block;
-  height: 100%;
-  background: var(--kiosk-mint);
-  content: "";
 }
 
 .kiosk-selected-count {
@@ -336,29 +328,27 @@ textarea:focus-visible {
 
 .kiosk-item-details .menu-item-header {
   display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
   width: 100%;
-  gap: 6px;
+  gap: 2px;
   text-align: left;
 }
 
-.kiosk-item-details .menu-item-header-stacked { flex-direction: column; align-items: flex-start; justify-content: flex-start; }
 .kiosk-item-details h4 {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  width: 100%;
   margin: 0;
-  overflow: visible;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 0.64em;
   line-height: 1.3;
   font-weight: 500;
-  word-break: break-word;
-  white-space: normal;
+  white-space: nowrap;
 }
 
-.kiosk-item-details .menu-item-header-stacked h4 { width: 100%; flex: none; }
 .kiosk-item-details .kiosk-item-price {
   flex: 0 0 auto;
   margin: 0;
@@ -368,7 +358,6 @@ textarea:focus-visible {
   text-align: left;
   white-space: nowrap;
 }
-.kiosk-item-details .menu-item-header-stacked .kiosk-item-price { display: block; width: 100%; margin-top: 2px; white-space: normal; }
 .kiosk-item-details h4 + p { margin: 0; }
 .kiosk-item-details p { flex-shrink: 0; }
 .kiosk-item-details .kiosk-sold-out { text-align: left; }
@@ -383,6 +372,8 @@ textarea:focus-visible {
   font-size: 0.74rem;
   font-weight: 700;
 }
+
+.kiosk-item-details > .kiosk-selected-count { position: static; display: inline-grid; margin-top: 6px; }
 
 .kiosk-menu-item[role="button"] {
   cursor: pointer;
@@ -448,14 +439,6 @@ textarea:focus-visible {
   gap: 2px;
 }
 
-.kiosk-menu-items[data-view-mode="list"] .menu-item-header-stacked {
-  align-items: flex-start;
-  flex-direction: column;
-}
-
-.kiosk-menu-items[data-view-mode="list"] .menu-item-header-stacked h4,
-.kiosk-menu-items[data-view-mode="list"] .menu-item-header-stacked .kiosk-item-price { width: 100%; }
-
 .kiosk-retry-button {
   width: auto;
   padding: 0 16px;
@@ -483,9 +466,9 @@ textarea:focus-visible {
 .kiosk-cart-items { min-height: 0; flex: 1 1 auto; display: grid; align-content: start; gap: 14px; margin: 20px 0; overflow-y: auto; }
 .kiosk-cart-empty { color: var(--kiosk-muted); font-size: 0.9rem; }
 
-.kiosk-cart-line { display: grid; grid-template-columns: 56px minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; border-bottom: 1px solid var(--kiosk-border); padding-bottom: 12px; }
-.kiosk-cart-line-image-box { width: 56px; height: 56px; overflow: hidden; border-radius: 5px; background: var(--kiosk-mint); }
-.kiosk-cart-line-image-box.is-placeholder { border: 1px dashed var(--kiosk-border); }
+.kiosk-cart-line { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px 12px; align-items: center; border-bottom: 1px solid var(--kiosk-border); padding-bottom: 12px; }
+.kiosk-cart-line.has-image { grid-template-columns: 56px minmax(0, 1fr) auto; }
+.kiosk-cart-line-image-box { width: 56px; height: 56px; overflow: hidden; border-radius: 5px; }
 .kiosk-cart-line-image-box img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .kiosk-cart-line-heading { display: flex; min-width: 0; align-items: baseline; justify-content: space-between; gap: 10px; }
 .kiosk-cart-line-title { min-width: 0; overflow-wrap: anywhere; font-size: 0.88rem; font-weight: 700; }

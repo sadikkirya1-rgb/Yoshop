@@ -4,7 +4,7 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const crypto = require("node:crypto");
 const admin = require("firebase-admin");
 const {getFirestore} = require("firebase-admin/firestore");
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isAuthorizedKioskTarget} = require("./kiosk-utils");
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget} = require("./kiosk-utils");
 
 admin.initializeApp({storageBucket: "yoshop-b502f.firebasestorage.app"});
 const db = getFirestore(admin.app(), "yoshop");
@@ -135,21 +135,37 @@ async function getKioskImageUrl(imageSource) {
 	const imageBucket = kioskImageBuckets.find((bucket) => getFirebaseStorageObjectPath(imageSource, bucket.name));
 	const objectPath = imageBucket && getFirebaseStorageObjectPath(imageSource, imageBucket.name);
 	if (!objectPath) return /^https:\/\//i.test(imageSource) ? imageSource : "";
+	if (isFirebaseStorageDownloadUrl(imageSource, imageBucket.name)) return imageSource;
 
 	const cacheKey = `${imageBucket.name}/${objectPath}`;
 	const cached = kioskImageUrlCache.get(cacheKey);
 	if (cached && cached.expiresAt > Date.now()) return cached.url;
 	if (cached?.promise) return cached.promise;
 
-	const expiresAt = Date.now() + 7 * 24 * 60 * 60 * 1000;
-	const promise = imageBucket.file(objectPath).getSignedUrl({action: "read", expires: expiresAt})
-		.then(([url]) => {
+	const file = imageBucket.file(objectPath);
+	const promise = file.getMetadata()
+		.then(async ([metadata]) => {
+			const metadataTokens = String(metadata.metadata?.firebaseStorageDownloadTokens || "")
+				.split(",").map((token) => token.trim()).filter(Boolean);
+			let token = metadataTokens[0];
+			if (!token) {
+				token = crypto.randomUUID();
+				await file.setMetadata({
+					metadata: {
+						...metadata.metadata,
+						firebaseStorageDownloadTokens: token
+					}
+				});
+			}
+			return buildFirebaseStorageDownloadUrl(imageBucket.name, objectPath, token);
+		})
+		.then((url) => {
 			kioskImageUrlCache.set(cacheKey, {url, expiresAt: Date.now() + KIOSK_IMAGE_URL_CACHE_MS});
 			return url;
 		})
 		.catch((error) => {
 			kioskImageUrlCache.delete(cacheKey);
-			console.warn("[KIOSK] Could not create a public image URL; using the stored URL.", error);
+			console.warn("[KIOSK] Could not create a Firebase image URL; using the stored URL.", error);
 			return /^https:\/\//i.test(imageSource) ? imageSource : "";
 		});
 	kioskImageUrlCache.set(cacheKey, {promise, expiresAt: Date.now() + KIOSK_IMAGE_URL_CACHE_MS});
@@ -207,6 +223,7 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 		enabled,
 		allowAttendant,
 		selectedProductIds,
+		productImages,
 		publicToken: token,
 		businessName: String(profile.settings?.name || userData.name || "YoShop").trim().slice(0, 100)
 	};
