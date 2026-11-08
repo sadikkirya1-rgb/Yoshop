@@ -25,9 +25,6 @@ const message = document.getElementById('boardMessage');
 const boardContent = document.getElementById('boardContent');
 const boardOrders = document.getElementById('boardOrders');
 const activeOrdersCount = document.getElementById('activeOrdersCount');
-const historyOrders = document.getElementById('historyOrders');
-const historyCount = document.getElementById('historyCount');
-const historyEmpty = document.getElementById('historyEmpty');
 const updated = document.getElementById('boardUpdated');
 const connection = document.getElementById('boardConnection');
 const prepTarget = document.getElementById('boardPrepTarget');
@@ -92,10 +89,6 @@ function getStatusLabel(status) {
 
 function isActiveOrder(order) {
   return ['new', 'accepted', 'preparing', 'in_pos', 'ready'].includes(order.status);
-}
-
-function isHistoryOrder(order) {
-  return ['paid', 'completed', 'rejected', 'cancelled', 'canceled'].includes(order.status);
 }
 
 function playNewOrderAlert() {
@@ -208,47 +201,6 @@ function createOrderCard(order, currency = '$') {
   return card;
 }
 
-function formatHistoryTime(value) {
-  const date = new Date(value);
-  return Number.isFinite(date.valueOf())
-    ? date.toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})
-    : 'Unavailable';
-}
-
-function renderHistory(orders, currency) {
-  historyOrders.replaceChildren();
-  historyCount.textContent = `${orders.length} ${orders.length === 1 ? 'record' : 'records'}`;
-  historyEmpty.hidden = orders.length > 0;
-  orders.forEach(order => {
-    const row = document.createElement('tr');
-    const number = document.createElement('td');
-    number.className = 'board-history-order';
-    number.textContent = order.orderNumber ? `#${order.orderNumber}` : 'Order number unavailable';
-    const placed = document.createElement('td');
-    placed.className = 'board-history-time';
-    placed.textContent = formatHistoryTime(order.createdAt);
-    const status = document.createElement('td');
-    const badge = document.createElement('span');
-    badge.className = `board-history-status${['rejected', 'cancelled', 'canceled'].includes(order.status) ? ' is-cancelled' : ''}`;
-    badge.textContent = getStatusLabel(order.status);
-    status.appendChild(badge);
-    const type = document.createElement('td');
-    type.textContent = order.orderMode === 'dine_in' && order.table
-      ? `Dine-in · Table ${order.table}`
-      : order.orderMode === 'delivery' ? 'Delivery' : 'Takeaway';
-    const items = document.createElement('td');
-    items.className = 'board-history-items';
-    items.textContent = (Array.isArray(order.items) ? order.items : [])
-      .map(item => `${item.quantity}× ${item.name}`)
-      .join(', ') || 'No item details';
-    const total = document.createElement('td');
-    total.className = 'board-history-total';
-    total.textContent = Number.isFinite(order.total) ? `${currency}${order.total.toFixed(2)}` : '—';
-    row.append(number, placed, status, type, items, total);
-    historyOrders.appendChild(row);
-  });
-}
-
 function renderDisplay(data) {
   document.getElementById('boardBusinessName').textContent = data.businessName || 'Order display';
   const orders = Array.isArray(data.orders) ? data.orders : [];
@@ -263,9 +215,6 @@ function renderDisplay(data) {
   knownOrderIds = nextOrderIds;
   const currency = String(data.currency || '$');
   const activeOrders = orders.filter(isActiveOrder);
-  const historicalOrders = orders
-    .filter(isHistoryOrder)
-    .sort((first, second) => new Date(second.statusUpdatedAt || second.createdAt).valueOf() - new Date(first.statusUpdatedAt || first.createdAt).valueOf());
   statusCounts.received.textContent = String(orders.filter(order => order.status === 'new').length);
   statusCounts.preparing.textContent = String(orders.filter(order => ['accepted', 'preparing', 'in_pos'].includes(order.status)).length);
   statusCounts.ready.textContent = String(orders.filter(order => order.status === 'ready').length);
@@ -281,7 +230,6 @@ function renderDisplay(data) {
     boardOrders.appendChild(empty);
   }
   activeOrdersCount.textContent = `${activeOrders.length} ${activeOrders.length === 1 ? 'order' : 'orders'}`;
-  renderHistory(historicalOrders, currency);
   boardContent.hidden = false;
   message.textContent = '';
   lastSuccessfulUpdateAt = Date.now();

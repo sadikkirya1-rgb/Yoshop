@@ -22114,6 +22114,61 @@ function updateKioskPublishState(enabled) {
   badge.classList.toggle('is-offline', !enabled);
 }
 
+function getKioskOrderDate(value) {
+  const date = value?.toDate ? value.toDate() : new Date(value || '');
+  return Number.isFinite(date.valueOf()) ? date : null;
+}
+
+function renderKioskOrderHistory(orders) {
+  const list = document.getElementById('kioskOrderHistoryList');
+  const count = document.getElementById('kioskOrderHistoryCount');
+  const empty = document.getElementById('kioskOrderHistoryEmpty');
+  if (!list || !count || !empty) return;
+  const historyStatuses = new Set(['paid', 'completed', 'rejected', 'cancelled', 'canceled']);
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const historyOrders = orders
+    .filter(order => {
+      if (order.requestType !== 'order' || !historyStatuses.has(order.status)) return false;
+      const updatedAt = getKioskOrderDate(order.statusUpdatedAt || order.createdAt);
+      return updatedAt && updatedAt.valueOf() >= cutoff;
+    })
+    .sort((left, right) => (getKioskOrderDate(right.statusUpdatedAt || right.createdAt)?.valueOf() || 0)
+      - (getKioskOrderDate(left.statusUpdatedAt || left.createdAt)?.valueOf() || 0));
+  count.textContent = `${historyOrders.length} ${historyOrders.length === 1 ? 'record' : 'records'}`;
+  empty.hidden = historyOrders.length > 0;
+  list.replaceChildren();
+
+  historyOrders.forEach(order => {
+    const row = document.createElement('tr');
+    const orderNumber = document.createElement('td');
+    orderNumber.className = 'kiosk-history-order-number';
+    orderNumber.textContent = order.orderNumber ? `#${order.orderNumber}` : 'Order number unavailable';
+    const placed = document.createElement('td');
+    const createdAt = getKioskOrderDate(order.createdAt);
+    placed.textContent = createdAt
+      ? createdAt.toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})
+      : 'Time unavailable';
+    const status = document.createElement('td');
+    status.textContent = ({paid: 'Completed', completed: 'Completed', rejected: 'Cancelled', cancelled: 'Cancelled', canceled: 'Cancelled'})[order.status];
+    const type = document.createElement('td');
+    type.textContent = order.orderMode === 'dine_in' && order.table
+      ? `Dine-in · Table ${String(order.table)}`
+      : order.orderMode === 'delivery' ? 'Delivery' : 'Takeaway';
+    const items = document.createElement('td');
+    items.className = 'kiosk-history-items';
+    items.textContent = (Array.isArray(order.items) ? order.items : [])
+      .map(item => `${Number(item.quantity) || 0}× ${String(item.name || 'Menu item')}`)
+      .join(', ') || 'No item details';
+    const total = document.createElement('td');
+    total.className = 'kiosk-history-total';
+    total.textContent = order.total !== undefined && order.total !== null && Number.isFinite(Number(order.total))
+      ? formatCurrency(Number(order.total))
+      : '—';
+    row.append(orderNumber, placed, status, type, items, total);
+    list.appendChild(row);
+  });
+}
+
 function renderKioskOrderCards(orders = null) {
   const container = document.getElementById('kioskOrdersList');
   if (!container) return;
@@ -22129,6 +22184,7 @@ function renderKioskOrderCards(orders = null) {
   if (newCountEl) newCountEl.textContent = `${newCount} new`;
   if (queueCount) queueCount.textContent = `${visibleOrders.length} of ${allOrders.length} requests`;
   updateKioskAttentionNotifications(newCount);
+  renderKioskOrderHistory(allOrders);
   container.replaceChildren();
   if (!visibleOrders.length) {
     const empty = document.createElement('p');
@@ -22308,7 +22364,7 @@ function listenForKioskOrders() {
   if (!currentUser || !dbFirestore) return;
   if (kioskOrderUnsubscribe) kioskOrderUnsubscribe();
   kioskOrdersInitialSnapshot = true;
-  const ordersQuery = query(collection(dbFirestore, 'users', getKioskTargetUid(), 'kioskOrders'), orderBy('createdAt', 'desc'), limit(50));
+  const ordersQuery = query(collection(dbFirestore, 'users', getKioskTargetUid(), 'kioskOrders'), orderBy('createdAt', 'desc'), limit(60));
   kioskOrderUnsubscribe = onSnapshot(ordersQuery, snapshot => {
     const orders = snapshot.docs.map(orderDocument => ({id: orderDocument.id, ...orderDocument.data()}));
     const connection = document.getElementById('kioskOrdersConnection');

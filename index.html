@@ -653,6 +653,26 @@
         </div>
         <p id="kioskQueuePushStatus" class="kiosk-status-text" role="status"></p>
         <div id="kioskOrdersList" class="kiosk-orders-list" aria-live="polite"></div>
+        <details class="kiosk-order-history">
+          <summary class="kiosk-order-history-heading">
+            <div>
+              <h4 id="kioskOrderHistoryHeading">Recent order history</h4>
+              <p>Completed and cancelled kiosk orders from the last 24 hours.</p>
+            </div>
+            <span id="kioskOrderHistoryCount" class="kiosk-selection-count">0 records</span>
+          </summary>
+          <div class="kiosk-order-history-content">
+            <div class="kiosk-order-history-table-wrap">
+              <table class="table-excel">
+                <thead>
+                  <tr><th>Order</th><th>Placed</th><th>Status</th><th>Type / table</th><th>Items</th><th>Total</th></tr>
+                </thead>
+                <tbody id="kioskOrderHistoryList"></tbody>
+              </table>
+              <p id="kioskOrderHistoryEmpty" class="kiosk-queue-empty">No recent order history</p>
+            </div>
+          </div>
+        </details>
         <div class="kiosk-owner-grid">
           <details class="form-panel kiosk-publish-panel">
             <summary class="kiosk-panel-heading">

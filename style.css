@@ -147,6 +147,84 @@ body.dark-mode .dashboard-card:hover {
 .kiosk-order-display-open[hidden],
 .kiosk-order-display-queue[hidden] { display: none; }
 
+.kiosk-order-history {
+  margin-top: 24px;
+  padding: 18px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--card);
+}
+
+.kiosk-order-history-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.kiosk-order-history-heading::-webkit-details-marker {
+  display: none;
+}
+
+.kiosk-order-history-heading::after {
+  flex: 0 0 auto;
+  color: #64746c;
+  content: "+";
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.kiosk-order-history[open] .kiosk-order-history-heading {
+  margin-bottom: 14px;
+}
+
+.kiosk-order-history[open] .kiosk-order-history-heading::after {
+  content: "−";
+}
+
+.kiosk-order-history-heading h4 {
+  margin: 0;
+}
+
+.kiosk-order-history-heading p {
+  margin: 5px 0 0;
+  color: #64748b;
+  font-size: 0.82rem;
+}
+
+.kiosk-order-history-content {
+  min-width: 0;
+}
+
+.kiosk-order-history-table-wrap {
+  overflow-x: auto;
+}
+
+.kiosk-order-history-table-wrap table {
+  min-width: 700px;
+}
+
+.kiosk-order-history-table-wrap .kiosk-queue-empty {
+  margin: 0;
+}
+
+.kiosk-history-order-number {
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kiosk-history-items {
+  min-width: 180px;
+}
+
+.kiosk-history-total {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .kiosk-publish-state {
   display: inline-flex;
   align-items: center;

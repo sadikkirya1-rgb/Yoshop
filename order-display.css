@@ -9,7 +9,7 @@
 
 * { box-sizing: border-box; }
 html, body { scrollbar-width: none; }
-html::-webkit-scrollbar, body::-webkit-scrollbar, .board-table-wrap::-webkit-scrollbar { display: none; }
+html::-webkit-scrollbar, body::-webkit-scrollbar { display: none; }
 body { min-width: 320px; min-height: 100vh; margin: 0; background: #101916; }
 .board-header {
   display: flex;
@@ -48,7 +48,7 @@ body { min-width: 320px; min-height: 100vh; margin: 0; background: #101916; }
 .board-ready { border-top-color: #62d494; }
 .board-completed { border-top-color: #55c5b4; }
 .board-cancelled { border-top-color: #ed8178; }
-.board-active-section, .board-history { margin-top: 24px; }
+.board-active-section { margin-top: 24px; }
 .board-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .board-section-heading h2 { margin: 0; font-size: clamp(1.05rem, 1.6vw, 1.35rem); }
 .board-section-heading > span { color: #a9b8af; font-size: 0.82rem; font-weight: 700; white-space: nowrap; }
@@ -92,19 +92,6 @@ body.is-compact .board-order { min-height: 70px; gap: 5px; padding: 7px 9px; }
 body.is-compact .board-order-items summary { -webkit-line-clamp: 4; }
 .board-empty { margin: 10px 0; color: #829188; text-align: center; }
 .board-updated { margin: 12px 0 0; color: #829188; font-size: 0.78rem; text-align: right; }
-.board-table-wrap { overflow-x: auto; border: 1px solid #303d36; border-radius: 10px; background: #19221e; scrollbar-width: none; }
-.board-table-wrap table { width: 100%; border-collapse: collapse; text-align: left; }
-.board-table-wrap th, .board-table-wrap td { padding: 12px 14px; border-bottom: 1px solid #303d36; font-size: 0.82rem; vertical-align: top; }
-.board-table-wrap th { color: #a9c5b8; font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; }
-.board-table-wrap td { color: #d3eee0; }
-.board-table-wrap tbody tr:last-child td { border-bottom: 0; }
-.board-history-order { color: #fff !important; font-weight: 800; white-space: nowrap; }
-.board-history-time, .board-history-total { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.board-history-status { display: inline-block; padding: 4px 7px; border-radius: 999px; background: #1d4434; color: #8fe1ac; font-size: 0.72rem; font-weight: 800; white-space: nowrap; }
-.board-history-status.is-cancelled { background: #542f2c; color: #ff9a8f; }
-.board-history-items { min-width: 180px; color: #a9b8af !important; }
-.board-table-wrap .board-empty { padding: 10px; }
-
 @media (max-width: 760px) {
   .board-header { align-items: flex-start; }
   .board-header-actions { flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
