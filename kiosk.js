@@ -23,12 +23,19 @@ let menuData = {items: [], currency: '$', allowAttendant: false};
 let selectedCategory = 'All';
 let pendingSubmissionId = '';
 let pendingTrackingToken = '';
+let deferredInstallPrompt = null;
 const VIEW_MODE_STORAGE_KEY = 'yoshop-kiosk-view-mode';
 let menuViewMode = 'grid';
 
 const elements = {
   businessName: document.getElementById('businessName'),
   headerBusinessName: document.getElementById('kioskHeaderBusinessName'),
+  installMenu: document.getElementById('kioskInstallMenu'),
+  installHelp: document.getElementById('kioskInstallHelp'),
+  installInstructions: document.getElementById('kioskInstallInstructions'),
+  manifest: document.getElementById('kioskManifest'),
+  appleTouchIcon: document.getElementById('kioskAppleTouchIcon'),
+  appleTitle: document.getElementById('kioskAppleTitle'),
   tableLabel: document.getElementById('kioskTableLabel'),
   message: document.getElementById('kioskMessage'),
   previewNotice: document.getElementById('kioskPreviewNotice'),
@@ -59,6 +66,7 @@ const elements = {
   customerTableLabel: document.getElementById('kioskCustomerTableLabel'),
   deliveryAddress: document.getElementById('kioskDeliveryAddress'),
   deliveryAddressLabel: document.getElementById('kioskDeliveryAddressLabel'),
+  deliveryAreaNote: document.getElementById('kioskDeliveryAreaNote'),
   customerName: document.getElementById('kioskCustomerName'),
   customerWhatsApp: document.getElementById('kioskCustomerWhatsApp'),
   waiterName: document.getElementById('kioskWaiterName'),
@@ -381,7 +389,45 @@ function updateOrderModeFields() {
   elements.customerTableLabel.textContent = 'Table number';
   elements.deliveryAddress.hidden = !isDelivery;
   elements.deliveryAddressLabel.hidden = !isDelivery;
+  elements.deliveryAreaNote.hidden = !isDelivery;
   elements.deliveryAddress.required = isDelivery;
+}
+
+function isInstalledMenu() {
+  return window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+}
+
+function isIosDevice() {
+  return /iPad|iPhone|iPod/.test(navigator.userAgent)
+    || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function updateInstallButton() {
+  elements.installMenu.hidden = previewOnly || isInstalledMenu() || !menuData.businessName;
+}
+
+function showInstallInstructions() {
+  elements.installInstructions.textContent = isIosDevice()
+    ? 'In Safari, tap Share, then choose “Add to Home Screen”. The shortcut will use this restaurant’s name and logo.'
+    : 'Open your browser menu and choose “Install app” or “Add to Home screen”. If that option is missing, your browser may not support installing this menu.';
+  elements.installHelp.showModal();
+}
+
+async function installKioskMenu() {
+  if (!deferredInstallPrompt) {
+    showInstallInstructions();
+    return;
+  }
+  const prompt = deferredInstallPrompt;
+  deferredInstallPrompt = null;
+  try {
+    await prompt.prompt();
+    const choice = await prompt.userChoice;
+    if (choice.outcome === 'accepted') elements.installMenu.hidden = true;
+  } catch (error) {
+    console.error('Could not open the kiosk installation prompt:', error);
+    showInstallInstructions();
+  }
 }
 
 function getCustomerOrderDetails() {
@@ -458,6 +504,16 @@ async function initialize() {
   document.body.classList.toggle('kiosk-preview-mode', previewOnly);
   elements.businessName.setAttribute('tabindex', '-1');
   elements.retry.addEventListener('click', () => window.location.reload());
+  elements.installMenu.addEventListener('click', installKioskMenu);
+  window.addEventListener('beforeinstallprompt', event => {
+    event.preventDefault();
+    deferredInstallPrompt = event;
+    updateInstallButton();
+  });
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    elements.installMenu.hidden = true;
+  });
   elements.orderMode.addEventListener('change', updateOrderModeFields);
   elements.mobileCart.addEventListener('click', () => setCartSheetOpen(true));
   elements.cartClose.addEventListener('click', () => setCartSheetOpen(false));
@@ -496,6 +552,7 @@ async function initialize() {
     elements.menu.replaceChildren();
     return;
   }
+  elements.manifest.href = `/kiosk-manifest?token=${encodeURIComponent(token)}`;
   if (table) elements.tableLabel.textContent = `ORDER AT ${table.toUpperCase()}`;
   elements.customerTable.value = table;
   if (!table) elements.orderMode.value = 'takeaway';
@@ -533,6 +590,10 @@ async function initialize() {
     }
     elements.businessName.textContent = menuData.businessName || 'Menu';
     elements.headerBusinessName.textContent = menuData.businessName || 'Menu';
+    document.title = `${menuData.businessName || 'Restaurant'} Digital Menu`;
+    elements.appleTitle.content = (menuData.businessName || 'Digital Menu').slice(0, 30);
+    elements.appleTouchIcon.href = `/kiosk-icon?token=${encodeURIComponent(token)}&size=192`;
+    updateInstallButton();
     elements.attendant.hidden = previewOnly || menuData.allowAttendant === false;
     setMessage(table ? `Choose your items for ${table}.` : 'Choose your items and send your order to the team.');
     renderCategories();

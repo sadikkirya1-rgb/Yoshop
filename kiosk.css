@@ -55,6 +55,19 @@ textarea:focus-visible {
 }
 
 .kiosk-header-business-name { display: none; }
+.kiosk-install-button {
+  min-height: 38px;
+  margin-left: auto;
+  padding: 0 12px;
+  border: 1px solid rgba(255,255,255,0.65);
+  border-radius: 6px;
+  background: transparent;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.kiosk-install-button[hidden] { display: none; }
 
 .kiosk-wordmark {
   width: 34px;
@@ -561,6 +574,19 @@ textarea:focus-visible {
 }
 .kiosk-track-order[hidden] { display: none; }
 .kiosk-track-order:hover { background: var(--kiosk-mint); }
+.kiosk-install-dialog {
+  width: min(420px, calc(100vw - 32px));
+  padding: 0;
+  border: 1px solid var(--kiosk-border);
+  border-radius: 12px;
+  color: var(--kiosk-ink);
+  box-shadow: 0 18px 60px rgba(16, 55, 47, 0.25);
+}
+.kiosk-install-dialog::backdrop { background: rgba(14, 25, 21, 0.55); }
+.kiosk-install-dialog form { padding: 22px; }
+.kiosk-install-dialog h2 { margin: 0; color: var(--kiosk-green-dark); font-family: Georgia, "Times New Roman", serif; }
+.kiosk-install-dialog p { margin: 12px 0; color: var(--kiosk-muted); line-height: 1.5; }
+.kiosk-install-dialog .kiosk-primary-button { margin-top: 8px; }
 
 .kiosk-primary-button,
 .kiosk-secondary-button {
@@ -609,6 +635,7 @@ textarea:focus-visible {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .kiosk-install-button { flex: 0 0 auto; margin-left: 0; padding: 0 9px; font-size: 0.75rem; }
   .kiosk-intro { padding: 0; border: 0; }
   .kiosk-intro .kiosk-kicker,
   .kiosk-intro h1 { display: none; }
@@ -702,6 +729,7 @@ textarea:focus-visible {
 
 @media (max-width: 480px) {
   .kiosk-header { height: 56px; }
+  .kiosk-header-title { display: none; }
   .kiosk-layout { gap: 18px; padding: 12px; }
   .kiosk-menu-items[data-view-mode="list"] .kiosk-menu-item { gap: 8px; padding: 7px; }
   .kiosk-menu-items[data-view-mode="list"] .kiosk-item-image-wrap { width: 56px; min-width: 56px; height: 56px; }

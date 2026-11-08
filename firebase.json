@@ -80,6 +80,20 @@
     ],
     "rewrites": [
       {
+        "source": "/kiosk-manifest",
+        "function": {
+          "functionId": "getKioskManifest",
+          "region": "europe-west1"
+        }
+      },
+      {
+        "source": "/kiosk-icon",
+        "function": {
+          "functionId": "getKioskIcon",
+          "region": "europe-west1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

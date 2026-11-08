@@ -1,5 +1,5 @@
 const {setGlobalOptions} = require("firebase-functions");
-const {onCall, HttpsError} = require("firebase-functions/v2/https");
+const {onCall, onRequest, HttpsError} = require("firebase-functions/v2/https");
 const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const crypto = require("node:crypto");
 const admin = require("firebase-admin");
@@ -272,6 +272,105 @@ exports.getKioskMenu = onCall(callableOptions, async (request) => {
 		allowAttendant: kiosk.config.allowAttendant !== false,
 		items: Object.values(catalog)
 	};
+});
+
+exports.getKioskManifest = onRequest({region: "europe-west1"}, async (request, response) => {
+	if (request.method !== "GET") {
+		response.set("Allow", "GET").status(405).send("Method not allowed.");
+		return;
+	}
+	const token = String(request.query.token || "");
+	try {
+		const kiosk = await loadKioskByToken(token);
+		const profileSettings = kiosk.profile.settings || {};
+		const businessName = String(profileSettings.name || kiosk.userData.name || kiosk.config.businessName || "").trim().slice(0, 100) || "Digital Menu";
+		const logoSource = String(profileSettings.logo || "");
+		const logoPath = kioskImageBuckets
+			.map((bucket) => ({bucket, path: getFirebaseStorageObjectPath(logoSource, bucket.name)}))
+			.find(({path}) => path);
+		const tokenParam = encodeURIComponent(token);
+		const iconVersion = hashKioskValue(logoSource).slice(0, 12);
+		const icons = logoPath
+			? [192, 512].map((size) => ({
+				src: `/kiosk-icon?token=${tokenParam}&size=${size}&v=${iconVersion}`,
+				purpose: "any"
+			}))
+			: [
+				{src: "/assets/icons/android192x192.png", sizes: "192x192", type: "image/png", purpose: "any"},
+				{src: "/assets/icons/android512x512.png", sizes: "512x512", type: "image/png", purpose: "any"}
+			];
+		const menuUrl = `/kiosk.html?token=${tokenParam}`;
+		const manifest = {
+			id: menuUrl,
+			name: businessName,
+			short_name: businessName.slice(0, 30) || "Digital Menu",
+			description: `Browse the menu and order from ${businessName}.`,
+			start_url: `${menuUrl}&source=homescreen`,
+			scope: "/",
+			display: "standalone",
+			background_color: "#f8faf8",
+			theme_color: "#174a3e",
+			icons
+		};
+		response.set("Cache-Control", "no-store")
+			.set("Content-Type", "application/manifest+json")
+			.send(JSON.stringify(manifest));
+	} catch (error) {
+		if (error instanceof HttpsError) {
+			const status = error.code === "not-found" ? 404 : error.code === "invalid-argument" ? 400 : 500;
+			response.set("Cache-Control", "no-store").status(status)
+				.send(status === 404 ? "This digital menu is unavailable." : "Invalid digital menu link.");
+			return;
+		}
+		console.error("Could not create kiosk app manifest:", error);
+		response.set("Cache-Control", "no-store").status(500).send("Could not load this digital menu.");
+	}
+});
+
+exports.getKioskIcon = onRequest({region: "europe-west1"}, async (request, response) => {
+	if (request.method !== "GET") {
+		response.set("Allow", "GET").status(405).send("Method not allowed.");
+		return;
+	}
+	const size = Number(request.query.size);
+	if (![192, 512].includes(size)) {
+		response.set("Cache-Control", "no-store").status(400).send("Unsupported icon size.");
+		return;
+	}
+	try {
+		const kiosk = await loadKioskByToken(String(request.query.token || ""));
+		const logoSource = String(kiosk.profile.settings?.logo || "");
+		const logoFile = kioskImageBuckets
+			.map((bucket) => ({bucket, path: getFirebaseStorageObjectPath(logoSource, bucket.name)}))
+			.find(({path}) => path);
+		if (!logoFile) {
+			response.redirect(302, `/assets/icons/android${size}x${size}.png`);
+			return;
+		}
+		const logoFileRef = logoFile.bucket.file(logoFile.path);
+		const [metadata] = await logoFileRef.getMetadata();
+		const contentType = String(metadata.contentType || "").toLowerCase();
+		const logoSize = Number(metadata.size);
+		if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(contentType)
+			|| !Number.isFinite(logoSize) || logoSize < 1 || logoSize > 5 * 1024 * 1024) {
+			console.error("The kiosk business logo is not a supported image or exceeds the 5 MB icon limit.");
+			response.redirect(302, `/assets/icons/android${size}x${size}.png`);
+			return;
+		}
+		const [logoBuffer] = await logoFileRef.download();
+		response.set("Cache-Control", "public, max-age=3600")
+			.set("Content-Type", contentType)
+			.send(logoBuffer);
+	} catch (error) {
+		if (error instanceof HttpsError) {
+			const status = error.code === "not-found" ? 404 : error.code === "invalid-argument" ? 400 : 500;
+			response.set("Cache-Control", "no-store").status(status)
+				.send(status === 404 ? "This digital menu is unavailable." : "Invalid digital menu link.");
+			return;
+		}
+		console.error("Could not create kiosk app icon:", error);
+		response.redirect(302, `/assets/icons/android${size}x${size}.png`);
+	}
 });
 
 exports.submitKioskRequest = onCall(callableOptions, async (request) => {

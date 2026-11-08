@@ -5,16 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#174a3e">
   <title>Digital Menu | YoShop</title>
+  <link id="kioskManifest" rel="manifest">
+  <link id="kioskAppleTouchIcon" rel="apple-touch-icon" sizes="180x180">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta id="kioskAppleTitle" name="apple-mobile-web-app-title" content="Digital Menu">
   <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
   <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com">
-  <link rel="stylesheet" href="kiosk.css?v=20261108-kiosk-order-modes-v1">
-  <script type="module" src="kiosk.js?v=20261108-kiosk-order-modes-v1"></script>
+  <link rel="stylesheet" href="kiosk.css?v=20261108-branded-menu-install-v1">
+  <script type="module" src="kiosk.js?v=20261108-branded-menu-install-v1"></script>
 </head>
 <body>
   <header class="kiosk-header">
     <a class="kiosk-wordmark" href="/" aria-label="YoShop">Y</a>
     <span class="kiosk-header-title">Digital menu</span>
     <span id="kioskHeaderBusinessName" class="kiosk-header-business-name" aria-live="polite"></span>
+    <button id="kioskInstallMenu" class="kiosk-install-button" type="button" hidden>Save menu</button>
   </header>
   <main class="kiosk-layout">
     <section class="kiosk-menu-column" aria-labelledby="businessName">
@@ -82,6 +88,7 @@
         <input id="kioskCustomerTable" name="table" type="text" maxlength="40" autocomplete="off">
         <label id="kioskDeliveryAddressLabel" for="kioskDeliveryAddress" hidden>Delivery address</label>
         <textarea id="kioskDeliveryAddress" name="deliveryAddress" maxlength="250" autocomplete="street-address" hidden></textarea>
+        <p id="kioskDeliveryAreaNote" class="kiosk-details-privacy" hidden>Delivery is available only within this restaurant's delivery area. The restaurant will confirm service for your address.</p>
         <label for="kioskCustomerName">Customer name</label>
         <input id="kioskCustomerName" name="customerName" type="text" maxlength="100" autocomplete="name" required>
         <label for="kioskCustomerWhatsApp">WhatsApp number</label>
@@ -100,6 +107,13 @@
     </aside>
   </main>
   <div id="kioskCartBackdrop" class="kiosk-cart-backdrop" hidden></div>
+  <dialog id="kioskInstallHelp" class="kiosk-install-dialog" aria-labelledby="kioskInstallTitle">
+    <form method="dialog">
+      <h2 id="kioskInstallTitle">Save this restaurant's menu</h2>
+      <p id="kioskInstallInstructions"></p>
+      <button class="kiosk-primary-button" type="submit">Got it</button>
+    </form>
+  </dialog>
   <button id="kioskMobileCart" class="kiosk-mobile-cart" type="button" aria-controls="kioskCartPanel" aria-expanded="false" hidden>
     <span class="kiosk-mobile-cart-label">View cart <span id="kioskMobileCartCount" class="kiosk-mobile-cart-count">0</span></span>
     <strong id="kioskMobileCartTotal">$0.00</strong>
