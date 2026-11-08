@@ -257,7 +257,6 @@ function renderDisplay(data) {
     const arrivingOrders = orders.filter(order => order.status === 'new' && order.orderId && !knownOrderIds.has(order.orderId));
     arrivingOrders.forEach(order => {
       highlightedOrderIds.add(order.orderId);
-      setTimeout(() => highlightedOrderIds.delete(order.orderId), 30000);
     });
     if (arrivingOrders.length) playNewOrderAlert();
   }
@@ -274,6 +273,7 @@ function renderDisplay(data) {
   statusCounts.cancelled.textContent = String(orders.filter(order => ['rejected', 'cancelled', 'canceled'].includes(order.status)).length);
   boardOrders.replaceChildren();
   activeOrders.forEach(order => boardOrders.appendChild(createOrderCard(order, currency)));
+  highlightedOrderIds.clear();
   if (!activeOrders.length) {
     const empty = document.createElement('p');
     empty.className = 'board-empty';

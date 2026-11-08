@@ -8,6 +8,8 @@
 }
 
 * { box-sizing: border-box; }
+html, body { scrollbar-width: none; }
+html::-webkit-scrollbar, body::-webkit-scrollbar, .board-table-wrap::-webkit-scrollbar { display: none; }
 body { min-width: 320px; min-height: 100vh; margin: 0; background: #101916; }
 .board-header {
   display: flex;
@@ -82,15 +84,15 @@ body { min-width: 320px; min-height: 100vh; margin: 0; background: #101916; }
 .board-order.is-over-target .board-order-wait { background: #542f2c; color: #ff9a8f; }
 .board-order-time { color: #a9b8af; font-variant-numeric: tabular-nums; }
 .board-order.is-over-target { box-shadow: inset 3px 0 #ed8178; }
-.board-order.is-new-order { animation: board-order-arrival 1s ease-in-out 3; }
-@keyframes board-order-arrival { 50% { border-color: #ecb858; background: #3b3424; } }
+.board-order.is-new-order { animation: board-order-arrival 1s ease-out 1; }
+@keyframes board-order-arrival { 50% { background: #3b3424; } }
 .board-updated.is-stale { color: #ffb1a8; }
 body.is-compact .board-orders { grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 8px; }
 body.is-compact .board-order { min-height: 70px; gap: 5px; padding: 7px 9px; }
 body.is-compact .board-order-items summary { -webkit-line-clamp: 4; }
 .board-empty { margin: 10px 0; color: #829188; text-align: center; }
 .board-updated { margin: 12px 0 0; color: #829188; font-size: 0.78rem; text-align: right; }
-.board-table-wrap { overflow-x: auto; border: 1px solid #303d36; border-radius: 10px; background: #19221e; }
+.board-table-wrap { overflow-x: auto; border: 1px solid #303d36; border-radius: 10px; background: #19221e; scrollbar-width: none; }
 .board-table-wrap table { width: 100%; border-collapse: collapse; text-align: left; }
 .board-table-wrap th, .board-table-wrap td { padding: 12px 14px; border-bottom: 1px solid #303d36; font-size: 0.82rem; vertical-align: top; }
 .board-table-wrap th { color: #a9c5b8; font-size: 0.72rem; letter-spacing: 0.04em; text-transform: uppercase; }
@@ -115,4 +117,8 @@ body.is-compact .board-order-items summary { -webkit-line-clamp: 4; }
   .board-header-actions { width: 100%; justify-content: space-between; }
   .board-summary-card { min-height: 68px; padding: 10px 12px; }
   .board-summary-card strong { font-size: 1.45rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-order.is-new-order { animation: none; }
 }
