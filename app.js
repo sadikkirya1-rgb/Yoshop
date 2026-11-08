@@ -21997,7 +21997,7 @@ function clearKioskProductSelection() {
 function getKioskPublicUrl(config = kioskSettingsCache, table = '') {
   const token = String(config?.publicToken || '');
   if (!token) return '';
-  const url = new URL('kiosk.html', window.location.href);
+  const url = new URL('https://yoshop.web.app/kiosk.html');
   url.searchParams.set('token', token);
   if (table) url.searchParams.set('table', String(table).trim().slice(0, 40));
   return url.toString();
@@ -22305,9 +22305,12 @@ function rotateKioskMenuLink() {
 }
 
 function previewKioskMenu() {
-  const url = getKioskPublicUrl(kioskSettingsCache, document.getElementById('kioskTableInput')?.value.trim() || '');
-  if (!url) return showAppAlert('Publish the menu before previewing it.', 'Menu Not Published');
-  const previewUrl = new URL(url);
+  const token = String(kioskSettingsCache?.publicToken || '');
+  if (!token) return showAppAlert('Publish the menu before previewing it.', 'Menu Not Published');
+  const previewUrl = new URL('kiosk.html', window.location.href);
+  previewUrl.searchParams.set('token', token);
+  const table = document.getElementById('kioskTableInput')?.value.trim() || '';
+  if (table) previewUrl.searchParams.set('table', table.slice(0, 40));
   previewUrl.searchParams.set('preview', '1');
   const modal = document.getElementById('kioskPreviewModal');
   const frame = document.getElementById('kioskPreviewFrame');
