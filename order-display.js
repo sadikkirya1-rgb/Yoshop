@@ -139,31 +139,34 @@ function createOrderCard(order, currency = '$') {
   const total = document.createElement('span');
   total.className = 'board-order-total';
   total.textContent = Number.isFinite(order.total) ? `${currency}${order.total.toFixed(2)}` : 'Total unavailable';
-  const time = document.createElement('time');
-  time.className = 'board-order-time';
   const createdAt = new Date(order.createdAt);
-  time.dateTime = Number.isNaN(createdAt.valueOf()) ? '' : createdAt.toISOString();
-  time.textContent = Number.isNaN(createdAt.valueOf())
-    ? ''
-    : createdAt.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'});
   const wait = document.createElement('time');
   wait.className = 'board-order-wait';
+  const placed = document.createElement('time');
+  placed.className = 'board-order-placed';
   if (Number.isFinite(createdAt.valueOf())) {
     wait.dateTime = createdAt.toISOString();
     wait.dataset.createdAt = createdAt.toISOString();
     wait.textContent = formatWaitTime(createdAt.valueOf());
+    placed.dateTime = createdAt.toISOString();
+    placed.textContent = `Placed ${createdAt.toLocaleTimeString([], {hour: 'numeric', minute: '2-digit'})}`;
+  } else {
+    placed.textContent = 'Placed time unavailable';
   }
   card.tabIndex = 0;
-  card.setAttribute('aria-label', `${number.textContent}, ${orderMode.textContent}, ${paymentMode.textContent}, ${paymentStatus.textContent}, ${location.textContent}, ${summary.textContent}, ${total.textContent}, ${wait.textContent}, ${time.textContent}`);
+  card.setAttribute('aria-label', `${number.textContent}, ${orderMode.textContent}, ${paymentMode.textContent}, ${paymentStatus.textContent}, ${location.textContent}, ${wait.textContent}, ${placed.textContent}, ${summary.textContent}, ${total.textContent}`);
   const heading = document.createElement('div');
   heading.className = 'board-order-heading';
-  heading.append(number, orderMode, paymentMode, paymentStatus);
+  const modePayment = document.createElement('div');
+  modePayment.className = 'board-order-mode-payment';
+  modePayment.append(orderMode, paymentMode, placed);
+  heading.append(number, modePayment);
   const content = document.createElement('div');
   content.className = 'board-order-content';
-  const timing = document.createElement('span');
-  timing.className = 'board-order-timing';
-  timing.append(wait, time);
-  content.append(location, details, total, timing);
+  const meta = document.createElement('div');
+  meta.className = 'board-order-meta';
+  meta.append(paymentStatus, location, wait);
+  content.append(meta, details, total);
   card.append(heading, content);
   return card;
 }
