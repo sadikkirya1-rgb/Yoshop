@@ -403,7 +403,7 @@ function isIosDevice() {
 }
 
 function updateInstallButton() {
-  elements.installMenu.hidden = previewOnly || isInstalledMenu() || !menuData.businessName;
+  elements.installMenu.hidden = previewOnly || isInstalledMenu();
 }
 
 function showInstallInstructions() {
@@ -553,6 +553,7 @@ async function initialize() {
     return;
   }
   elements.manifest.href = `/kiosk-manifest?token=${encodeURIComponent(token)}`;
+  updateInstallButton();
   if (table) elements.tableLabel.textContent = `ORDER AT ${table.toUpperCase()}`;
   elements.customerTable.value = table;
   if (!table) elements.orderMode.value = 'takeaway';
