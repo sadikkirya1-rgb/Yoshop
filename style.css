@@ -135,6 +135,41 @@ body.dark-mode .dashboard-card:hover {
   gap: 12px;
 }
 
+.kiosk-mode-switch {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid #dce5df;
+  border-radius: 10px;
+  background: #f3f6f4;
+}
+
+.kiosk-mode-switch-button {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #53645c;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.kiosk-mode-switch-button[aria-pressed="true"] {
+  border-color: #174a3e;
+  background: #174a3e;
+  color: #fff;
+  box-shadow: 0 2px 5px rgba(16, 55, 47, 0.18);
+}
+
+.kiosk-mode-switch-button[aria-pressed="false"]:hover:not(:disabled) {
+  background: #e7eeea;
+  color: #174a3e;
+}
+
+.kiosk-mode-switch-button:disabled { cursor: wait; opacity: 0.6; }
+
 .kiosk-workspace-status #kioskOrdersConnection {
   color: #64746c;
   font-size: 0.8rem;
@@ -947,6 +982,7 @@ body.printing-kiosk-qr #kioskQrPrintArea {
 @media (max-width: 760px) {
   .kiosk-workspace-heading { align-items: flex-start; }
   .kiosk-workspace-status { flex: 1 1 100%; justify-content: flex-start; gap: 8px; }
+  .kiosk-mode-switch { flex: 1 1 100%; width: max-content; }
   .kiosk-order-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
   .kiosk-order-summary-card { min-height: 60px; padding: 10px; font-size: 0.8rem; }
   .kiosk-order-summary-card:last-child { grid-column: 1 / -1; }

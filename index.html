@@ -11,7 +11,7 @@
   <link rel="icon" type="image/png" href="assets/icons/android192x192.png">
   <!-- Using android192x192.png as the default favicon -->
   <link rel="canonical" href="https://yoshop.netlify.app/"> <!-- Updated canonical URL -->
-  <link rel="stylesheet" href="style.css?v=20261108-kiosk-order-details-v4">
+  <link rel="stylesheet" href="style.css?v=20261109-kiosk-mode-buttons-v1">
   <script>
     const previewTunnel = location.hostname.endsWith('.github.dev') || location.hostname.endsWith('.app.github.dev');
     if (!previewTunnel) {
@@ -45,7 +45,7 @@
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script type="module" src="app.js?v=20261109-kiosk-mode-filter-v1"></script>
+  <script type="module" src="app.js?v=20261109-kiosk-mode-buttons-v1"></script>
   <script>
     // Safety stubs to prevent ReferenceError from inline onclicks
     window.loginWithPIN = window.loginWithPIN || function() { console.warn('loginWithPIN called before app module loaded'); };
@@ -621,6 +621,10 @@
             <p>Choose what guests see, print table QR codes, and manage incoming requests.</p>
           </div>
           <div class="kiosk-workspace-status">
+            <div class="kiosk-mode-switch" role="group" aria-label="Kiosk mode">
+              <button id="kioskOrderingModeButton" type="button" class="btn btn-secondary kiosk-mode-switch-button" aria-pressed="false" onclick="selectKioskMode('orders')">Ordering mode</button>
+              <button id="kioskTicketingModeButton" type="button" class="btn btn-secondary kiosk-mode-switch-button" aria-pressed="false" onclick="selectKioskMode('service_queue')">Ticketing mode</button>
+            </div>
             <span id="kioskPublishState" class="kiosk-publish-state is-offline">Menu paused</span>
             <strong id="kioskNewOrderCount">0 new</strong>
             <a id="kioskPublicLink" class="kiosk-public-link kiosk-header-menu-link is-unavailable" aria-disabled="true" tabindex="-1">

@@ -22124,6 +22124,10 @@ function updateKioskPublishState(enabled) {
 
 function updateKioskModeFields() {
   const isServiceQueue = document.getElementById('kioskModeInput')?.value === 'service_queue';
+  const orderingModeButton = document.getElementById('kioskOrderingModeButton');
+  const ticketingModeButton = document.getElementById('kioskTicketingModeButton');
+  if (orderingModeButton) orderingModeButton.setAttribute('aria-pressed', String(!isServiceQueue));
+  if (ticketingModeButton) ticketingModeButton.setAttribute('aria-pressed', String(isServiceQueue));
   const productSettings = document.getElementById('kioskProductSettings');
   const serviceSettings = document.getElementById('kioskServiceQueueSettings');
   if (productSettings) productSettings.hidden = isServiceQueue;
@@ -22161,6 +22165,23 @@ function updateKioskModeFields() {
     if (isServiceQueue && !ticketStatuses.has(orderFilter.value)) orderFilter.value = 'open';
   }
   updateKioskPublishState(document.getElementById('kioskEnabledInput')?.checked === true);
+}
+
+function setKioskModeControlsDisabled(disabled) {
+  const modeInput = document.getElementById('kioskModeInput');
+  if (modeInput) modeInput.disabled = disabled;
+  ['kioskOrderingModeButton', 'kioskTicketingModeButton'].forEach(id => {
+    const button = document.getElementById(id);
+    if (button) button.disabled = disabled;
+  });
+}
+
+function selectKioskMode(mode) {
+  if (!['orders', 'service_queue'].includes(mode)) return;
+  const modeInput = document.getElementById('kioskModeInput');
+  if (!modeInput || modeInput.disabled) return;
+  modeInput.value = mode;
+  modeInput.dispatchEvent(new Event('change', {bubbles: true}));
 }
 
 function getKioskOrderDate(value) {
@@ -22614,7 +22635,7 @@ async function initializeKioskMenuTab() {
   kioskSettingsLoading = true;
   const modeSelect = document.getElementById('kioskModeInput');
   const publishButton = document.querySelector('.kiosk-publish-footer .btn-success');
-  if (modeSelect) modeSelect.disabled = true;
+  setKioskModeControlsDisabled(true);
   if (publishButton) publishButton.disabled = true;
   if (status) status.textContent = 'Loading kiosk settings...';
   try {
@@ -22644,7 +22665,7 @@ async function initializeKioskMenuTab() {
     if (status) status.textContent = getKioskBackendErrorMessage(error, 'Could not load kiosk settings.');
   } finally {
     kioskSettingsLoading = false;
-    if (modeSelect) modeSelect.disabled = false;
+    setKioskModeControlsDisabled(false);
     if (publishButton) publishButton.disabled = false;
   }
 }
@@ -22660,7 +22681,7 @@ async function saveKioskMenuSettings(rotateToken = false) {
   const modeInput = document.getElementById('kioskModeInput');
   const publishButton = document.querySelector('.kiosk-publish-footer .btn-success');
   kioskSettingsSaving = true;
-  if (modeInput) modeInput.disabled = true;
+  setKioskModeControlsDisabled(true);
   if (publishButton) publishButton.disabled = true;
   try {
     if (status) status.textContent = mode === 'service_queue' ? 'Publishing service queue...' : 'Publishing menu...';
@@ -22716,7 +22737,7 @@ async function saveKioskMenuSettings(rotateToken = false) {
     if (status) status.textContent = getKioskBackendErrorMessage(error, 'Could not publish the menu.');
   } finally {
     kioskSettingsSaving = false;
-    if (modeInput) modeInput.disabled = false;
+    setKioskModeControlsDisabled(false);
     if (publishButton) publishButton.disabled = false;
   }
 }
@@ -23257,7 +23278,7 @@ Object.assign(window, {
 
   // PRODUCTION: Monitoring & Debugging (Available in console)
   getAppHealthStatus, exportErrorLog, captureError, getCachedQuery, getShopsPageOptimized, requestCache, errorLog, clearImageFromCache
-  , initializeKioskMenuTab, saveKioskMenuSettings, rotateKioskMenuLink, renderKioskQr, previewKioskMenu, setKioskPreviewSize, closeKioskPreview, printKioskQr,
+  , initializeKioskMenuTab, saveKioskMenuSettings, rotateKioskMenuLink, renderKioskQr, previewKioskMenu, setKioskPreviewSize, closeKioskPreview, printKioskQr, selectKioskMode,
   selectVisibleKioskProducts, clearKioskProductSelection, copyKioskMenuLink,
   updateKioskOrderStatus, loadKioskOrderToPos, enableKioskOrderPush, disableKioskOrderPush, openKioskOrderDisplay, openKioskCustomerDisplay
 });
