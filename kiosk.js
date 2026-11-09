@@ -35,7 +35,6 @@ const elements = {
   businessName: document.getElementById('businessName'),
   headerBusinessName: document.getElementById('kioskHeaderBusinessName'),
   headerTitle: document.getElementById('kioskHeaderTitle'),
-  headerServiceName: document.getElementById('kioskHeaderServiceName'),
   installMenu: document.getElementById('kioskInstallMenu'),
   installHelp: document.getElementById('kioskInstallHelp'),
   installInstructions: document.getElementById('kioskInstallInstructions'),
@@ -438,7 +437,9 @@ function isIosDevice() {
 }
 
 function updateInstallButton() {
-  elements.installMenu.hidden = previewOnly || isInstalledMenu();
+  const isServiceQueue = document.body.classList.contains('kiosk-service-queue-mode');
+  elements.installMenu.textContent = isServiceQueue ? 'Save ticket page' : 'Save menu';
+  elements.installMenu.hidden = isServiceQueue || previewOnly || isInstalledMenu();
 }
 
 function showInstallInstructions() {
@@ -670,11 +671,11 @@ async function initialize() {
       elements.businessName.textContent = menuData.serviceName || 'Service queue';
       elements.headerBusinessName.textContent = menuData.businessName || menuData.serviceName || 'Service queue';
       elements.headerTitle.textContent = 'Service tickets';
-      elements.headerServiceName.textContent = menuData.businessName || 'Customer service';
       elements.serviceName.textContent = String(menuData.serviceName || 'SERVICE QUEUE');
       elements.serviceTicketInstructions.textContent = `Please wait for your number to be called at ${menuData.stationLabel || 'the counter'}.`;
       document.title = `${menuData.serviceName || 'Service queue'} | ${menuData.businessName || 'YoShop'}`;
       elements.appleTitle.content = (menuData.serviceName || 'Service queue').slice(0, 30);
+      updateInstallButton();
       setMessage(`Take a ticket for ${menuData.serviceName || 'this service'}.`);
       return;
     }

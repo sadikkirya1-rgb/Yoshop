@@ -6,7 +6,7 @@
   <base href="/">
   <meta name="theme-color" content="#123c32">
   <meta name="description" content="Take a service ticket and follow the live customer call board.">
-  <title>Customer Service | YoShop</title>
+  <title>Service tickets | YoShop</title>
   <link rel="icon" type="image/png" href="/assets/icons/icon.png?v=20261108">
   <link id="kioskManifest" rel="manifest">
   <link id="kioskAppleTouchIcon" rel="apple-touch-icon" sizes="180x180">
@@ -15,14 +15,17 @@
   <meta id="kioskAppleTitle" name="apple-mobile-web-app-title" content="Digital Menu">
   <link rel="preconnect" href="https://firebasestorage.googleapis.com" crossorigin>
   <link rel="dns-prefetch" href="https://firebasestorage.googleapis.com">
-  <link rel="stylesheet" href="kiosk.css?v=20261109-service-ticket-v2">
-  <script type="module" src="kiosk.js?v=20261109-service-ticket-v2"></script>
+  <link rel="stylesheet" href="kiosk.css?v=20261109-service-ticket-v3">
+  <link rel="stylesheet" href="service-ticket-page.css?v=20261109-service-ticket-layout-v3">
+  <script type="module" src="kiosk.js?v=20261109-service-ticket-v4"></script>
 </head>
 <body>
   <header class="kiosk-header">
     <a class="kiosk-wordmark" href="/" aria-label="YoShop">Y</a>
-    <span id="kioskHeaderTitle" class="kiosk-header-title">Customer service</span>
-    <span id="kioskHeaderBusinessName" class="kiosk-header-business-name" aria-live="polite"></span>
+    <div class="kiosk-header-identity">
+      <span id="kioskHeaderTitle" class="kiosk-header-title">Customer service</span>
+      <span id="kioskHeaderBusinessName" class="kiosk-header-business-name" aria-live="polite"></span>
+    </div>
     <button id="kioskInstallMenu" class="kiosk-install-button" type="button" hidden>Save menu</button>
   </header>
   <main class="kiosk-layout">
@@ -109,11 +112,21 @@
       <p class="kiosk-cart-footnote">Pay your server or cashier when your order is ready.</p>
     </aside>
     <section id="kioskServiceQueue" class="kiosk-service-queue" aria-labelledby="kioskServiceHeading" hidden>
-      <div class="kiosk-service-ticket-content">
-        <div class="kiosk-service-ticket-brand">
-          <span class="kiosk-service-ticket-mark" aria-hidden="true">Y</span>
-          <span id="kioskHeaderServiceName">Customer service</span>
+      <aside class="kiosk-service-promo" aria-labelledby="kioskServicePromoHeading">
+        <span class="kiosk-service-promo-badge"><span aria-hidden="true"></span> OFFERS &amp; ANNOUNCEMENTS</span>
+        <div class="kiosk-service-promo-art" aria-hidden="true">
+          <span class="kiosk-service-promo-spark kiosk-service-promo-spark-one">✦</span>
+          <span class="kiosk-service-promo-spark kiosk-service-promo-spark-two">✳</span>
+          <span class="kiosk-service-promo-orbit"></span>
+          <span class="kiosk-service-promo-mark">Y</span>
         </div>
+        <p class="kiosk-service-promo-eyebrow">A NOTE FROM OUR TEAM</p>
+        <h2 id="kioskServicePromoHeading">Good things are happening here.</h2>
+        <p class="kiosk-service-promo-description">Ask our team about current offers, new services, and helpful updates during your visit.</p>
+        <div class="kiosk-service-promo-divider"></div>
+        <p class="kiosk-service-promo-footnote">We look forward to serving you.</p>
+      </aside>
+      <div class="kiosk-service-ticket-content">
         <div class="kiosk-service-ticket-icon" aria-hidden="true">
           <svg viewBox="0 0 48 48" fill="none">
             <path d="M13 8h22a3 3 0 0 1 3 3v26a3 3 0 0 1-3 3H13a3 3 0 0 1-3-3V11a3 3 0 0 1 3-3Z" stroke="currentColor" stroke-width="2.5"/>

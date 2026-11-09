@@ -1,0 +1,272 @@
+body.kiosk-service-queue-mode {
+  display: flex;
+  width: 100%;
+  height: auto;
+  min-height: 100vh;
+  min-height: 100svh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.kiosk-service-queue-mode .kiosk-header {
+  position: relative;
+  inset: auto;
+  z-index: 1;
+  display: grid;
+  width: 100%;
+  height: auto;
+  min-height: 76px;
+  flex: 0 0 auto;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 12px clamp(16px, 4vw, 56px);
+}
+
+body.kiosk-service-queue-mode .kiosk-wordmark {
+  width: 42px;
+  height: 42px;
+}
+
+body.kiosk-service-queue-mode .kiosk-header-identity {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 3px;
+}
+
+body.kiosk-service-queue-mode .kiosk-header-title,
+body.kiosk-service-queue-mode .kiosk-header-business-name {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.kiosk-service-queue-mode .kiosk-header-title {
+  color: var(--kiosk-muted);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+body.kiosk-service-queue-mode .kiosk-header-business-name {
+  color: var(--kiosk-ink);
+  font-size: .95rem;
+  font-weight: 750;
+}
+
+body.kiosk-service-queue-mode .kiosk-install-button { display: none; }
+
+body.kiosk-service-queue-mode .kiosk-layout {
+  display: grid;
+  width: min(100%, 1240px);
+  min-height: 0;
+  flex: 1 0 auto;
+  align-content: center;
+  justify-items: stretch;
+  margin: 0 auto;
+  padding: clamp(24px, 5vh, 58px) clamp(16px, 4vw, 48px);
+}
+
+body.kiosk-service-queue-mode .kiosk-service-queue:not([hidden]) {
+  display: grid;
+  width: 100%;
+  min-height: 0;
+  grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
+  align-items: stretch;
+  gap: clamp(16px, 2.5vw, 30px);
+}
+
+body.kiosk-service-queue-mode .kiosk-service-promo,
+body.kiosk-service-queue-mode .kiosk-service-ticket-content {
+  position: relative;
+  min-width: 0;
+  min-height: 100%;
+  overflow: hidden;
+  border: 1px solid rgba(16, 55, 47, .09);
+  border-radius: 26px;
+  box-shadow: 0 24px 64px rgba(27, 55, 45, .09), 0 3px 10px rgba(27, 55, 45, .035);
+}
+
+body.kiosk-service-queue-mode .kiosk-service-promo {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: clamp(23px, 3vw, 38px);
+  background:
+    radial-gradient(ellipse at 86% 20%, rgba(255,255,255,.62), transparent 30%),
+    linear-gradient(155deg, #e6f1e8, #f8f6ec 68%, #f5e8cf);
+}
+
+.kiosk-service-promo-badge {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgba(23, 74, 62, .12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .6);
+  color: var(--kiosk-green-dark);
+  font-size: .63rem;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.kiosk-service-promo-badge > span {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d29139;
+  box-shadow: 0 0 0 3px rgba(210, 145, 57, .15);
+}
+
+.kiosk-service-promo-art {
+  position: relative;
+  display: grid;
+  width: min(100%, 310px);
+  min-height: clamp(130px, 18vw, 205px);
+  flex: 1 0 auto;
+  align-self: center;
+  place-items: center;
+  overflow: hidden;
+}
+
+.kiosk-service-promo-orbit {
+  position: absolute;
+  width: clamp(130px, 15vw, 190px);
+  aspect-ratio: 1;
+  border: 1px solid rgba(23, 74, 62, .16);
+  border-radius: 50%;
+  box-shadow: 0 0 0 18px rgba(255,255,255,.16), 0 0 0 36px rgba(255,255,255,.12);
+}
+
+.kiosk-service-promo-mark {
+  position: relative;
+  display: grid;
+  width: clamp(78px, 10vw, 112px);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid rgba(255,255,255,.76);
+  border-radius: 30%;
+  background: linear-gradient(145deg, #fff, #edf5ed);
+  color: var(--kiosk-green);
+  font-family: Georgia, serif;
+  font-size: clamp(2.5rem, 5vw, 3.6rem);
+  box-shadow: 0 18px 34px rgba(28, 79, 58, .14);
+  transform: rotate(-7deg);
+}
+
+.kiosk-service-promo-spark { position: absolute; color: #b57d36; line-height: 1; }
+.kiosk-service-promo-spark-one { top: 21%; right: 19%; font-size: 1.6rem; }
+.kiosk-service-promo-spark-two { bottom: 20%; left: 18%; font-size: 1.25rem; }
+.kiosk-service-promo-eyebrow { margin: 22px 0 9px; color: #697a6d; font-size: .66rem; font-weight: 800; letter-spacing: .13em; }
+
+body.kiosk-service-queue-mode .kiosk-service-promo h2 {
+  max-width: 14ch;
+  margin: 0;
+  color: #1c362b;
+  font-size: clamp(1.7rem, 3vw, 2.5rem);
+  font-weight: 760;
+  letter-spacing: -.055em;
+  line-height: 1.03;
+  overflow-wrap: anywhere;
+}
+
+.kiosk-service-promo-description {
+  max-width: 38ch;
+  margin: 13px 0 0;
+  color: #5e7065;
+  font-size: .9rem;
+  line-height: 1.65;
+}
+
+.kiosk-service-promo-divider { width: 100%; height: 1px; margin: 22px 0 14px; background: rgba(23, 74, 62, .12); }
+.kiosk-service-promo-footnote { margin: 0; color: #52675a; font-size: .78rem; font-weight: 650; }
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-content {
+  width: 100%;
+  max-height: none;
+  margin: 0;
+  padding: clamp(24px, 3.3vw, 42px);
+  background: rgba(255,255,255,.97);
+  text-align: left;
+}
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-icon { margin-top: 0; }
+body.kiosk-service-queue-mode .kiosk-service-ticket-content h2 { font-size: clamp(2rem, 3.6vw, 3.1rem); overflow-wrap: anywhere; }
+body.kiosk-service-queue-mode .kiosk-service-description,
+body.kiosk-service-queue-mode .kiosk-service-steps { overflow-wrap: anywhere; }
+body.kiosk-service-queue-mode .kiosk-service-steps li,
+body.kiosk-service-queue-mode .kiosk-service-steps li div { min-width: 0; }
+body.kiosk-service-queue-mode .kiosk-service-ticket-content .kiosk-primary-button { width: 100%; }
+body.kiosk-service-queue-mode .kiosk-service-ticket-receipt strong { overflow-wrap: anywhere; }
+
+body.kiosk-service-queue-mode .kiosk-footer {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+@media (max-width: 760px) {
+  body.kiosk-service-queue-mode .kiosk-header {
+    min-height: 68px;
+    grid-template-columns: 40px minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px 15px;
+  }
+
+  body.kiosk-service-queue-mode .kiosk-wordmark { width: 40px; height: 40px; }
+
+  body.kiosk-service-queue-mode .kiosk-layout {
+    min-height: 0;
+    align-content: start;
+    padding: 18px 14px 26px;
+  }
+
+  body.kiosk-service-queue-mode .kiosk-service-queue:not([hidden]) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  body.kiosk-service-queue-mode .kiosk-service-ticket-content { order: 0; }
+  body.kiosk-service-queue-mode .kiosk-service-promo { order: 1; min-height: 0; }
+  .kiosk-service-promo-art { min-height: 120px; flex-basis: 120px; }
+  .kiosk-service-promo-eyebrow { margin-top: 16px; }
+}
+
+@media (max-width: 420px) {
+  body.kiosk-service-queue-mode .kiosk-header-business-name { font-size: .88rem; }
+
+  body.kiosk-service-queue-mode .kiosk-layout { padding: 12px 10px 20px; }
+
+  body.kiosk-service-queue-mode .kiosk-service-ticket-content,
+  body.kiosk-service-queue-mode .kiosk-service-promo {
+    padding: 22px 18px;
+    border-radius: 19px;
+  }
+
+  body.kiosk-service-queue-mode .kiosk-service-ticket-content h2 { font-size: clamp(1.8rem, 9vw, 2.35rem); }
+  body.kiosk-service-queue-mode .kiosk-service-description { font-size: .91rem; }
+  body.kiosk-service-queue-mode .kiosk-service-steps { gap: 12px; padding-block: 16px; }
+  body.kiosk-service-queue-mode .kiosk-service-steps small { line-height: 1.4; }
+}
+
+@media (max-height: 700px) and (min-width: 761px) {
+  body.kiosk-service-queue-mode .kiosk-layout { align-content: start; }
+  body.kiosk-service-queue-mode .kiosk-service-promo-art { min-height: 110px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.kiosk-service-queue-mode *,
+  body.kiosk-service-queue-mode *::before,
+  body.kiosk-service-queue-mode *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}

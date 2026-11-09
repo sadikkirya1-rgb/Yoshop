@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v98';
+const CACHE_NAME = 'yoshop-v102';
 
 const APP_SHELL_URLS = [
   '/',
@@ -15,7 +15,8 @@ const APP_SHELL_URLS = [
   '/kiosk.js',
   '/kiosk.js?v=20261108-kiosk-quantity-controls-v1',
   '/service-queue-display.html',
-  '/service-queue-display.css?v=20261109-service-queue-v2',
+  '/service-queue-display.css?v=20261109-service-queue-v3',
+  '/service-queue-display-theme.css?v=20261109-service-queue-theme-v1',
   '/service-queue-display.js?v=20261109-service-queue-v2',
   '/manifest.json',
   '/assetlinks.json',
@@ -24,8 +25,9 @@ const APP_SHELL_URLS = [
   '/style.css?v=20261109-kiosk-mode-buttons-v1',
   '/app.js',
   '/app.js?v=20261109-kiosk-mode-buttons-v1',
-  '/kiosk.css?v=20261109-service-ticket-v2',
-  '/kiosk.js?v=20261109-service-ticket-v2',
+  '/kiosk.css?v=20261109-service-ticket-v3',
+  '/service-ticket-page.css?v=20261109-service-ticket-layout-v3',
+  '/kiosk.js?v=20261109-service-ticket-v4',
   '/invoice-utils.mjs',
 
   '/offline-architecture.mjs',
