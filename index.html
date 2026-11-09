@@ -641,8 +641,10 @@
                 <option value="accepted">Accepted</option>
                 <option value="preparing">Preparing</option>
                 <option value="ready">Ready</option>
+                <option value="called">Called</option>
                 <option value="in_pos">In POS</option>
                 <option value="paid">Paid</option>
+                <option value="completed">Completed</option>
                 <option value="resolved">Handled</option>
                 <option value="rejected">Rejected</option>
                 <option value="all">All requests</option>
@@ -687,7 +689,31 @@
               <span id="kioskSelectedCount" class="kiosk-selection-count">0 selected</span>
             </summary>
             <div class="kiosk-panel-content">
-              <label class="kiosk-toggle-row"><input id="kioskEnabledInput" type="checkbox"><span>Accept kiosk orders</span></label>
+              <div class="kiosk-mode-toolbar">
+                <div class="kiosk-mode-field kiosk-mode-select-field">
+                  <label for="kioskModeInput">Customer flow</label>
+                  <select id="kioskModeInput">
+                    <option value="orders">Restaurant ordering</option>
+                    <option value="service_queue">Service tickets</option>
+                  </select>
+                </div>
+                <div id="kioskServiceQueueSettings" class="kiosk-service-fields" hidden>
+                  <div class="kiosk-mode-field kiosk-service-name-field">
+                    <label for="kioskServiceNameInput">Service name</label>
+                    <input id="kioskServiceNameInput" type="text" maxlength="80" value="Service queue" placeholder="e.g. Pharmacy queue">
+                  </div>
+                  <div class="kiosk-mode-field kiosk-station-label-field">
+                    <label for="kioskStationLabelInput">Destination name</label>
+                    <input id="kioskStationLabelInput" type="text" maxlength="24" value="Counter" placeholder="Counter or Room">
+                  </div>
+                  <div class="kiosk-mode-field kiosk-station-count-field">
+                    <label for="kioskStationCountInput">Destinations</label>
+                    <input id="kioskStationCountInput" type="number" min="1" max="12" step="1" value="3">
+                  </div>
+                </div>
+                <label class="kiosk-toggle-row"><input id="kioskEnabledInput" type="checkbox"><span>Accept kiosk orders</span></label>
+              </div>
+              <div id="kioskProductSettings">
               <label class="kiosk-toggle-row"><input id="kioskAttendantInput" type="checkbox" checked><span>Allow attendant requests</span></label>
               <div class="kiosk-product-toolbar">
                 <input id="kioskProductSearch" type="search" placeholder="Find a product" aria-label="Search products to publish">
@@ -697,6 +723,7 @@
                 </div>
               </div>
               <div id="kioskProductOptions" class="kiosk-product-options" aria-label="Products shown in the kiosk menu"></div>
+              </div>
               <div class="kiosk-publish-footer">
                 <p id="kioskMenuStatus" class="kiosk-status-text" role="status">Loading kiosk settings...</p>
                 <div class="kiosk-action-row">

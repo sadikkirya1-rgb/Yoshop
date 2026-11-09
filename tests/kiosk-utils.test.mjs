@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import kioskUtils from '../kiosk-functions/kiosk-utils.js';
 
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget, createKioskMenuSlug} = kioskUtils;
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskTicketDisplay, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget, createKioskMenuSlug} = kioskUtils;
 
 test('createKioskMenuSlug makes a readable unique URL-safe restaurant slug', () => {
 	assert.equal(createKioskMenuSlug('Café & Grill', 'a1b2c3d4e5f67890'), 'cafe-grill-a1b2c3d4e5f6');
@@ -55,6 +55,12 @@ test('sanitizeKioskOrder rejects items outside the published catalog and invalid
 test('sanitizeKioskOrder creates an item-free attendant request', () => {
 	assert.deepEqual(sanitizeKioskOrder({requestType: 'attendant', table: '<Bar & 2>', items: [{productId: 'dish-1'}]}, {}), {
 		requestType: 'attendant', table: 'Bar  2', items: [], subtotal: 0, tax: 0, total: 0
+	});
+});
+
+test('sanitizeKioskOrder creates an item-free service ticket', () => {
+	assert.deepEqual(sanitizeKioskOrder({requestType: 'ticket', customerName: 'Private Customer'}, {}), {
+		requestType: 'ticket', table: '', items: [], subtotal: 0, tax: 0, total: 0
 	});
 });
 
@@ -172,6 +178,28 @@ test('sanitizeKioskDisplayOrder includes staff details without exposing customer
 	assert.equal(result.items[0].notes, 'No spice');
 	assert.equal(result.total, 12.5);
 	assert.equal(Object.hasOwn(result, 'whatsappNumber'), false);
+});
+
+test('sanitizeKioskTicketDisplay exposes no customer details on the public display', () => {
+	const result = sanitizeKioskTicketDisplay({
+		source: 'kiosk',
+		requestType: 'ticket',
+		ticketNumber: '00<12>',
+		destination: '<Counter & 2>',
+		status: 'called',
+		customerName: 'Private Customer',
+		medicalNotes: 'Private details',
+		createdAt: new Date('2026-11-09T10:00:00.000Z')
+	});
+	assert.deepEqual(result, {
+		ticketId: '',
+		ticketNumber: '0012',
+		destination: 'Counter  2',
+		status: 'called',
+		createdAt: '2026-11-09T10:00:00.000Z',
+		statusUpdatedAt: '2026-11-09T10:00:00.000Z'
+	});
+	assert.equal(sanitizeKioskTicketDisplay({source: 'kiosk', requestType: 'order', status: 'new'}), null);
 });
 
 test('completed kiosk orders stay on the display for 24 hours after their last status update', () => {

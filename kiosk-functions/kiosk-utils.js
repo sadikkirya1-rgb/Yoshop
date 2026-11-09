@@ -1,8 +1,11 @@
 function sanitizeKioskOrder(requestData = {}, catalog = {}, taxRate = 0) {
-	const requestType = requestData.requestType === 'attendant' ? 'attendant' : requestData.requestType === 'order' ? 'order' : '';
+	const requestType = ['attendant', 'order', 'ticket'].includes(requestData.requestType) ? requestData.requestType : '';
 	if (!requestType) throw new Error('Unsupported request type.');
 
 	const table = String(requestData.table || '').replace(/[<>&]/g, '').trim().slice(0, 40);
+	if (requestType === 'ticket') {
+		return {requestType, table: '', items: [], subtotal: 0, tax: 0, total: 0};
+	}
 	if (requestType === 'attendant') {
 		return {requestType, table, items: [], subtotal: 0, tax: 0, total: 0};
 	}
@@ -105,6 +108,23 @@ function sanitizeKioskDisplayOrder(order = {}) {
 	};
 }
 
+function sanitizeKioskTicketDisplay(ticket = {}) {
+	if (ticket.source !== 'kiosk' || ticket.requestType !== 'ticket' || !['new', 'called', 'completed', 'cancelled'].includes(String(ticket.status || ''))) {
+		return null;
+	}
+	const createdAt = ticket.createdAt?.toDate?.() || (ticket.createdAt ? new Date(ticket.createdAt) : null);
+	const statusUpdatedAt = ticket.statusUpdatedAt?.toDate?.()
+		|| (ticket.statusUpdatedAt ? new Date(ticket.statusUpdatedAt) : createdAt);
+	return {
+		ticketId: String(ticket.ticketId || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 100),
+		ticketNumber: String(ticket.ticketNumber || '').replace(/[^0-9]/g, '').slice(0, 6),
+		destination: String(ticket.destination || '').replace(/[<>&]/g, '').trim().slice(0, 40),
+		status: String(ticket.status),
+		createdAt: createdAt && !Number.isNaN(createdAt.valueOf()) ? createdAt.toISOString() : '',
+		statusUpdatedAt: statusUpdatedAt && !Number.isNaN(statusUpdatedAt.valueOf()) ? statusUpdatedAt.toISOString() : ''
+	};
+}
+
 function isKioskDisplayOrderVisible(order = {}, now = Date.now()) {
 	if (!['paid', 'completed', 'rejected', 'cancelled', 'canceled'].includes(order.status)) return true;
 	const statusUpdatedAt = new Date(order.statusUpdatedAt || '').valueOf();
@@ -200,4 +220,4 @@ function createKioskMenuSlug(businessName = '', uniqueSuffix = '') {
 	return suffix ? `${base}-${suffix}` : base;
 }
 
-module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget, createKioskMenuSlug};
+module.exports = {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskTicketDisplay, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget, createKioskMenuSlug};

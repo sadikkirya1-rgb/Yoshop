@@ -15,7 +15,8 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const functions = getFunctions(app, 'europe-west1');
 const params = new URLSearchParams(window.location.search);
-let token = params.get('token') || '';
+const demoMode = params.get('demo') === '1';
+let token = demoMode ? 'local-demo' : params.get('token') || '';
 const menuSlug = window.location.pathname.startsWith('/menu/')
   ? window.location.pathname.slice('/menu/'.length).replace(/\/+$/, '')
   : '';
@@ -76,7 +77,13 @@ const elements = {
   detailsError: document.getElementById('kioskDetailsError'),
   backToCart: document.getElementById('kioskBackToCart'),
   confirmOrder: document.getElementById('kioskConfirmOrder'),
-  trackOrder: document.getElementById('kioskTrackOrder')
+  trackOrder: document.getElementById('kioskTrackOrder'),
+  serviceQueue: document.getElementById('kioskServiceQueue'),
+  serviceName: document.getElementById('kioskServiceName'),
+  serviceTicketButton: document.getElementById('kioskGetServiceTicket'),
+  serviceTicketReceipt: document.getElementById('kioskServiceTicketReceipt'),
+  serviceTicketNumber: document.getElementById('kioskServiceTicketNumber'),
+  serviceTicketInstructions: document.getElementById('kioskServiceTicketInstructions')
 };
 
 function formatMoney(value) {
@@ -97,6 +104,28 @@ function setKioskImageFallback(image, fallbackUrl, onFailure) {
 function createTrackingToken() {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+function createDemoTicket() {
+  const storageKey = 'yoshop-service-queue-demo-tickets';
+  let tickets = [];
+  try {
+    tickets = JSON.parse(localStorage.getItem(storageKey) || '[]');
+    if (!Array.isArray(tickets)) tickets = [];
+  } catch (error) {
+    tickets = [];
+  }
+  const ticketNumber = String(tickets.reduce((maximum, ticket) => Math.max(maximum, Number(ticket.ticketNumber) || 0), 0) + 1).padStart(3, '0');
+  tickets.unshift({
+    ticketId: `demo-${crypto.randomUUID()}`,
+    ticketNumber,
+    destination: '',
+    status: 'new',
+    createdAt: new Date().toISOString(),
+    statusUpdatedAt: new Date().toISOString()
+  });
+  localStorage.setItem(storageKey, JSON.stringify(tickets.slice(0, 60)));
+  return {data: {ticketNumber}};
 }
 
 function setMessage(message, isError = false) {
@@ -448,9 +477,11 @@ function getCustomerOrderDetails() {
 async function submitRequest(requestType, customerDetails = null) {
   if (previewOnly) return;
   if (requestType === 'order' && cart.size === 0) return;
+  if (requestType === 'ticket' && elements.serviceTicketButton.disabled) return;
   elements.submit.disabled = true;
   elements.attendant.disabled = true;
   elements.confirmOrder.disabled = true;
+  elements.serviceTicketButton.disabled = true;
   elements.trackOrder.hidden = true;
   setMessage(requestType === 'attendant' ? 'Sending your request...' : 'Sending your order...');
   try {
@@ -459,13 +490,14 @@ async function submitRequest(requestType, customerDetails = null) {
     const payload = {
       token,
       requestType,
-      ...(requestType === 'order' ? customerDetails : {table}),
+      ...(requestType === 'order' ? customerDetails : requestType === 'ticket' ? {} : {table}),
       ...(requestType === 'order' ? {trackingToken: pendingTrackingToken} : {}),
       idempotencyKey: pendingSubmissionId,
       items: requestType === 'order' ? [...cart.values()].map(({item, quantity, notes}) => ({productId: item.id, quantity, notes})) : []
     };
-    const response = await httpsCallable(functions, 'submitKioskRequest')(payload);
+    const response = demoMode ? createDemoTicket() : await httpsCallable(functions, 'submitKioskRequest')(payload);
     const orderNumber = String(response.data?.orderNumber || '');
+    const ticketNumber = String(response.data?.ticketNumber || '').replace(/[^0-9]/g, '');
     const orderModeLabel = {
       dine_in: 'dine-in',
       takeaway: 'takeaway',
@@ -486,7 +518,14 @@ async function submitRequest(requestType, customerDetails = null) {
     elements.cartPanel.classList.remove('is-entering-details');
     elements.submit.hidden = false;
     setCartSheetOpen(false, false);
-    setMessage(requestType === 'attendant'
+    if (requestType === 'ticket') {
+      elements.serviceTicketNumber.textContent = ticketNumber || '—';
+      elements.serviceTicketInstructions.textContent = `Please wait for ticket ${ticketNumber || ''} to be called on the display.`;
+      elements.serviceTicketReceipt.hidden = false;
+    }
+    setMessage(requestType === 'ticket'
+      ? `Ticket ${ticketNumber || ''} issued. Please wait for your number to be called.`
+      : requestType === 'attendant'
       ? 'Request sent. A staff member will be with you shortly.'
       : `Order${orderNumber ? ` #${orderNumber}` : ''} sent for ${orderModeLabel}. Your team will prepare it shortly.`);
   } catch (error) {
@@ -499,6 +538,7 @@ async function submitRequest(requestType, customerDetails = null) {
   } finally {
     elements.submit.disabled = previewOnly || cart.size === 0;
     elements.attendant.disabled = previewOnly;
+    elements.serviceTicketButton.disabled = previewOnly;
     elements.confirmOrder.disabled = false;
   }
 }
@@ -550,7 +590,7 @@ async function initialize() {
     }
   });
   setCartSheetOpen(false, false);
-  if (menuSlug) {
+  if (menuSlug && !demoMode) {
     elements.manifest.href = `/kiosk-manifest?slug=${encodeURIComponent(menuSlug)}`;
     elements.appleTouchIcon.href = `/kiosk-icon?slug=${encodeURIComponent(menuSlug)}&size=192`;
     try {
@@ -568,7 +608,7 @@ async function initialize() {
     elements.menu.replaceChildren();
     return;
   }
-  if (!menuSlug) {
+  if (!menuSlug && !demoMode) {
     elements.manifest.href = `/kiosk-manifest?token=${encodeURIComponent(token)}`;
     elements.appleTouchIcon.href = `/kiosk-icon?token=${encodeURIComponent(token)}&size=192`;
   }
@@ -577,7 +617,8 @@ async function initialize() {
   elements.customerTable.value = table;
   if (!table) elements.orderMode.value = 'takeaway';
   updateOrderModeFields();
-  elements.previewNotice.hidden = !previewOnly;
+  elements.previewNotice.hidden = !previewOnly && !demoMode;
+  if (demoMode) elements.previewNotice.textContent = 'Local demo. Tickets stay in this browser and are not sent to a business.';
   elements.attendant.hidden = previewOnly;
   const loadingCards = Array.from({length: 3}, () => {
     const card = document.createElement('div');
@@ -598,10 +639,27 @@ async function initialize() {
   }
   setMenuViewMode(menuViewMode, false);
   elements.attendant.addEventListener('click', () => submitRequest('attendant'));
+  elements.serviceTicketButton.addEventListener('click', () => submitRequest('ticket'));
   try {
     if (previewOnly) await getAuth(app).authStateReady();
-    const response = await httpsCallable(functions, 'getKioskMenu')({token, preview: previewOnly});
+    const response = demoMode
+      ? {data: {businessName: 'Demo Pharmacy', mode: 'service_queue', serviceName: 'Pharmacy queue', stationLabel: 'Counter', stationCount: 3, items: []}}
+      : await httpsCallable(functions, 'getKioskMenu')({token, preview: previewOnly});
     menuData = {...menuData, ...(response.data || {})};
+    const isServiceQueue = menuData.mode === 'service_queue';
+    document.body.classList.toggle('kiosk-service-queue-mode', isServiceQueue);
+    elements.serviceQueue.hidden = !isServiceQueue;
+    elements.serviceTicketButton.disabled = previewOnly || !isServiceQueue;
+    if (isServiceQueue) {
+      elements.businessName.textContent = menuData.serviceName || 'Service queue';
+      elements.headerBusinessName.textContent = menuData.businessName || menuData.serviceName || 'Service queue';
+      elements.serviceName.textContent = String(menuData.serviceName || 'SERVICE QUEUE').toUpperCase();
+      elements.serviceTicketInstructions.textContent = `Please wait for your number to be called at a ${menuData.stationLabel || 'counter'}.`;
+      document.title = `${menuData.serviceName || 'Service queue'} | ${menuData.businessName || 'YoShop'}`;
+      elements.appleTitle.content = (menuData.serviceName || 'Service queue').slice(0, 30);
+      setMessage(`Take a ticket for ${menuData.serviceName || 'this service'}.`);
+      return;
+    }
     if (!menuData.items?.length) {
       setMessage('This menu has no items available yet. Please check back soon.', true);
       elements.menu.replaceChildren();

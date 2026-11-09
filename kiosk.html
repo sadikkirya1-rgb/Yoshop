@@ -107,6 +107,19 @@
       <button id="requestAttendant" class="kiosk-secondary-button" type="button" hidden>Request an attendant</button>
       <p class="kiosk-cart-footnote">Pay your server or cashier when your order is ready.</p>
     </aside>
+    <section id="kioskServiceQueue" class="kiosk-service-queue" aria-labelledby="kioskServiceHeading" hidden>
+      <div class="kiosk-service-ticket-content">
+        <p id="kioskServiceName" class="kiosk-kicker">SERVICE QUEUE</p>
+        <h2 id="kioskServiceHeading">Take a ticket</h2>
+        <p class="kiosk-service-description">Get a ticket number and wait for it to be called.</p>
+        <button id="kioskGetServiceTicket" class="kiosk-primary-button" type="button">Take a ticket</button>
+        <div id="kioskServiceTicketReceipt" class="kiosk-service-ticket-receipt" role="status" hidden>
+          <span>Your ticket</span>
+          <strong id="kioskServiceTicketNumber"></strong>
+          <p id="kioskServiceTicketInstructions"></p>
+        </div>
+      </div>
+    </section>
   </main>
   <div id="kioskCartBackdrop" class="kiosk-cart-backdrop" hidden></div>
   <dialog id="kioskInstallHelp" class="kiosk-install-dialog" aria-labelledby="kioskInstallTitle">

@@ -22067,10 +22067,15 @@ function renderKioskQr() {
   const businessName = document.getElementById('kioskQrBusinessName');
   const tableLabel = document.getElementById('kioskQrTableLabel');
   if (businessName) businessName.textContent = kioskSettingsCache?.businessName || settings?.name || 'YoShop';
-  if (tableLabel) tableLabel.textContent = table ? `Order from ${table}` : 'Scan to view our menu';
+  const isServiceQueue = (document.getElementById('kioskModeInput')?.value || kioskSettingsCache?.mode) === 'service_queue';
+  if (tableLabel) tableLabel.textContent = isServiceQueue
+    ? 'Scan to take a service ticket'
+    : table ? `Order from ${table}` : 'Scan to view our menu';
   if (link) {
     const label = link.querySelector('.kiosk-public-link-label');
-    if (label) label.textContent = url ? 'Open digital menu' : 'Publish the menu to create a QR link';
+    if (label) label.textContent = url
+      ? isServiceQueue ? 'Open service ticket page' : 'Open digital menu'
+      : isServiceQueue ? 'Publish service tickets to create a QR link' : 'Publish the menu to create a QR link';
     link.classList.toggle('is-unavailable', !url);
     link.setAttribute('aria-disabled', String(!url));
     if (url) {
@@ -22109,9 +22114,43 @@ async function copyKioskMenuLink() {
 function updateKioskPublishState(enabled) {
   const badge = document.getElementById('kioskPublishState');
   if (!badge) return;
-  badge.textContent = enabled ? 'Accepting orders' : 'Menu paused';
+  const isServiceQueue = (document.getElementById('kioskModeInput')?.value || kioskSettingsCache?.mode) === 'service_queue';
+  badge.textContent = enabled ? (isServiceQueue ? 'Taking tickets' : 'Accepting orders') : (isServiceQueue ? 'Queue paused' : 'Menu paused');
   badge.classList.toggle('is-live', enabled);
   badge.classList.toggle('is-offline', !enabled);
+}
+
+function updateKioskModeFields() {
+  const isServiceQueue = document.getElementById('kioskModeInput')?.value === 'service_queue';
+  const productSettings = document.getElementById('kioskProductSettings');
+  const serviceSettings = document.getElementById('kioskServiceQueueSettings');
+  if (productSettings) productSettings.hidden = isServiceQueue;
+  if (serviceSettings) serviceSettings.hidden = !isServiceQueue;
+  const workspaceEyebrow = document.querySelector('#kioskMenuTab .kiosk-workspace-eyebrow');
+  const workspaceTitle = document.querySelector('#kioskMenuTab .kiosk-workspace-heading h3');
+  const workspaceDescription = document.querySelector('#kioskMenuTab .kiosk-workspace-heading > div > p:last-child');
+  if (workspaceEyebrow) workspaceEyebrow.textContent = isServiceQueue ? 'CUSTOMER SERVICE' : 'CUSTOMER ORDERING';
+  if (workspaceTitle) workspaceTitle.textContent = isServiceQueue ? 'Service Queue & Tickets' : 'Digital Menu & Orders';
+  if (workspaceDescription) workspaceDescription.textContent = isServiceQueue
+    ? 'Publish ticket intake, assign destinations, and call waiting customers.'
+    : 'Choose what guests see, print table QR codes, and manage incoming requests.';
+  const enabledLabel = document.querySelector('#kioskEnabledInput + span');
+  if (enabledLabel) enabledLabel.textContent = isServiceQueue ? 'Accept service tickets' : 'Accept kiosk orders';
+  const qrLabel = document.getElementById('kioskQrTableLabel');
+  if (qrLabel) qrLabel.textContent = isServiceQueue ? 'Scan to take a service ticket' : 'Scan to view our menu';
+  const qrHeading = document.querySelector('.kiosk-qr-panel .kiosk-panel-heading h4');
+  if (qrHeading) qrHeading.textContent = isServiceQueue ? 'Service ticket QR code' : 'Table QR code';
+  const qrDescription = document.querySelector('.kiosk-qr-panel .kiosk-panel-heading p');
+  if (qrDescription) qrDescription.textContent = isServiceQueue ? 'Print a QR code for customers to join the service queue.' : 'Print one QR for a table or use a general menu link.';
+  const tableRow = document.querySelector('.kiosk-table-row');
+  if (tableRow) tableRow.hidden = isServiceQueue;
+  const publishButton = document.querySelector('.kiosk-publish-footer .btn-success');
+  if (publishButton) publishButton.textContent = isServiceQueue ? 'Save & publish tickets' : 'Save & publish';
+  const openOrderDisplay = document.querySelector('.kiosk-order-display-open');
+  const openCustomerDisplay = document.querySelector('.kiosk-order-display-queue');
+  if (openOrderDisplay) openOrderDisplay.hidden = isServiceQueue;
+  if (openCustomerDisplay) openCustomerDisplay.textContent = isServiceQueue ? 'Open customer call board' : 'Open customer display';
+  updateKioskPublishState(document.getElementById('kioskEnabledInput')?.checked === true);
 }
 
 function getKioskOrderDate(value) {
@@ -22170,6 +22209,29 @@ function renderKioskOrderHistory(orders) {
 }
 
 function renderKioskOrderSummary(orders) {
+  if (document.getElementById('kioskModeInput')?.value === 'service_queue') {
+    const tickets = orders.filter(order => order.requestType === 'ticket');
+    const labels = ['Waiting', 'Called', 'Completed', 'Cancelled', ''];
+    const values = [
+      tickets.filter(order => order.status === 'new').length,
+      tickets.filter(order => order.status === 'called').length,
+      tickets.filter(order => order.status === 'completed').length,
+      tickets.filter(order => ['rejected', 'cancelled'].includes(order.status)).length,
+      ''
+    ];
+    ['kioskSummaryNew', 'kioskSummaryPreparing', 'kioskSummaryReady', 'kioskSummaryCompleted', 'kioskSummaryCancelled'].forEach((id, index) => {
+      const element = document.getElementById(id);
+      if (!element) return;
+      element.parentElement.hidden = !labels[index];
+      element.parentElement.querySelector('span').textContent = labels[index];
+      element.textContent = values[index];
+    });
+    return;
+  }
+  document.querySelectorAll('.kiosk-order-summary-card').forEach(card => { card.hidden = false; });
+  document.querySelectorAll('.kiosk-order-summary-card span').forEach((label, index) => {
+    label.textContent = ['New', 'Preparing', 'Ready', 'Completed', 'Cancelled'][index] || label.textContent;
+  });
   const kioskOrders = orders.filter(order => order.requestType === 'order');
   const counts = {
     kioskSummaryNew: kioskOrders.filter(order => order.status === 'new').length,
@@ -22190,7 +22252,7 @@ function renderKioskOrderCards(orders = null) {
   if (Array.isArray(orders)) kioskOrdersCache = orders;
   const allOrders = kioskOrdersCache;
   const selectedFilter = document.getElementById('kioskOrderFilter')?.value || 'open';
-  const openStatuses = new Set(['new', 'accepted', 'preparing', 'ready', 'in_pos']);
+  const openStatuses = new Set(['new', 'accepted', 'preparing', 'ready', 'in_pos', 'called']);
   const visibleOrders = allOrders.filter(order => selectedFilter === 'all'
     || (selectedFilter === 'open' ? openStatuses.has(order.status) : order.status === selectedFilter));
   const newCount = allOrders.filter(order => order.status === 'new').length;
@@ -22201,6 +22263,8 @@ function renderKioskOrderCards(orders = null) {
   updateKioskAttentionNotifications(newCount);
   renderKioskOrderSummary(allOrders);
   renderKioskOrderHistory(allOrders);
+  const orderHistory = document.querySelector('.kiosk-order-history');
+  if (orderHistory) orderHistory.hidden = document.getElementById('kioskModeInput')?.value === 'service_queue';
   container.replaceChildren();
   if (!visibleOrders.length) {
     const empty = document.createElement('p');
@@ -22210,10 +22274,66 @@ function renderKioskOrderCards(orders = null) {
     updateKioskPublishState(document.getElementById('kioskEnabledInput')?.checked === true);
     return;
   }
-  const statusLabels = {new: 'New', accepted: 'Accepted', preparing: 'Preparing', ready: 'Ready', in_pos: 'In POS', paid: 'Paid', rejected: 'Rejected', resolved: 'Handled'};
+  const statusLabels = {new: 'New', accepted: 'Accepted', preparing: 'Preparing', ready: 'Ready', called: 'Called', in_pos: 'In POS', paid: 'Paid', completed: 'Completed', rejected: 'Rejected', resolved: 'Handled'};
   const orderModeLabels = {dine_in: 'Dine-in', takeaway: 'Takeaway', delivery: 'Delivery'};
   const paymentModeLabels = {cash: 'Cash', card_at_counter: 'Card at counter', pay_on_delivery: 'Pay on delivery', online_payment: 'Online payment'};
   visibleOrders.forEach(order => {
+    if (order.requestType === 'ticket') {
+      const card = document.createElement('article');
+      card.className = `kiosk-order-card kiosk-order-card--${order.status === 'new' ? 'new' : order.status === 'called' ? 'ready' : 'resolved'}`;
+      const heading = document.createElement('div');
+      heading.className = 'kiosk-order-card-heading';
+      const title = document.createElement('strong');
+      title.className = 'kiosk-order-card-title';
+      title.textContent = `Ticket #${String(order.ticketNumber || '').replace(/[^0-9]/g, '') || '—'}`;
+      const status = document.createElement('span');
+      status.className = `kiosk-order-status status-${order.status}`;
+      status.textContent = statusLabels[order.status] || 'Waiting';
+      heading.append(title, status);
+      card.appendChild(heading);
+      const createdAt = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || '');
+      const date = document.createElement('time');
+      date.className = 'kiosk-order-card-date';
+      date.textContent = Number.isFinite(createdAt.valueOf())
+        ? createdAt.toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})
+        : 'Time unavailable';
+      card.appendChild(date);
+      if (order.destination) {
+        const destination = document.createElement('p');
+        destination.className = 'kiosk-order-customer-details';
+        destination.textContent = `Called to ${order.destination}`;
+        card.appendChild(destination);
+      }
+      const actions = document.createElement('div');
+      actions.className = 'kiosk-order-actions';
+      const stationLabel = String(document.getElementById('kioskStationLabelInput')?.value || kioskSettingsCache?.stationLabel || 'Counter').trim();
+      const stationCount = Math.min(12, Math.max(1, Number(document.getElementById('kioskStationCountInput')?.value || kioskSettingsCache?.stationCount) || 3));
+      if (['new', 'called'].includes(order.status)) {
+        for (let station = 1; station <= stationCount; station += 1) {
+          const destinationName = `${stationLabel} ${station}`;
+          if (order.destination === destinationName) continue;
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.className = 'btn btn-secondary';
+          button.textContent = `Call to ${destinationName}`;
+          button.dataset.actionPermission = 'kioskmenu.write';
+          button.addEventListener('click', () => updateKioskOrderStatus(order.id, 'called', destinationName));
+          actions.appendChild(button);
+        }
+      }
+      if (order.status === 'called') {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'btn kiosk-order-action kiosk-order-action--accept';
+        button.textContent = 'Mark complete';
+        button.dataset.actionPermission = 'kioskmenu.write';
+        button.addEventListener('click', () => updateKioskOrderStatus(order.id, 'completed'));
+        actions.appendChild(button);
+      }
+      if (actions.childElementCount) card.appendChild(actions);
+      container.appendChild(card);
+      return;
+    }
     const card = document.createElement('article');
     const cardStatus = Object.hasOwn(statusLabels, order.status) ? order.status : 'new';
     card.className = `kiosk-order-card kiosk-order-card--${cardStatus}`;
@@ -22389,7 +22509,9 @@ function listenForKioskOrders() {
     if (!kioskOrdersInitialSnapshot) {
       snapshot.docChanges().filter(change => change.type === 'added').forEach(change => {
         const order = change.doc.data();
-        const detail = order.requestType === 'attendant'
+        const detail = order.requestType === 'ticket'
+          ? `New service ticket #${String(order.ticketNumber || '').replace(/[^0-9]/g, '')}.`
+          : order.requestType === 'attendant'
           ? `Attendant requested${order.table ? ` at ${order.table}` : ''}.`
           : `New kiosk order${order.table ? ` at ${order.table}` : ''}.`;
         if (typeof Notification !== 'undefined' && Notification.permission === 'granted') {
@@ -22446,6 +22568,15 @@ async function initializeKioskMenuTab() {
     orderFilter.dataset.listenerBound = 'true';
     orderFilter.addEventListener('change', () => renderKioskOrderCards());
   }
+  const modeInput = document.getElementById('kioskModeInput');
+  if (modeInput && modeInput.dataset.listenerBound !== 'true') {
+    modeInput.dataset.listenerBound = 'true';
+    modeInput.addEventListener('change', () => {
+      updateKioskModeFields();
+      renderKioskOrderCards();
+      renderKioskQr();
+    });
+  }
   if (!canManageKioskMenu()) {
     document.querySelector('.kiosk-publish-panel')?.style.setProperty('display', 'none');
     document.querySelector('.kiosk-qr-panel')?.style.setProperty('display', 'none');
@@ -22465,11 +22596,22 @@ async function initializeKioskMenuTab() {
     kioskSettingsCache = response.data || {};
     const enabled = document.getElementById('kioskEnabledInput');
     const attendant = document.getElementById('kioskAttendantInput');
+    const mode = document.getElementById('kioskModeInput');
+    const serviceName = document.getElementById('kioskServiceNameInput');
+    const stationLabel = document.getElementById('kioskStationLabelInput');
+    const stationCount = document.getElementById('kioskStationCountInput');
     if (enabled) enabled.checked = kioskSettingsCache.enabled === true;
     if (attendant) attendant.checked = kioskSettingsCache.allowAttendant !== false;
+    if (mode) mode.value = kioskSettingsCache.mode === 'service_queue' ? 'service_queue' : 'orders';
+    if (serviceName) serviceName.value = kioskSettingsCache.serviceName || 'Service queue';
+    if (stationLabel) stationLabel.value = kioskSettingsCache.stationLabel || 'Counter';
+    if (stationCount) stationCount.value = String(kioskSettingsCache.stationCount || 3);
+    updateKioskModeFields();
     renderKioskProductOptions(kioskSettingsCache.selectedProductIds || []);
     updateKioskPublishState(kioskSettingsCache.enabled === true);
-    if (status) status.textContent = kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Select items and publish to activate the QR menu.';
+    if (status) status.textContent = kioskSettingsCache.mode === 'service_queue'
+      ? kioskSettingsCache.enabled ? 'Service tickets are live.' : 'Configure destinations and publish to activate service tickets.'
+      : kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Select items and publish to activate the QR menu.';
     renderKioskQr();
   } catch (error) {
     console.error('[KIOSK] Failed to load settings:', error);
@@ -22483,9 +22625,10 @@ async function saveKioskMenuSettings(rotateToken = false) {
   const selectedProductIds = Array.from(kioskSelectedProductIds);
   const productImages = {};
   const productsWithoutImages = [];
+  const mode = document.getElementById('kioskModeInput')?.value === 'service_queue' ? 'service_queue' : 'orders';
   try {
-    if (status) status.textContent = 'Publishing menu...';
-    for (const productId of selectedProductIds) {
+    if (status) status.textContent = mode === 'service_queue' ? 'Publishing service queue...' : 'Publishing menu...';
+    for (const productId of mode === 'orders' ? selectedProductIds : []) {
       const product = kioskAvailableProducts.find(item => getKioskProductId(item) === productId);
       if (!product) continue;
       let image = getKioskProductImageUrl(product);
@@ -22505,6 +22648,10 @@ async function saveKioskMenuSettings(rotateToken = false) {
       selectedProductIds,
       productImages,
       enabled: document.getElementById('kioskEnabledInput')?.checked === true,
+      mode,
+      serviceName: document.getElementById('kioskServiceNameInput')?.value.trim() || 'Service queue',
+      stationLabel: document.getElementById('kioskStationLabelInput')?.value.trim() || 'Counter',
+      stationCount: Number(document.getElementById('kioskStationCountInput')?.value) || 3,
       allowAttendant: document.getElementById('kioskAttendantInput')?.checked === true,
       rotateToken
     };
@@ -22513,8 +22660,13 @@ async function saveKioskMenuSettings(rotateToken = false) {
     kioskSettingsCache = response.data || {};
     const enabled = document.getElementById('kioskEnabledInput');
     if (enabled) enabled.checked = kioskSettingsCache.enabled === true;
+    const modeInput = document.getElementById('kioskModeInput');
+    if (modeInput) modeInput.value = kioskSettingsCache.mode === 'service_queue' ? 'service_queue' : 'orders';
+    updateKioskModeFields();
     if (status) {
-      const publishMessage = kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Menu settings saved. The public menu is disabled.';
+      const publishMessage = mode === 'service_queue'
+        ? kioskSettingsCache.enabled ? 'Service tickets are live.' : 'Service queue settings saved. Ticket intake is paused.'
+        : kioskSettingsCache.enabled ? 'Digital menu is live.' : 'Menu settings saved. The public menu is disabled.';
       status.textContent = productsWithoutImages.length
         ? `${publishMessage} No product photo was found for: ${productsWithoutImages.join(', ')}.`
         : publishMessage;
@@ -22582,7 +22734,8 @@ async function openKioskOrderDisplay() {
   displayWindow.document.body.textContent = 'Connecting to the order display...';
   try {
     const response = await httpsCallable(kioskFunctions, 'getKioskOrderDisplayLink')({targetUid: getKioskTargetUid()});
-    const displayUrl = new URL('order-display.html', window.location.href);
+    const displayPage = kioskSettingsCache?.mode === 'service_queue' ? 'service-queue-display.html' : 'order-display.html';
+    const displayUrl = new URL(displayPage, window.location.href);
     displayUrl.hash = new URLSearchParams({display: String(response.data?.displayToken || '')}).toString();
     displayWindow.location.replace(displayUrl.toString());
   } catch (error) {
@@ -22598,11 +22751,12 @@ function printKioskQr() {
   window.print();
 }
 
-async function updateKioskOrderStatus(orderId, status) {
-  if (!currentUser || !requireActionPermission('kioskmenu.write', 'update a kiosk request') || !['accepted', 'preparing', 'ready', 'rejected', 'resolved'].includes(status)) return;
+async function updateKioskOrderStatus(orderId, status, destination = '') {
+  if (!currentUser || !requireActionPermission('kioskmenu.write', 'update a kiosk request') || !['accepted', 'preparing', 'ready', 'called', 'completed', 'rejected', 'resolved'].includes(status)) return;
   try {
     await updateDoc(doc(dbFirestore, 'users', getKioskTargetUid(), 'kioskOrders', orderId), {
       status,
+      ...(status === 'called' ? {destination: String(destination).slice(0, 40)} : {}),
       statusUpdatedAt: new Date().toISOString(),
       updatedBy: currentLoggedInStaffName || currentUser.displayName || currentUser.email || 'staff'
     });

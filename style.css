@@ -90,16 +90,24 @@ body.dark-mode .dashboard-card:hover {
 
 .kiosk-workspace-heading {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
   margin: 0 0 18px;
   padding: 4px 0 16px;
   border-bottom: 1px solid var(--border-color);
 }
 
+.kiosk-workspace-heading > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+}
+
 .kiosk-workspace-heading h3 {
-  margin: 2px 0 4px;
+  margin: 0;
   font-size: 1.35rem;
 }
 
@@ -120,9 +128,9 @@ body.dark-mode .dashboard-card:hover {
 
 .kiosk-workspace-status {
   display: flex;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   flex-wrap: wrap;
   gap: 12px;
 }
@@ -170,6 +178,8 @@ body.dark-mode .dashboard-card:hover {
   font-size: 0.88rem;
   font-weight: 700;
 }
+
+.kiosk-order-summary-card[hidden] { display: none; }
 
 .kiosk-order-summary-card strong {
   color: var(--text);
@@ -327,6 +337,37 @@ body.dark-mode .dashboard-card:hover {
   display: grid;
   gap: 8px;
 }
+
+.kiosk-mode-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px 14px;
+  padding: 2px 0 8px;
+}
+
+.kiosk-mode-field {
+  display: grid;
+  min-width: 130px;
+  gap: 4px;
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.kiosk-mode-field select,
+.kiosk-mode-field input {
+  width: 100%;
+  min-height: 36px;
+  padding: 6px 9px;
+}
+
+.kiosk-mode-select-field { flex: 0 1 210px; }
+.kiosk-service-fields { display: flex; flex: 1 1 480px; flex-wrap: wrap; align-items: end; gap: 10px 14px; }
+.kiosk-service-fields[hidden] { display: none; }
+.kiosk-service-name-field { flex: 1 1 190px; }
+.kiosk-station-label-field { flex: 1 1 160px; }
+.kiosk-station-count-field { flex: 0 1 110px; }
+.kiosk-mode-toolbar > .kiosk-toggle-row { flex: 0 0 auto; align-self: center; margin-left: auto; }
 
 .kiosk-panel-heading h4 {
   margin: 0 0 4px;
@@ -588,6 +629,8 @@ body.dark-mode .dashboard-card:hover {
 .kiosk-table-row {
   align-items: center;
 }
+
+.kiosk-table-row[hidden] { display: none; }
 
 .kiosk-table-row input {
   min-width: 120px;

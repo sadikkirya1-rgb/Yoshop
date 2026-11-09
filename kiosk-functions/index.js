@@ -4,7 +4,7 @@ const {onDocumentCreated} = require("firebase-functions/v2/firestore");
 const crypto = require("node:crypto");
 const admin = require("firebase-admin");
 const {getFirestore} = require("firebase-admin/firestore");
-const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget, createKioskMenuSlug} = require("./kiosk-utils");
+const {sanitizeKioskOrder, sanitizeKioskDisplayOrder, sanitizeKioskTicketDisplay, isKioskDisplayOrderVisible, sanitizeKioskImageMap, getFirebaseStorageObjectPath, isFirebaseStorageDownloadUrl, buildFirebaseStorageDownloadUrl, isAuthorizedKioskTarget, createKioskMenuSlug} = require("./kiosk-utils");
 
 admin.initializeApp({storageBucket: "yoshop-b502f.firebasestorage.app"});
 const db = getFirestore(admin.app(), "yoshop");
@@ -217,16 +217,23 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 		? [...new Set(data.selectedProductIds.map((id) => String(id || "").trim()).filter(Boolean))].slice(0, 100)
 		: (Array.isArray(current.selectedProductIds) ? current.selectedProductIds : []);
 	const enabled = typeof data.enabled === "boolean" ? data.enabled : current.enabled === true;
+	const mode = data.mode === "service_queue" || (data.mode === undefined && current.mode === "service_queue") ? "service_queue" : "orders";
+	const serviceName = String(data.serviceName === undefined ? current.serviceName || "Service queue" : data.serviceName)
+		.replace(/[<>&]/g, "").trim().slice(0, 80) || "Service queue";
+	const stationLabel = String(data.stationLabel === undefined ? current.stationLabel || "Counter" : data.stationLabel)
+		.replace(/[^A-Za-z0-9 -]/g, "").trim().slice(0, 24) || "Counter";
+	const stationCountValue = Number(data.stationCount === undefined ? current.stationCount : data.stationCount);
+	const stationCount = Number.isInteger(stationCountValue) ? Math.min(12, Math.max(1, stationCountValue)) : 3;
 	const allowAttendant = typeof data.allowAttendant === "boolean" ? data.allowAttendant : current.allowAttendant !== false;
 	const productImages = {
 		...sanitizeKioskImageMap(current.productImages, selectedProductIds),
 		...sanitizeKioskImageMap(data.productImages, selectedProductIds)
 	};
 
-	if (enabled && selectedProductIds.length === 0) {
+	if (enabled && mode === "orders" && selectedProductIds.length === 0) {
 		throw new HttpsError("failed-precondition", "Publish at least one menu item before enabling the kiosk.");
 	}
-	if (selectedProductIds.length) {
+	if (mode === "orders" && selectedProductIds.length) {
 		const productSnapshots = await Promise.all(selectedProductIds.map((id) => db.collection("users").doc(uid).collection("products").doc(id).get()));
 		if (productSnapshots.some((snapshot) => !snapshot.exists || snapshot.data()?.deleted)) {
 			throw new HttpsError("invalid-argument", "One or more selected menu items are missing or deleted.");
@@ -236,6 +243,10 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 	const now = admin.firestore.FieldValue.serverTimestamp();
 	await configRef.set({
 		enabled,
+		mode,
+		serviceName,
+		stationLabel,
+		stationCount,
 		allowAttendant,
 		selectedProductIds,
 		productImages,
@@ -260,6 +271,10 @@ exports.configureKioskMenu = onCall(callableOptions, async (request) => {
 	await Promise.all(writes);
 	return {
 		enabled,
+		mode,
+		serviceName,
+		stationLabel,
+		stationCount,
 		allowAttendant,
 		selectedProductIds,
 		productImages,
@@ -304,11 +319,15 @@ exports.uploadKioskProductImage = onCall(callableOptions, async (request) => {
 exports.getKioskMenu = onCall(callableOptions, async (request) => {
 	const previewUid = request.data?.preview === true ? String(request.auth?.uid || "") : "";
 	const kiosk = await loadKioskByToken(request.data?.token, previewUid);
-	const catalog = await getPublishedKioskCatalog(kiosk);
+	const catalog = kiosk.config.mode === "service_queue" ? {} : await getPublishedKioskCatalog(kiosk);
 	const profileSettings = kiosk.profile.settings || {};
 	return {
 		businessName: String(profileSettings.name || kiosk.userData.name || kiosk.config.businessName || "YoShop").trim().slice(0, 100),
 		currency: String(profileSettings.currency || "$").slice(0, 8),
+		mode: kiosk.config.mode === "service_queue" ? "service_queue" : "orders",
+		serviceName: String(kiosk.config.serviceName || "Service queue").trim().slice(0, 80),
+		stationLabel: String(kiosk.config.stationLabel || "Counter").trim().slice(0, 24),
+		stationCount: Math.min(12, Math.max(1, Number(kiosk.config.stationCount) || 3)),
 		allowAttendant: kiosk.config.allowAttendant !== false,
 		items: Object.values(catalog)
 	};
@@ -427,10 +446,14 @@ exports.getKioskIcon = onRequest({region: "europe-west1"}, async (request, respo
 exports.submitKioskRequest = onCall(callableOptions, async (request) => {
 	const kiosk = await loadKioskByToken(request.data?.token);
 	const requestData = request.data || {};
+	const isServiceQueue = kiosk.config.mode === "service_queue";
+	if (isServiceQueue !== (requestData.requestType === "ticket")) {
+		throw new HttpsError("failed-precondition", isServiceQueue ? "This kiosk accepts service tickets only." : "This kiosk does not accept service tickets.");
+	}
 	if (requestData.requestType === "attendant" && kiosk.config.allowAttendant === false) {
 		throw new HttpsError("failed-precondition", "Attendant requests are disabled for this business.");
 	}
-	const catalog = await getPublishedKioskCatalog(kiosk);
+	const catalog = ["ticket", "attendant"].includes(requestData.requestType) ? {} : await getPublishedKioskCatalog(kiosk);
 	let order;
 	try {
 		order = sanitizeKioskOrder(requestData, catalog, 0);
@@ -446,6 +469,43 @@ exports.submitKioskRequest = onCall(callableOptions, async (request) => {
 	const ipHash = hashKioskValue(String(request.rawRequest?.ip || "unknown")).slice(0, 32);
 	const rateRef = db.collection("kioskRateLimits").doc(`${kiosk.tokenHash}_${ipHash}`);
 	const nowMillis = Date.now();
+	if (order.requestType === "ticket") {
+		const ticketDate = new Date(nowMillis).toISOString().slice(0, 10).replace(/-/g, "");
+		const counterRef = db.collection("users").doc(kiosk.uid).collection("kioskTicketCounters").doc(ticketDate);
+		return db.runTransaction(async (transaction) => {
+			const [existingOrder, rateSnapshot, counterSnapshot] = await Promise.all([
+				transaction.get(orderRef),
+				transaction.get(rateRef),
+				transaction.get(counterRef)
+			]);
+			if (existingOrder.exists) {
+				return {orderId, ticketNumber: String(existingOrder.data()?.ticketNumber || ""), duplicate: true};
+			}
+			const rateData = rateSnapshot.data() || {};
+			const windowStart = Number(rateData.windowStart) || nowMillis;
+			const requestCount = nowMillis - windowStart >= KIOSK_RATE_LIMIT_WINDOW_MS ? 0 : Number(rateData.requestCount) || 0;
+			if (requestCount >= KIOSK_RATE_LIMIT_MAX_REQUESTS) {
+				throw new HttpsError("resource-exhausted", "Too many requests. Please try again in a minute.");
+			}
+			const nextSequence = Number(counterSnapshot.data()?.sequence || 0) + 1;
+			const ticketNumber = String(nextSequence).padStart(3, "0");
+			transaction.set(rateRef, {
+				windowStart: requestCount === 0 ? nowMillis : windowStart,
+				requestCount: requestCount + 1,
+				expiresAt: new Date(nowMillis + KIOSK_RATE_LIMIT_WINDOW_MS * 2)
+			});
+			transaction.set(counterRef, {sequence: nextSequence}, {merge: true});
+			transaction.create(orderRef, {
+				...order,
+				ticketNumber,
+				status: "new",
+				source: "kiosk",
+				createdAt: admin.firestore.FieldValue.serverTimestamp(),
+				statusUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+			});
+			return {orderId, ticketNumber, duplicate: false};
+		});
+	}
 	if (order.requestType === "attendant") {
 		return db.runTransaction(async (transaction) => {
 			const [existingOrder, rateSnapshot] = await Promise.all([transaction.get(orderRef), transaction.get(rateRef)]);
@@ -615,6 +675,34 @@ exports.getKioskOrderDisplay = onCall(callableOptions, async (request) => {
 		businessName: String(profile.settings?.name || "Order display").trim().slice(0, 100),
 		currency: String(profile.settings?.currency || "$").slice(0, 8),
 		orders: visibleOrders
+	};
+});
+
+exports.getKioskServiceQueueDisplay = onCall(callableOptions, async (request) => {
+	const displayToken = String(request.data?.displayToken || "").trim();
+	if (!/^[A-Za-z0-9_-]{32,100}$/.test(displayToken)) {
+		throw new HttpsError("invalid-argument", "A valid service display link is required.");
+	}
+	const displaySnapshot = await db.collection("kioskOrderDisplays").doc(hashKioskValue(displayToken)).get();
+	if (!displaySnapshot.exists) throw new HttpsError("not-found", "This service display is unavailable.");
+	const uid = String(displaySnapshot.data()?.uid || "");
+	if (!uid) throw new HttpsError("not-found", "This service display is unavailable.");
+	const [profileSnapshot, settingsSnapshot, ticketsSnapshot] = await Promise.all([
+		db.collection("users").doc(uid).collection("data").doc("shop_profile").get(),
+		db.collection("users").doc(uid).collection("data").doc("kiosk_settings").get(),
+		db.collection("users").doc(uid).collection("kioskOrders").orderBy("createdAt", "desc").limit(60).get()
+	]);
+	const settings = settingsSnapshot.data() || {};
+	if (settings.mode !== "service_queue") throw new HttpsError("failed-precondition", "Service queue mode is not enabled.");
+	const profile = profileSnapshot.data() || {};
+	const tickets = ticketsSnapshot.docs
+		.map(document => sanitizeKioskTicketDisplay({...document.data(), ticketId: document.id}))
+		.filter(ticket => ticket && ["new", "called"].includes(ticket.status));
+	return {
+		businessName: String(profile.settings?.name || "Service queue").trim().slice(0, 100),
+		serviceName: String(settings.serviceName || "Service queue").trim().slice(0, 80),
+		stationLabel: String(settings.stationLabel || "Counter").trim().slice(0, 24),
+		tickets
 	};
 });
 
