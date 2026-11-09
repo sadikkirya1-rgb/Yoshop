@@ -22184,6 +22184,45 @@ function selectKioskMode(mode) {
   modeInput.dispatchEvent(new Event('change', {bubbles: true}));
 }
 
+async function persistKioskMode(mode) {
+  if (!canManageKioskMenu() || !kioskSettingsCache || kioskSettingsCache.mode === mode
+    || kioskSettingsLoading || kioskSettingsSaving) return;
+  const modeInput = document.getElementById('kioskModeInput');
+  const status = document.getElementById('kioskMenuStatus');
+  const publishButton = document.querySelector('.kiosk-publish-footer .btn-success');
+  const previousMode = kioskSettingsCache.mode === 'service_queue' ? 'service_queue' : 'orders';
+  kioskSettingsSaving = true;
+  setKioskModeControlsDisabled(true);
+  if (publishButton) publishButton.disabled = true;
+  try {
+    const configure = httpsCallable(kioskFunctions, 'configureKioskMenu');
+    const response = await configure({targetUid: getKioskTargetUid(), mode});
+    if (response.data?.mode !== mode) {
+      throw new Error('The active kiosk mode could not be saved. Refresh YoShop and check the published settings.');
+    }
+    kioskSettingsCache = {...kioskSettingsCache, ...response.data};
+    if (modeInput) modeInput.value = mode;
+    updateKioskModeFields();
+    renderKioskOrderCards();
+    renderKioskQr();
+    if (status) {
+      const modeLabel = mode === 'service_queue' ? 'Ticketing' : 'Ordering';
+      const intakeState = kioskSettingsCache.enabled ? 'Intake remains active.' : 'Intake remains paused.';
+      status.textContent = `${modeLabel} mode saved. ${intakeState}`;
+    }
+  } catch (error) {
+    if (modeInput) modeInput.value = previousMode;
+    updateKioskModeFields();
+    renderKioskOrderCards();
+    renderKioskQr();
+    if (status) status.textContent = getKioskBackendErrorMessage(error, 'Could not save the active kiosk mode.');
+  } finally {
+    kioskSettingsSaving = false;
+    setKioskModeControlsDisabled(false);
+    if (publishButton) publishButton.disabled = false;
+  }
+}
+
 function getKioskOrderDate(value) {
   const date = value?.toDate ? value.toDate() : new Date(value || '');
   return Number.isFinite(date.valueOf()) ? date : null;
@@ -22194,11 +22233,31 @@ function renderKioskOrderHistory(orders) {
   const count = document.getElementById('kioskOrderHistoryCount');
   const empty = document.getElementById('kioskOrderHistoryEmpty');
   if (!list || !count || !empty) return;
-  const historyStatuses = new Set(['paid', 'completed', 'rejected', 'cancelled', 'canceled']);
+  const isServiceQueue = document.getElementById('kioskModeInput')?.value === 'service_queue';
+  const heading = document.getElementById('kioskOrderHistoryHeading');
+  const description = document.getElementById('kioskOrderHistoryDescription');
+  const identifierHeading = document.getElementById('kioskOrderHistoryIdentifierHeading');
+  const dateHeading = document.getElementById('kioskOrderHistoryDateHeading');
+  const typeHeading = document.getElementById('kioskOrderHistoryTypeHeading');
+  const itemsHeading = document.getElementById('kioskOrderHistoryItemsHeading');
+  const totalHeading = document.getElementById('kioskOrderHistoryTotalHeading');
+  if (heading) heading.textContent = isServiceQueue ? 'Recent ticket history' : 'Recent order history';
+  if (description) description.textContent = isServiceQueue
+    ? 'Completed and cancelled service tickets from the last 24 hours.'
+    : 'Completed and cancelled kiosk orders from the last 24 hours.';
+  if (identifierHeading) identifierHeading.textContent = isServiceQueue ? 'Ticket' : 'Order';
+  if (dateHeading) dateHeading.textContent = isServiceQueue ? 'Issued' : 'Placed';
+  if (typeHeading) typeHeading.textContent = isServiceQueue ? 'Destination' : 'Type / table';
+  if (itemsHeading) itemsHeading.hidden = isServiceQueue;
+  if (totalHeading) totalHeading.hidden = isServiceQueue;
+  empty.textContent = isServiceQueue ? 'No recent ticket history' : 'No recent order history';
+  const historyStatuses = isServiceQueue
+    ? new Set(['completed', 'rejected', 'cancelled', 'canceled'])
+    : new Set(['paid', 'completed', 'rejected', 'cancelled', 'canceled']);
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   const historyOrders = orders
     .filter(order => {
-      if (order.requestType !== 'order' || !historyStatuses.has(order.status)) return false;
+      if (order.requestType !== (isServiceQueue ? 'ticket' : 'order') || !historyStatuses.has(order.status)) return false;
       const updatedAt = getKioskOrderDate(order.statusUpdatedAt || order.createdAt);
       return updatedAt && updatedAt.valueOf() >= cutoff;
     })
@@ -22212,18 +22271,28 @@ function renderKioskOrderHistory(orders) {
     const row = document.createElement('tr');
     const orderNumber = document.createElement('td');
     orderNumber.className = 'kiosk-history-order-number';
-    orderNumber.textContent = order.orderNumber ? `#${order.orderNumber}` : 'Order number unavailable';
+    const number = isServiceQueue
+      ? String(order.ticketNumber || '').replace(/[^0-9]/g, '')
+      : String(order.orderNumber || '');
+    orderNumber.textContent = number ? `#${number}` : `${isServiceQueue ? 'Ticket' : 'Order'} number unavailable`;
     const placed = document.createElement('td');
     const createdAt = getKioskOrderDate(order.createdAt);
     placed.textContent = createdAt
       ? createdAt.toLocaleString([], {month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit'})
       : 'Time unavailable';
     const status = document.createElement('td');
-    status.textContent = ({paid: 'Completed', completed: 'Completed', rejected: 'Cancelled', cancelled: 'Cancelled', canceled: 'Cancelled'})[order.status];
+    status.textContent = ({paid: 'Completed', completed: 'Completed', rejected: isServiceQueue ? 'Rejected' : 'Cancelled', cancelled: 'Cancelled', canceled: 'Cancelled'})[order.status];
     const type = document.createElement('td');
-    type.textContent = order.orderMode === 'dine_in' && order.table
-      ? `Dine-in · Table ${String(order.table)}`
-      : order.orderMode === 'delivery' ? 'Delivery' : 'Takeaway';
+    type.textContent = isServiceQueue
+      ? String(order.destination || 'Not assigned')
+      : order.orderMode === 'dine_in' && order.table
+        ? `Dine-in · Table ${String(order.table)}`
+        : order.orderMode === 'delivery' ? 'Delivery' : 'Takeaway';
+    if (isServiceQueue) {
+      row.append(orderNumber, placed, status, type);
+      list.appendChild(row);
+      return;
+    }
     const items = document.createElement('td');
     items.className = 'kiosk-history-items';
     items.textContent = (Array.isArray(order.items) ? order.items : [])
@@ -22303,8 +22372,6 @@ function renderKioskOrderCards(orders = null) {
   updateKioskAttentionNotifications(newCount);
   renderKioskOrderSummary(allOrders);
   renderKioskOrderHistory(allOrders);
-  const orderHistory = document.querySelector('.kiosk-order-history');
-  if (orderHistory) orderHistory.hidden = isServiceQueue;
   container.replaceChildren();
   if (!visibleOrders.length) {
     const empty = document.createElement('p');
@@ -22614,9 +22681,11 @@ async function initializeKioskMenuTab() {
   if (modeInput && modeInput.dataset.listenerBound !== 'true') {
     modeInput.dataset.listenerBound = 'true';
     modeInput.addEventListener('change', () => {
+      const mode = modeInput.value === 'service_queue' ? 'service_queue' : 'orders';
       updateKioskModeFields();
       renderKioskOrderCards();
       renderKioskQr();
+      persistKioskMode(mode);
     });
   }
   if (!canManageKioskMenu()) {

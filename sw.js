@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v104';
+const CACHE_NAME = 'yoshop-v105';
 
 const APP_SHELL_URLS = [
   '/',
@@ -24,7 +24,7 @@ const APP_SHELL_URLS = [
   '/style.css',
   '/style.css?v=20261109-kiosk-mode-buttons-v1',
   '/app.js',
-  '/app.js?v=20261109-kiosk-mode-buttons-v1',
+  '/app.js?v=20261109-kiosk-ticket-history-v1',
   '/kiosk.css?v=20261109-service-ticket-v3',
   '/service-ticket-page.css?v=20261109-service-ticket-layout-v5',
   '/kiosk.js?v=20261109-service-ticket-v4',
