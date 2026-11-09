@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v93';
+const CACHE_NAME = 'yoshop-v96';
 
 const APP_SHELL_URLS = [
   '/',
@@ -14,13 +14,18 @@ const APP_SHELL_URLS = [
   '/kiosk.css?v=20261108-kiosk-quantity-controls-v1',
   '/kiosk.js',
   '/kiosk.js?v=20261108-kiosk-quantity-controls-v1',
+  '/service-queue-display.html',
+  '/service-queue-display.css?v=20261109-service-queue-v2',
+  '/service-queue-display.js?v=20261109-service-queue-v2',
   '/manifest.json',
   '/assetlinks.json',
 
   '/style.css',
   '/style.css?v=20261108-kiosk-product-images-v2',
   '/app.js',
-  '/app.js?v=20261108-kiosk-product-images-v3',
+  '/app.js?v=20261109-kiosk-mode-filter-v1',
+  '/kiosk.css?v=20261109-service-ticket-v2',
+  '/kiosk.js?v=20261109-service-ticket-v2',
   '/invoice-utils.mjs',
 
   '/offline-architecture.mjs',

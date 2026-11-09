@@ -818,3 +818,218 @@ body.kiosk-service-queue-mode #kioskMobileCart {
   }
   .kiosk-loading-card { animation: none; }
 }
+
+body.kiosk-service-queue-mode {
+  --kiosk-green: #174a3e;
+  --kiosk-green-dark: #10372f;
+  --kiosk-mint: #e8f3ed;
+  --kiosk-paper: #f3f6f3;
+  background-color: var(--kiosk-paper);
+  background-image:
+    radial-gradient(ellipse at 12% 18%, rgba(87, 144, 113, 0.13), transparent 34rem),
+    radial-gradient(ellipse at 90% 84%, rgba(238, 191, 111, 0.13), transparent 30rem);
+}
+
+body.kiosk-service-queue-mode .kiosk-header {
+  height: 72px;
+  padding-inline: clamp(18px, 5vw, 72px);
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--kiosk-ink);
+  box-shadow: 0 1px 0 rgba(16, 55, 47, 0.08);
+  backdrop-filter: blur(14px);
+}
+
+body.kiosk-service-queue-mode .kiosk-wordmark {
+  border: 0;
+  border-radius: 12px;
+  background: var(--kiosk-green);
+  font-weight: 700;
+}
+
+body.kiosk-service-queue-mode .kiosk-header-title {
+  color: var(--kiosk-muted);
+  font-size: 0.86rem;
+  font-weight: 650;
+}
+
+body.kiosk-service-queue-mode .kiosk-header-business-name {
+  display: block;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--kiosk-ink);
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+body.kiosk-service-queue-mode .kiosk-layout {
+  display: grid;
+  width: min(100%, 1120px);
+  min-height: 0;
+  align-content: center;
+  margin: auto;
+  padding: clamp(24px, 5vh, 58px) clamp(18px, 4vw, 48px);
+}
+
+body.kiosk-service-queue-mode .kiosk-service-queue:not([hidden]) {
+  min-height: 0;
+}
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-content {
+  position: relative;
+  width: min(100%, 620px);
+  overflow: hidden;
+  padding: clamp(26px, 5vw, 52px);
+  border: 1px solid rgba(16, 55, 47, 0.09);
+  border-radius: 28px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 28px 80px rgba(27, 55, 45, 0.12), 0 3px 10px rgba(27, 55, 45, 0.04);
+  text-align: left;
+}
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-content::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 5px;
+  background: linear-gradient(90deg, #174a3e, #75a88a 60%, #edbd6c);
+  content: "";
+}
+
+.kiosk-service-ticket-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--kiosk-muted);
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.kiosk-service-ticket-mark {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  background: var(--kiosk-mint);
+  color: var(--kiosk-green);
+  font-family: Georgia, serif;
+  font-size: 1.15rem;
+}
+
+.kiosk-service-ticket-icon {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  place-items: center;
+  margin-top: clamp(24px, 4vw, 38px);
+  border: 1px solid #dcebe1;
+  border-radius: 20px;
+  background: linear-gradient(145deg, #f3f8f4, #e8f3ed);
+  color: var(--kiosk-green);
+}
+
+.kiosk-service-ticket-icon svg { width: 38px; height: 38px; }
+.kiosk-service-eyebrow { margin: 24px 0 9px; color: var(--kiosk-green); font-size: 0.73rem; font-weight: 800; letter-spacing: 0.12em; text-transform: uppercase; }
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-content h2 {
+  max-width: 12ch;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: clamp(2.1rem, 5vw, 3.3rem);
+  font-weight: 750;
+  letter-spacing: -0.055em;
+  line-height: 1.03;
+}
+
+body.kiosk-service-queue-mode .kiosk-service-description {
+  max-width: 48ch;
+  margin: 14px 0 24px;
+  font-size: 1rem;
+  line-height: 1.65;
+}
+
+.kiosk-service-steps {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 20px 0;
+  border-top: 1px solid #edf1ee;
+  border-bottom: 1px solid #edf1ee;
+  list-style: none;
+}
+
+.kiosk-service-steps li { display: flex; align-items: center; gap: 13px; }
+.kiosk-service-steps li > span { display: grid; width: 32px; height: 32px; flex: 0 0 32px; place-items: center; border-radius: 50%; background: #edf5ef; color: var(--kiosk-green); font-size: 0.82rem; font-weight: 800; }
+.kiosk-service-steps li div { display: grid; gap: 3px; }
+.kiosk-service-steps strong { color: var(--kiosk-ink); font-size: 0.9rem; }
+.kiosk-service-steps small { color: var(--kiosk-muted); font-size: 0.8rem; }
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-content .kiosk-primary-button {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 22px;
+  padding: 0 20px;
+  border-radius: 13px;
+  background: var(--kiosk-green);
+  box-shadow: 0 8px 18px rgba(23, 74, 62, 0.17);
+  font-size: 1rem;
+  transition: background 160ms ease, transform 160ms ease, box-shadow 160ms ease;
+}
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-content .kiosk-primary-button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: #10372f;
+  box-shadow: 0 11px 22px rgba(23, 74, 62, 0.22);
+}
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-content .kiosk-primary-button span:last-child { font-size: 1.35rem; }
+.kiosk-service-ticket-status { min-height: 1.2em; margin: 10px 0 0; color: var(--kiosk-muted); font-size: .82rem; line-height: 1.5; text-align: center; }
+.kiosk-service-ticket-status.is-error { color: #b42318; }
+body.kiosk-service-queue-mode #kioskGetServiceTicket[aria-busy="true"] { cursor: progress; }
+.kiosk-service-privacy { margin: 12px 0 0; color: var(--kiosk-muted); font-size: 0.75rem; text-align: center; }
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-receipt {
+  gap: 12px;
+  margin-top: 22px;
+  padding: 22px 18px 4px;
+  border-top: 1px solid #e6ede8;
+}
+
+.kiosk-service-receipt-label { color: var(--kiosk-muted); font-size: 0.7rem; font-weight: 800; letter-spacing: 0.12em; }
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-receipt strong {
+  color: var(--kiosk-green-dark);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: clamp(4.5rem, 18vw, 6.5rem);
+  font-weight: 800;
+  letter-spacing: -0.06em;
+}
+
+body.kiosk-service-queue-mode .kiosk-service-ticket-receipt p { line-height: 1.55; }
+.kiosk-service-receipt-note { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--kiosk-muted); font-size: 0.78rem; }
+.kiosk-service-receipt-note span { width: 8px; height: 8px; border-radius: 50%; background: #4a9b69; box-shadow: 0 0 0 4px #e6f3eb; }
+
+body.kiosk-service-queue-mode .kiosk-footer {
+  border-top: 1px solid rgba(16, 55, 47, 0.08);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+@media (max-width: 800px) {
+  body.kiosk-service-queue-mode { overflow: auto; }
+  body.kiosk-service-queue-mode .kiosk-header { position: sticky; top: 0; z-index: 5; }
+  body.kiosk-service-queue-mode .kiosk-header-business-name { display: block; }
+  body.kiosk-service-queue-mode .kiosk-layout { min-height: calc(100svh - 120px); padding: 24px 16px; }
+  body.kiosk-service-queue-mode .kiosk-service-ticket-content { border-radius: 22px; }
+}
+
+@media (max-width: 480px) {
+  body.kiosk-service-queue-mode .kiosk-header { height: 60px; min-height: 60px; gap: 9px; }
+  body.kiosk-service-queue-mode .kiosk-header-title { display: block; font-size: 0.78rem; }
+  body.kiosk-service-queue-mode .kiosk-header-business-name { max-width: 34%; font-size: 0.82rem; }
+  body.kiosk-service-queue-mode .kiosk-layout { min-height: calc(100svh - 104px); padding: 16px 12px; }
+  body.kiosk-service-queue-mode .kiosk-service-ticket-content { padding: 25px 21px; border-radius: 19px; }
+}

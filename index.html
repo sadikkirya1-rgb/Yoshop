@@ -45,7 +45,7 @@
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
   <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-  <script type="module" src="app.js?v=20261108-kiosk-order-details-v1"></script>
+  <script type="module" src="app.js?v=20261109-kiosk-mode-filter-v1"></script>
   <script>
     // Safety stubs to prevent ReferenceError from inline onclicks
     window.loginWithPIN = window.loginWithPIN || function() { console.warn('loginWithPIN called before app module loaded'); };
@@ -630,7 +630,7 @@
               </svg>
             </a>
             <button type="button" class="btn btn-success kiosk-order-display-open" onclick="openKioskOrderDisplay()">Open order display</button>
-            <button type="button" class="btn btn-secondary kiosk-order-display-queue" onclick="openKioskOrderDisplay()">Open customer display</button>
+            <button type="button" class="btn btn-secondary kiosk-order-display-queue" onclick="openKioskCustomerDisplay()">Open customer display</button>
             <button type="button" class="btn btn-secondary" onclick="enableKioskOrderPush()">Enable alerts on this device</button>
             <span id="kioskOrdersConnection" role="status">Connecting...</span>
             <div class="kiosk-queue-toolbar">
@@ -713,6 +713,7 @@
                 </div>
                 <label class="kiosk-toggle-row"><input id="kioskEnabledInput" type="checkbox"><span>Accept kiosk orders</span></label>
               </div>
+              <p class="kiosk-status-text">To activate ticketing, choose Service tickets, configure the service and destinations, enable ticket intake, then select Save &amp; publish.</p>
               <div id="kioskProductSettings">
               <label class="kiosk-toggle-row"><input id="kioskAttendantInput" type="checkbox" checked><span>Allow attendant requests</span></label>
               <div class="kiosk-product-toolbar">

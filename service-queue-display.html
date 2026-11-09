@@ -3,12 +3,13 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#174a3e">
+  <meta name="theme-color" content="#123c32">
   <meta name="referrer" content="no-referrer">
+  <meta name="description" content="Live service ticket calls and queue updates.">
   <title>Service queue | YoShop</title>
   <link rel="icon" type="image/png" href="/assets/icons/icon.png?v=20261108">
-  <link rel="stylesheet" href="service-queue-display.css?v=20261109-service-queue-v1">
-  <script type="module" src="service-queue-display.js?v=20261109-service-queue-v1"></script>
+  <link rel="stylesheet" href="service-queue-display.css?v=20261109-service-queue-v2">
+  <script type="module" src="service-queue-display.js?v=20261109-service-queue-v2"></script>
 </head>
 <body>
   <header class="queue-header">
@@ -17,7 +18,7 @@
       <div><p id="queueBusinessName">SERVICE QUEUE</p><h1 id="queueServiceName">Now serving</h1></div>
     </div>
     <div class="queue-header-actions">
-      <span id="queueConnection" class="queue-connection is-connecting" role="status">Connecting</span>
+      <span id="queueConnection" class="queue-connection is-connecting" role="status"><span class="queue-connection-dot" aria-hidden="true"></span>Connecting</span>
       <span id="queueDemoNotice" class="queue-demo-notice" hidden>LOCAL DEMO</span>
       <time id="queueClock"></time>
       <button id="queueAnnouncements" type="button" aria-pressed="false">Enable announcements</button>
@@ -30,15 +31,15 @@
     <div id="queueContent" class="queue-content" hidden>
       <section class="queue-calling-section" aria-labelledby="queueCallingHeading">
         <header class="queue-section-heading">
-          <div><p class="queue-eyebrow">PLEASE PROCEED WHEN CALLED</p><h2 id="queueCallingHeading">Now calling</h2></div>
-          <strong id="queueCalledCount">0</strong>
+          <div><p class="queue-eyebrow">PLEASE PROCEED</p><h2 id="queueCallingHeading">Now calling</h2></div>
+          <span class="queue-count"><strong id="queueCalledCount">0</strong><span>calling</span></span>
         </header>
         <div id="queueCalledTickets" class="queue-called-tickets"></div>
       </section>
       <section class="queue-waiting-section" aria-labelledby="queueWaitingHeading">
         <header class="queue-section-heading">
-          <div><p class="queue-eyebrow">WAITING</p><h2 id="queueWaitingHeading">Your number will appear here</h2></div>
-          <strong id="queueWaitingCount">0</strong>
+          <div><p class="queue-eyebrow">IN THE QUEUE</p><h2 id="queueWaitingHeading">Waiting</h2></div>
+          <span class="queue-count"><strong id="queueWaitingCount">0</strong><span>waiting</span></span>
         </header>
         <div id="queueWaitingTickets" class="queue-waiting-tickets"></div>
       </section>

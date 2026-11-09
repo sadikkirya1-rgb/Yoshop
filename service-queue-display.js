@@ -30,7 +30,10 @@ let lastSuccessfulUpdateAt = 0;
 
 function setConnection(state, label) {
   connection.className = `queue-connection is-${state}`;
-  connection.textContent = label;
+  const dot = connection.querySelector('.queue-connection-dot') || document.createElement('span');
+  dot.className = 'queue-connection-dot';
+  dot.setAttribute('aria-hidden', 'true');
+  connection.replaceChildren(dot, document.createTextNode(label));
 }
 
 function speakTicket(ticket, stationLabel) {

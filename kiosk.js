@@ -34,6 +34,8 @@ let menuViewMode = 'grid';
 const elements = {
   businessName: document.getElementById('businessName'),
   headerBusinessName: document.getElementById('kioskHeaderBusinessName'),
+  headerTitle: document.getElementById('kioskHeaderTitle'),
+  headerServiceName: document.getElementById('kioskHeaderServiceName'),
   installMenu: document.getElementById('kioskInstallMenu'),
   installHelp: document.getElementById('kioskInstallHelp'),
   installInstructions: document.getElementById('kioskInstallInstructions'),
@@ -81,6 +83,7 @@ const elements = {
   serviceQueue: document.getElementById('kioskServiceQueue'),
   serviceName: document.getElementById('kioskServiceName'),
   serviceTicketButton: document.getElementById('kioskGetServiceTicket'),
+  serviceTicketStatus: document.getElementById('kioskServiceTicketStatus'),
   serviceTicketReceipt: document.getElementById('kioskServiceTicketReceipt'),
   serviceTicketNumber: document.getElementById('kioskServiceTicketNumber'),
   serviceTicketInstructions: document.getElementById('kioskServiceTicketInstructions')
@@ -483,7 +486,14 @@ async function submitRequest(requestType, customerDetails = null) {
   elements.confirmOrder.disabled = true;
   elements.serviceTicketButton.disabled = true;
   elements.trackOrder.hidden = true;
-  setMessage(requestType === 'attendant' ? 'Sending your request...' : 'Sending your order...');
+  if (requestType === 'ticket') {
+    elements.serviceTicketStatus.textContent = 'Securing your place in the queue...';
+    elements.serviceTicketStatus.classList.remove('is-error');
+    elements.serviceTicketButton.setAttribute('aria-busy', 'true');
+  }
+  setMessage(requestType === 'attendant'
+    ? 'Sending your request...'
+    : requestType === 'ticket' ? 'Issuing your service ticket...' : 'Sending your order...');
   try {
     pendingSubmissionId ||= crypto.randomUUID();
     if (requestType === 'order') pendingTrackingToken ||= createTrackingToken();
@@ -522,6 +532,7 @@ async function submitRequest(requestType, customerDetails = null) {
       elements.serviceTicketNumber.textContent = ticketNumber || '—';
       elements.serviceTicketInstructions.textContent = `Please wait for ticket ${ticketNumber || ''} to be called on the display.`;
       elements.serviceTicketReceipt.hidden = false;
+      elements.serviceTicketStatus.textContent = '';
     }
     setMessage(requestType === 'ticket'
       ? `Ticket ${ticketNumber || ''} issued. Please wait for your number to be called.`
@@ -534,11 +545,16 @@ async function submitRequest(requestType, customerDetails = null) {
       elements.detailsError.hidden = false;
     } else {
       setMessage(error.message || 'We could not send that request. Please try again.', true);
+      if (requestType === 'ticket') {
+        elements.serviceTicketStatus.textContent = error.message || 'We could not issue your ticket. Please try again.';
+        elements.serviceTicketStatus.classList.add('is-error');
+      }
     }
   } finally {
     elements.submit.disabled = previewOnly || cart.size === 0;
     elements.attendant.disabled = previewOnly;
     elements.serviceTicketButton.disabled = previewOnly;
+    elements.serviceTicketButton.removeAttribute('aria-busy');
     elements.confirmOrder.disabled = false;
   }
 }
@@ -646,15 +662,17 @@ async function initialize() {
       ? {data: {businessName: 'Demo Pharmacy', mode: 'service_queue', serviceName: 'Pharmacy queue', stationLabel: 'Counter', stationCount: 3, items: []}}
       : await httpsCallable(functions, 'getKioskMenu')({token, preview: previewOnly});
     menuData = {...menuData, ...(response.data || {})};
-    const isServiceQueue = menuData.mode === 'service_queue';
+    const isServiceQueue = String(menuData.mode || '').trim().toLowerCase() === 'service_queue';
     document.body.classList.toggle('kiosk-service-queue-mode', isServiceQueue);
     elements.serviceQueue.hidden = !isServiceQueue;
     elements.serviceTicketButton.disabled = previewOnly || !isServiceQueue;
     if (isServiceQueue) {
       elements.businessName.textContent = menuData.serviceName || 'Service queue';
       elements.headerBusinessName.textContent = menuData.businessName || menuData.serviceName || 'Service queue';
-      elements.serviceName.textContent = String(menuData.serviceName || 'SERVICE QUEUE').toUpperCase();
-      elements.serviceTicketInstructions.textContent = `Please wait for your number to be called at a ${menuData.stationLabel || 'counter'}.`;
+      elements.headerTitle.textContent = 'Service tickets';
+      elements.headerServiceName.textContent = menuData.businessName || 'Customer service';
+      elements.serviceName.textContent = String(menuData.serviceName || 'SERVICE QUEUE');
+      elements.serviceTicketInstructions.textContent = `Please wait for your number to be called at ${menuData.stationLabel || 'the counter'}.`;
       document.title = `${menuData.serviceName || 'Service queue'} | ${menuData.businessName || 'YoShop'}`;
       elements.appleTitle.content = (menuData.serviceName || 'Service queue').slice(0, 30);
       setMessage(`Take a ticket for ${menuData.serviceName || 'this service'}.`);

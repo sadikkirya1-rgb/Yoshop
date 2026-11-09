@@ -78,3 +78,93 @@ button { font: inherit; }
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; scroll-behavior: auto !important; } }
+
+:root {
+  --queue-ink: #142a24;
+  --queue-green: #153f35;
+  --queue-muted: #64746d;
+  --queue-line: #e2e9e4;
+  --queue-paper: #f2f5f2;
+  --queue-gold: #f2c46d;
+  --queue-green-soft: #e9f2ec;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  background:
+    radial-gradient(ellipse at 5% 0%, rgba(100, 153, 119, .13), transparent 34rem),
+    var(--queue-paper);
+}
+
+body { min-height: 100vh; min-height: 100svh; color: var(--queue-ink); }
+button { transition: background 150ms ease, border-color 150ms ease, transform 150ms ease; }
+button:focus-visible { outline: 3px solid rgba(242, 196, 109, .9); outline-offset: 3px; }
+
+.queue-header {
+  min-height: 92px;
+  padding: 16px clamp(18px, 4vw, 64px);
+  background: rgba(19, 58, 49, .97);
+  box-shadow: 0 8px 28px rgba(16, 45, 37, .13);
+}
+
+.queue-brand { gap: 14px; }
+.queue-mark { width: 46px; height: 46px; border: 0; border-radius: 14px; background: rgba(255, 255, 255, .13); font-weight: 700; }
+.queue-brand p { color: #b7d0c3; font-size: .68rem; letter-spacing: .13em; }
+.queue-brand h1 { margin-top: 4px; font-family: inherit; font-size: clamp(1.05rem, 2vw, 1.35rem); font-weight: 700; letter-spacing: -.025em; }
+.queue-header-actions { gap: 10px; }
+.queue-header-actions button { min-height: 40px; padding-inline: 14px; border-color: rgba(255, 255, 255, .25); border-radius: 10px; background: rgba(255, 255, 255, .08); font-size: .8rem; font-weight: 650; }
+.queue-header-actions button:hover { border-color: rgba(255, 255, 255, .52); background: rgba(255, 255, 255, .15); }
+.queue-header-actions button[aria-pressed="true"] { border-color: var(--queue-gold); background: var(--queue-gold); color: #26352d; }
+.queue-connection { display: inline-flex; align-items: center; gap: 8px; padding: 8px 11px; border: 1px solid rgba(255, 255, 255, .16); border-radius: 999px; background: rgba(255, 255, 255, .07); font-size: .75rem; font-weight: 650; }
+.queue-connection-dot { width: 8px; height: 8px; border-radius: 50%; background: #86d3a1; box-shadow: 0 0 0 4px rgba(134, 211, 161, .14); }
+.queue-connection.is-error .queue-connection-dot { background: #ff9a87; box-shadow: 0 0 0 4px rgba(255, 154, 135, .15); }
+.queue-header-actions time { min-width: 72px; font-size: .9rem; font-weight: 650; }
+
+.queue-main { width: min(1600px, 100%); padding: clamp(24px, 4vw, 54px) clamp(18px, 4vw, 64px) 28px; }
+.queue-message { margin-bottom: 22px; padding: 13px 16px; border: 1px solid var(--queue-line); border-radius: 12px; background: rgba(255, 255, 255, .75); font-size: .9rem; line-height: 1.5; }
+.queue-message.is-error { border-color: #f0c9c1; background: #fff5f2; color: #943d2d; }
+.queue-content { grid-template-columns: minmax(0, 1.7fr) minmax(280px, .75fr); gap: clamp(18px, 2.4vw, 32px); }
+.queue-calling-section, .queue-waiting-section { padding: clamp(18px, 2.5vw, 30px); border: 1px solid rgba(19, 58, 49, .08); border-radius: 20px; background: rgba(255, 255, 255, .88); box-shadow: 0 12px 34px rgba(22, 52, 41, .055); }
+.queue-section-heading { align-items: center; margin-bottom: 20px; padding-bottom: 17px; border-bottom-color: var(--queue-line); }
+.queue-section-heading h2 { font-family: inherit; font-size: clamp(1.25rem, 2.2vw, 1.65rem); font-weight: 750; letter-spacing: -.035em; }
+.queue-eyebrow { margin-bottom: 7px; color: #71847a; font-size: .67rem; letter-spacing: .13em; }
+.queue-count { display: grid; justify-items: end; gap: 1px; color: var(--queue-muted); }
+.queue-count strong { color: var(--queue-green); font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.queue-count span { font-size: .67rem; font-weight: 700; text-transform: uppercase; }
+.queue-called-tickets { grid-template-columns: repeat(auto-fit, minmax(min(100%, 270px), 1fr)); gap: 15px; }
+.queue-called-card { position: relative; min-height: 245px; gap: 13px; overflow: hidden; padding: 24px; border: 1px solid #e3ebe5; border-top: 0; border-radius: 17px; background: linear-gradient(155deg, #fff 20%, #f6f9f6); box-shadow: 0 10px 24px rgba(27, 55, 45, .07); }
+.queue-called-card::before { position: absolute; inset: 0 0 auto; height: 5px; background: linear-gradient(90deg, var(--queue-gold), #f7dfa8); content: ""; }
+.queue-called-card span { color: #74837b; font-size: .68rem; letter-spacing: .1em; }
+.queue-called-number { color: var(--queue-green); font-family: inherit; font-size: clamp(4rem, 8vw, 6.5rem); font-weight: 800; letter-spacing: -.065em; line-height: .98; }
+.queue-called-destination { padding: 9px 14px; border: 1px solid #e0ebe3; border-radius: 999px; background: var(--queue-green-soft); color: var(--queue-green); font-size: .92rem; font-weight: 750; }
+.queue-called-card > button { min-height: 38px; padding-inline: 14px; border: 1px solid #d7e2da; border-radius: 9px; background: #fff; font-size: .78rem; font-weight: 650; }
+.queue-called-card > button:hover { border-color: var(--queue-green); background: var(--queue-green-soft); }
+.queue-empty { padding: 24px 16px; border: 1px dashed #d1ded5; border-radius: 13px; background: #f8faf8; color: var(--queue-muted); font-size: .86rem; line-height: 1.55; }
+.queue-waiting-tickets { gap: 9px; max-height: min(62vh, 700px); padding-right: 3px; }
+.queue-waiting-ticket { min-height: 65px; padding: 11px 13px; border-color: #e5ece7; border-radius: 12px; background: #fff; }
+.queue-waiting-ticket strong { color: var(--queue-ink); font-family: inherit; font-size: 1.15rem; font-weight: 750; }
+.queue-waiting-ticket time { font-size: .72rem; }
+.queue-demo-actions { justify-content: flex-end; gap: 4px; }
+.queue-demo-actions button { min-height: 30px; border-radius: 7px; background: #f5f8f5; font-size: .68rem; }
+.queue-updated { margin-top: 18px; font-size: .73rem; }
+
+@media (max-width: 900px) {
+  .queue-header { align-items: flex-start; flex-direction: column; gap: 14px; }
+  .queue-header-actions { width: 100%; justify-content: flex-start; }
+  .queue-content { grid-template-columns: 1fr; }
+  .queue-waiting-tickets { max-height: 42vh; }
+}
+
+@media (max-width: 560px) {
+  .queue-header { padding: 16px; }
+  .queue-header-actions { gap: 7px; }
+  .queue-header-actions button { min-height: 38px; padding-inline: 10px; font-size: .72rem; }
+  .queue-header-actions time { margin-right: auto; }
+  .queue-main { padding: 20px 13px 22px; }
+  .queue-calling-section, .queue-waiting-section { padding: 17px 14px; border-radius: 16px; }
+  .queue-section-heading { margin-bottom: 15px; padding-bottom: 13px; }
+  .queue-called-card { min-height: 220px; }
+  .queue-called-number { font-size: 4.7rem; }
+  .queue-waiting-tickets { max-height: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
