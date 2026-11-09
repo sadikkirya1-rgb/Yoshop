@@ -1,11 +1,11 @@
 body.kiosk-service-queue-mode {
   display: flex;
   width: 100%;
-  height: auto;
+  height: 100vh;
+  height: 100svh;
   min-height: 100vh;
   min-height: 100svh;
-  overflow-x: hidden;
-  overflow-y: auto;
+  overflow: hidden;
 }
 
 body.kiosk-service-queue-mode .kiosk-header {
@@ -63,29 +63,31 @@ body.kiosk-service-queue-mode .kiosk-install-button { display: none; }
 
 body.kiosk-service-queue-mode .kiosk-layout {
   display: grid;
-  width: min(100%, 1240px);
+  width: 100%;
+  max-width: none;
   min-height: 0;
-  flex: 1 0 auto;
+  flex: 1 1 auto;
   align-content: center;
   justify-items: stretch;
-  margin: 0 auto;
-  padding: clamp(24px, 5vh, 58px) clamp(16px, 4vw, 48px);
+  margin: 0;
+  padding: clamp(12px, 2vw, 30px);
 }
 
 body.kiosk-service-queue-mode .kiosk-service-queue:not([hidden]) {
   display: grid;
   width: 100%;
   min-height: 0;
-  grid-template-columns: minmax(0, .88fr) minmax(0, 1.12fr);
+  height: 100%;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr);
   align-items: stretch;
-  gap: clamp(16px, 2.5vw, 30px);
+  gap: clamp(12px, 1.6vw, 24px);
 }
 
 body.kiosk-service-queue-mode .kiosk-service-promo,
 body.kiosk-service-queue-mode .kiosk-service-ticket-content {
   position: relative;
   min-width: 0;
-  min-height: 100%;
+  min-height: 0;
   overflow: hidden;
   border: 1px solid rgba(16, 55, 47, .09);
   border-radius: 26px;
@@ -96,7 +98,7 @@ body.kiosk-service-queue-mode .kiosk-service-promo {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  padding: clamp(23px, 3vw, 38px);
+  padding: clamp(18px, 2.4vw, 38px);
   background:
     radial-gradient(ellipse at 86% 20%, rgba(255,255,255,.62), transparent 30%),
     linear-gradient(155deg, #e6f1e8, #f8f6ec 68%, #f5e8cf);
@@ -129,8 +131,8 @@ body.kiosk-service-queue-mode .kiosk-service-promo {
   position: relative;
   display: grid;
   width: min(100%, 310px);
-  min-height: clamp(130px, 18vw, 205px);
-  flex: 1 0 auto;
+  min-height: 0;
+  flex: 1 1 0;
   align-self: center;
   place-items: center;
   overflow: hidden;
@@ -190,9 +192,12 @@ body.kiosk-service-queue-mode .kiosk-service-promo h2 {
 
 body.kiosk-service-queue-mode .kiosk-service-ticket-content {
   width: 100%;
+  min-height: 0;
   max-height: none;
   margin: 0;
-  padding: clamp(24px, 3.3vw, 42px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: clamp(18px, 2.4vw, 38px);
   background: rgba(255,255,255,.97);
   text-align: left;
 }
@@ -212,6 +217,14 @@ body.kiosk-service-queue-mode .kiosk-footer {
 }
 
 @media (max-width: 760px) {
+  body.kiosk-service-queue-mode {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100svh;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
   body.kiosk-service-queue-mode .kiosk-header {
     min-height: 68px;
     grid-template-columns: 40px minmax(0, 1fr);
@@ -222,26 +235,28 @@ body.kiosk-service-queue-mode .kiosk-footer {
   body.kiosk-service-queue-mode .kiosk-wordmark { width: 40px; height: 40px; }
 
   body.kiosk-service-queue-mode .kiosk-layout {
-    min-height: 0;
+    min-height: calc(100svh - 68px);
+    flex: 1 0 auto;
     align-content: start;
-    padding: 18px 14px 26px;
+    padding: clamp(10px, 2.5vw, 20px);
   }
 
   body.kiosk-service-queue-mode .kiosk-service-queue:not([hidden]) {
+    height: auto;
     grid-template-columns: minmax(0, 1fr);
     gap: 14px;
   }
 
   body.kiosk-service-queue-mode .kiosk-service-ticket-content { order: 0; }
-  body.kiosk-service-queue-mode .kiosk-service-promo { order: 1; min-height: 0; }
-  .kiosk-service-promo-art { min-height: 120px; flex-basis: 120px; }
+  body.kiosk-service-queue-mode .kiosk-service-promo { order: 1; min-height: 240px; }
+  .kiosk-service-promo-art { min-height: 90px; flex: 1 1 90px; }
   .kiosk-service-promo-eyebrow { margin-top: 16px; }
 }
 
 @media (max-width: 420px) {
   body.kiosk-service-queue-mode .kiosk-header-business-name { font-size: .88rem; }
 
-  body.kiosk-service-queue-mode .kiosk-layout { padding: 12px 10px 20px; }
+  body.kiosk-service-queue-mode .kiosk-layout { min-height: calc(100svh - 60px); padding: 10px; }
 
   body.kiosk-service-queue-mode .kiosk-service-ticket-content,
   body.kiosk-service-queue-mode .kiosk-service-promo {
@@ -256,8 +271,15 @@ body.kiosk-service-queue-mode .kiosk-footer {
 }
 
 @media (max-height: 700px) and (min-width: 761px) {
-  body.kiosk-service-queue-mode .kiosk-layout { align-content: start; }
-  body.kiosk-service-queue-mode .kiosk-service-promo-art { min-height: 110px; }
+  body.kiosk-service-queue-mode {
+    height: auto;
+    min-height: 100svh;
+    overflow-y: auto;
+  }
+
+  body.kiosk-service-queue-mode .kiosk-layout { min-height: calc(100svh - 76px); }
+  body.kiosk-service-queue-mode .kiosk-service-queue:not([hidden]) { min-height: 650px; }
+  body.kiosk-service-queue-mode .kiosk-service-promo-art { min-height: 100px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
