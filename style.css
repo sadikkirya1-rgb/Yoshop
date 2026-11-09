@@ -1062,6 +1062,20 @@ body.printing-kiosk-qr #kioskQrPrintArea {
   font-size: 1.5rem;
 }
 
+.app-admin-offline-notice {
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border: 1px solid #f3cf83;
+  border-radius: 10px;
+  background: #fff8e6;
+  color: #704b00;
+  line-height: 1.5;
+}
+
+.app-admin-offline-notice[hidden] {
+  display: none !important;
+}
+
 .offline-access-copy,
 .offline-pin-notice {
   margin: 0 0 20px;

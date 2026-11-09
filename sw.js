@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v105';
+const CACHE_NAME = 'yoshop-v107';
 
 const APP_SHELL_URLS = [
   '/',
@@ -22,9 +22,9 @@ const APP_SHELL_URLS = [
   '/assetlinks.json',
 
   '/style.css',
-  '/style.css?v=20261109-kiosk-mode-buttons-v1',
+  '/style.css?v=20261109-offline-fullscreen-v1',
   '/app.js',
-  '/app.js?v=20261109-kiosk-ticket-history-v1',
+  '/app.js?v=20261109-admin-offline-v1',
   '/kiosk.css?v=20261109-service-ticket-v3',
   '/service-ticket-page.css?v=20261109-service-ticket-layout-v5',
   '/kiosk.js?v=20261109-service-ticket-v4',
@@ -50,6 +50,7 @@ const APP_SHELL_URLS = [
   '/assets/icons/wrong.svg',
   '/assets/icons/icon.png',
   '/assets/icons/Cloud.svg.svg',
+  '/assets/icons/No%20Connection.svg',
 
   'https://cdn.jsdelivr.net/npm/chart.js',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
@@ -64,7 +65,9 @@ const APP_SHELL_URLS = [
   'https://www.gstatic.com/firebasejs/12.13.0/firebase-analytics.js',
   'https://www.gstatic.com/firebasejs/12.13.0/firebase-firestore.js',
   'https://www.gstatic.com/firebasejs/12.13.0/firebase-storage.js',
-  'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js'
+  'https://www.gstatic.com/firebasejs/12.13.0/firebase-auth.js',
+  'https://www.gstatic.com/firebasejs/12.13.0/firebase-functions.js',
+  'https://www.gstatic.com/firebasejs/12.13.0/firebase-messaging.js'
 ];
 
 const QUERYLESS_APP_PATHS = new Set([

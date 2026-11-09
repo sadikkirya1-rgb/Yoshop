@@ -3343,6 +3343,9 @@ function initAppAdminDashboardLayout() {
 
   adminTab.innerHTML = `
       <div class="shop-selected-banner" id="selectedShopBanner" style="display:none; margin-bottom:20px; border-left: 5px solid #17a2b8;"></div>
+      <div id="app-admin-offline-notice" class="app-admin-offline-notice" role="status" aria-live="polite" hidden>
+        App Admin data and controls require an internet connection. Your local shop workspace remains available; this admin view will refresh automatically when you reconnect.
+      </div>
       
       <!-- Dashboard View -->
       <div id="admin-dashboard-view">
@@ -3617,12 +3620,15 @@ function initAppAdminDashboardLayout() {
 /**
  * Switches between sub-views in the App Admin panel
  */
+let activeAppAdminView = 'dashboard';
+
 function switchAppAdminView(view) {
   if (view === 'audit-report' && !canAccessAuditReportUI()) {
     showAppAlert('You do not have permission to access the audit report.', 'Access Denied');
     return;
   }
 
+  activeAppAdminView = view;
   const dashboardView = document.getElementById('admin-dashboard-view');
   const shopsView = document.getElementById('admin-shops-view');
   const shopsListView = document.getElementById('admin-shops-list-view');
@@ -3634,6 +3640,10 @@ function switchAppAdminView(view) {
   if (shopsListView) shopsListView.style.display = view === 'shops-table' ? 'block' : 'none';
   if (auditReportView) auditReportView.style.display = view === 'audit-report' ? 'block' : 'none';
   if (settingsView) settingsView.style.display = view === 'settings' ? 'block' : 'none';
+
+  const offlineNotice = document.getElementById('app-admin-offline-notice');
+  if (offlineNotice) offlineNotice.hidden = navigator.onLine;
+  if (!navigator.onLine) return;
 
   if (view === 'dashboard' || view === 'subscriptions') {
     fetchGlobalAnalytics();
@@ -5707,6 +5717,9 @@ function authorizeOfflineAccess() {
   const pinStage = document.getElementById('offline-admin-pin-stage');
   if (pinStage) pinStage.hidden = true;
   renderOfflineAccessCover();
+  if (document.getElementById('appAdminTab')?.classList.contains('active')) {
+    switchAppAdminView(activeAppAdminView);
+  }
 }
 
 function setAppShellLocked(isLocked) {
@@ -19433,10 +19446,16 @@ async function mainInit() {
       renderOfflineAccessCover();
       scheduleBackgroundSync();
       updateOnlineStatus().catch(console.warn);
+      if (document.getElementById('appAdminTab')?.classList.contains('active')) {
+        switchAppAdminView(activeAppAdminView);
+      }
     });
     window.addEventListener('offline', () => {
       renderOfflineAccessCover();
       updateOnlineStatus().catch(console.warn);
+      if (document.getElementById('appAdminTab')?.classList.contains('active')) {
+        switchAppAdminView(activeAppAdminView);
+      }
     });
 
     // Assign local settings immediately so login overlay can use them for branding
