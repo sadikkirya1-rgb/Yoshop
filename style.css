@@ -1014,6 +1014,119 @@ body.printing-kiosk-qr #kioskQrPrintArea {
   transition: opacity 0.18s ease-out;
 }
 
+.offline-access-cover {
+  position: fixed;
+  inset: 0;
+  z-index: 10001;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-sizing: border-box;
+  overflow-y: auto;
+  background: #fff;
+  color: #172033;
+}
+
+.offline-access-cover[hidden],
+.offline-admin-pin-stage[hidden] {
+  display: none !important;
+}
+
+.offline-access-card {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: max(32px, env(safe-area-inset-top)) 24px max(32px, env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  border-radius: 0;
+  background: #fff;
+  box-shadow: none;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.offline-access-art {
+  display: block;
+  width: min(100%, 220px);
+  aspect-ratio: 1;
+  margin: 0 auto 12px;
+  object-fit: contain;
+}
+
+.offline-access-card h1 {
+  margin: 0 0 12px;
+  font-size: 1.5rem;
+}
+
+.offline-access-copy,
+.offline-pin-notice {
+  margin: 0 0 20px;
+  color: #475569;
+  line-height: 1.55;
+}
+
+.offline-access-card > .btn,
+.offline-admin-pin-stage .btn {
+  width: 100%;
+  min-height: 46px;
+  margin: 0;
+}
+
+.offline-admin-pin-stage {
+  margin-top: 20px;
+  text-align: left;
+}
+
+.offline-pin-notice {
+  padding: 12px;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.92rem;
+}
+
+.offline-admin-pin-stage label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 700;
+}
+
+.offline-admin-pin-stage input {
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  color: #172033;
+  font: inherit;
+  text-align: center;
+  letter-spacing: 0.3em;
+}
+
+.offline-admin-pin-feedback {
+  min-height: 1.25em;
+  margin: 8px 0;
+  color: #b91c1c;
+  font-size: 0.9rem;
+}
+
+.offline-wait-button {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 8px;
+  border: 0;
+  background: transparent;
+  color: #475569;
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+}
+
 .splash-content {
   text-align: center;
   animation: none;
@@ -5174,6 +5287,21 @@ table:not(.payment-modal-content table) td.u-text-break {
   max-width: 100%;
   box-sizing: border-box;
   white-space: normal;
+}
+
+.offline-login-notice {
+  width: 100%;
+  max-width: 320px;
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  box-sizing: border-box;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.2);
+  color: white;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  text-align: center;
 }
 
 #pin-entry-stage,

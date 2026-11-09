@@ -183,6 +183,7 @@ let localRepositoryReady = false;
 let repositoryService = null;
 let cloudRepositoryService = null;
 let pendingSyncQueue = [];
+let offlineAccessGranted = false;
 let currentUserPermissions = normalizePermissions(JSON.parse(sessionStorage.getItem('currentUserPermissions') || localStorage.getItem('currentUserPermissions') || '[]'));
 let isPinVerified = (sessionStorage.getItem('isPinVerified') || localStorage.getItem('isPinVerified')) === 'true' && !!currentUserRole;
 let auditTrail = [];
@@ -5637,6 +5638,75 @@ async function updateOnlineStatus() {
     background: '#16a34a',
     showBadge: false
   });
+}
+
+function renderOfflineAccessCover() {
+  const cover = document.getElementById('offline-access-cover');
+  if (!cover) return;
+
+  if (navigator.onLine) {
+    offlineAccessGranted = false;
+    cover.hidden = true;
+    const pinStage = document.getElementById('offline-admin-pin-stage');
+    const pinInput = document.getElementById('offline-admin-pin');
+    const feedback = document.getElementById('offline-admin-pin-feedback');
+    if (pinStage) pinStage.hidden = true;
+    if (pinInput) pinInput.value = '';
+    if (feedback) feedback.textContent = '';
+    return;
+  }
+
+  cover.hidden = offlineAccessGranted;
+}
+
+function showOfflineAdminPinForm() {
+  if (navigator.onLine) {
+    renderOfflineAccessCover();
+    return;
+  }
+
+  const pinStage = document.getElementById('offline-admin-pin-stage');
+  const pinInput = document.getElementById('offline-admin-pin');
+  const feedback = document.getElementById('offline-admin-pin-feedback');
+  if (pinStage) pinStage.hidden = false;
+  if (feedback) feedback.textContent = '';
+  pinInput?.focus();
+}
+
+function waitForInternet() {
+  const pinStage = document.getElementById('offline-admin-pin-stage');
+  const pinInput = document.getElementById('offline-admin-pin');
+  const feedback = document.getElementById('offline-admin-pin-feedback');
+  if (pinStage) pinStage.hidden = true;
+  if (pinInput) pinInput.value = '';
+  if (feedback) feedback.textContent = '';
+  renderOfflineAccessCover();
+}
+
+function authorizeOfflineAccess() {
+  if (navigator.onLine) {
+    renderOfflineAccessCover();
+    return;
+  }
+
+  const pinInput = document.getElementById('offline-admin-pin');
+  const feedback = document.getElementById('offline-admin-pin-feedback');
+  const enteredPin = pinInput?.value || '';
+  const adminPin = settings.ShopAdminPIN || settings.managerPIN || settings.ShopAdmin;
+
+  if (!adminPin || enteredPin !== String(adminPin)) {
+    if (feedback) feedback.textContent = 'Incorrect Admin PIN. Please try again.';
+    pinInput?.select();
+    pinInput?.focus();
+    return;
+  }
+
+  offlineAccessGranted = true;
+  if (pinInput) pinInput.value = '';
+  if (feedback) feedback.textContent = '';
+  const pinStage = document.getElementById('offline-admin-pin-stage');
+  if (pinStage) pinStage.hidden = true;
+  renderOfflineAccessCover();
 }
 
 function setAppShellLocked(isLocked) {
@@ -19360,13 +19430,18 @@ async function mainInit() {
     // Initialize Connectivity Status Indicator
     updateOnlineStatus().catch(console.warn);
     window.addEventListener('online', () => {
+      renderOfflineAccessCover();
       scheduleBackgroundSync();
       updateOnlineStatus().catch(console.warn);
     });
-    window.addEventListener('offline', () => updateOnlineStatus().catch(console.warn));
+    window.addEventListener('offline', () => {
+      renderOfflineAccessCover();
+      updateOnlineStatus().catch(console.warn);
+    });
 
     // Assign local settings immediately so login overlay can use them for branding
     settings = normalizeSettings(localData[3], defaultSettings);
+    renderOfflineAccessCover();
     resetDashboardCartState();
 
     // Populate state from local storage immediately
@@ -19961,11 +20036,15 @@ function showLoginOverlay(mode = 'login') {
         `;
     } else {
       const isAdmin = loginSubStage === 'admin';
+      const offlinePinNotice = !navigator.onLine
+        ? '<p class="offline-login-notice" role="status">No internet connection. An administrator must authorize offline use. Once approved, sign in with your usual PIN.</p>'
+        : '';
       pinStageHtml = `
           <div id="pin-entry-stage" style="display: flex; width: 100%; flex-direction: column; align-items: center; max-width: 320px;">
             <p id="pin-instruction" style="margin-bottom: 12px; opacity: 0.9; text-align: center; font-weight: bold; width: 100%; font-size: 1.1em;">
               ${isAdmin ? '🛡️ Admin Login' : '👥 Staff Login'}
             </p>
+            ${offlinePinNotice}
             
             <div style="display: flex; flex-direction: column; gap: 12px; width: 100%; margin-bottom: 12px;">
               <div id="staff-name-container" style="width: 100%;">
@@ -23349,5 +23428,6 @@ Object.assign(window, {
   getAppHealthStatus, exportErrorLog, captureError, getCachedQuery, getShopsPageOptimized, requestCache, errorLog, clearImageFromCache
   , initializeKioskMenuTab, saveKioskMenuSettings, rotateKioskMenuLink, renderKioskQr, previewKioskMenu, setKioskPreviewSize, closeKioskPreview, printKioskQr, selectKioskMode,
   selectVisibleKioskProducts, clearKioskProductSelection, copyKioskMenuLink,
-  updateKioskOrderStatus, loadKioskOrderToPos, enableKioskOrderPush, disableKioskOrderPush, openKioskOrderDisplay, openKioskCustomerDisplay
+  updateKioskOrderStatus, loadKioskOrderToPos, enableKioskOrderPush, disableKioskOrderPush, openKioskOrderDisplay, openKioskCustomerDisplay,
+  showOfflineAdminPinForm, authorizeOfflineAccess, waitForInternet
 });
