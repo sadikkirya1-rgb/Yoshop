@@ -4686,26 +4686,125 @@ section#menuTab.active {
   color: var(--primary);
 }
 
-/* Receipt Modal Buttons */
-.save-pdf-btn {
-  background: #17a2b8;
+/* Receipt Modal Actions */
+.receipt-modal-controls {
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 5px 16px rgba(15, 23, 42, 0.12);
 }
 
-.share-btn {
-  background: #17a2b8;
+#receiptModal .receipt-actions {
+  display: flex;
+  flex-wrap: wrap !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  overflow: visible;
+  text-align: initial;
+  white-space: normal;
 }
 
-.print-btn {
-  background: #007bff;
+#receiptModal .receipt-actions > .receipt-action-btn {
+  flex: 0 1 auto;
+  width: auto;
+  min-width: 0;
+  min-height: 24px;
+  margin: 0;
+  padding: 2px 5px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: normal;
+  box-shadow: 0 2px 5px rgba(15, 23, 42, 0.16);
 }
 
-.direct-print-btn {
-  background: #28a745;
+#receiptModal .receipt-action-btn:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--primary) 55%, transparent);
+  outline-offset: 2px;
+}
+
+#receiptModal .receipt-actions > .save-pdf-btn {
+  border-color: #b42318;
+  background: #b42318;
+  color: #fff;
+}
+
+#receiptModal .receipt-actions > .save-pdf-btn:hover {
+  background: #912018;
+}
+
+#receiptModal .receipt-actions > .save-jpg-btn {
+  border-color: #0369a1;
+  background: #0369a1;
+  color: #fff;
+}
+
+#receiptModal .receipt-actions > .save-jpg-btn:hover {
+  background: #075985;
+}
+
+#receiptModal .receipt-actions > .share-btn {
+  border-color: #0f766e;
+  background: #0f766e;
+  color: #fff;
+}
+
+#receiptModal .receipt-actions > .share-btn:hover {
+  background: #115e59;
+}
+
+#receiptModal .receipt-actions > .print-btn {
+  border-color: #1d4ed8;
+  background: #1d4ed8;
+  color: #fff;
+}
+
+#receiptModal .receipt-actions > .print-btn:hover {
+  background: #1e40af;
+}
+
+#receiptModal .receipt-actions > .direct-print-btn {
+  border-color: #15803d;
+  background: #15803d;
+  color: #fff;
   display: none;
 }
 
-.close-modal-btn {
-  background: #6c757d;
+#receiptModal .receipt-actions > .direct-print-btn:hover {
+  background: #166534;
+}
+
+#receiptModal .receipt-actions > .close-modal-btn {
+  border-color: #64748b;
+  background: #64748b;
+  color: #fff;
+}
+
+#receiptModal .receipt-actions > .close-modal-btn:hover {
+  background: #475569;
+}
+
+body.dark-mode .receipt-modal-controls {
+  box-shadow: 0 5px 18px rgba(0, 0, 0, 0.35);
+}
+
+@media print {
+  #receiptModal .receipt-modal-controls,
+  #receiptModal .receipt-actions {
+    display: none;
+  }
 }
 
 /* Update Toast Notification */

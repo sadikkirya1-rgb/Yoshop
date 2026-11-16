@@ -159,6 +159,20 @@ test('invoice adjustment prompt records the selected adjustment date', () => {
   assert.match(adjustmentPrompt, /date: new Date\(adjustmentDateInput\.value\)\.toISOString\(\)/);
 });
 
+test('receipt preview actions have separate visual treatments', () => {
+  const indexHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+  const styleSource = fs.readFileSync(new URL('../style.css', import.meta.url), 'utf8');
+
+  assert.match(indexHtml, /class="receipt-modal-controls"/);
+  assert.doesNotMatch(indexHtml, /receiptInvoiceDateTime|Save date/);
+  assert.match(indexHtml, /class="btn receipt-action-btn save-pdf-btn"/);
+  assert.match(indexHtml, /class="btn receipt-action-btn close-modal-btn"/);
+  assert.match(styleSource, /#receiptModal \.receipt-actions/);
+  assert.match(styleSource, /display: flex;\s*flex-wrap: wrap !important;/);
+  assert.match(styleSource, /#receiptModal \.receipt-actions > \.receipt-action-btn\s*\{[^}]*flex: 0 1 auto;/s);
+  assert.match(styleSource, /\.receipt-modal-controls\s*\{[^}]*background:/s);
+});
+
 test('product cloud sync hydrates in pages and uses a bounded realtime change feed', () => {
   const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
   const indexConfig = JSON.parse(fs.readFileSync(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
