@@ -504,7 +504,7 @@
         <span id="appPopupIcon" class="app-popup-icon"></span>
       </div>
       <h3 id="appPopupTitle">Confirm Action</h3>
-      <p id="appPopupMessage">Are you sure you want to continue?</p>
+      <div id="appPopupMessage">Are you sure you want to continue?</div>
       <div id="appPopupInputWrapper" class="app-popup-input-wrapper" style="display:none;">
         <input id="appPopupInput" class="app-popup-input" type="text" placeholder="Enter value">
       </div>
@@ -644,6 +644,18 @@
         </div>
         <div id="menuPickedItems" class="picked-items-panel" aria-live="polite"></div>
         <div id="menuCategories"></div>
+        <div class="menu-pagination-controls">
+          <label for="menuPageSize">Show per page</label>
+          <select id="menuPageSize" aria-label="Products to show per page" onchange="setMenuPageSize(this.value)">
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100" selected>100</option>
+          </select>
+          <span id="menuPageStatus" aria-live="polite"></span>
+          <button type="button" class="btn btn-secondary" id="menuPreviousPage" onclick="changeMenuPage(-1)" aria-label="Previous products page">Previous</button>
+          <button type="button" class="btn btn-secondary" id="menuNextPage" onclick="changeMenuPage(1)" aria-label="Next products page">Next</button>
+        </div>
       </section>
 
       <section id="kioskMenuTab" class="kiosk-owner-tab">

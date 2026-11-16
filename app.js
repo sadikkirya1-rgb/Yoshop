@@ -3076,8 +3076,10 @@ let transactions = [];
 const TRANSACTION_CLOUD_PAGE_SIZE = 200;
 let transactionVisibleRowCount = 50;
 const PRODUCT_RENDER_PAGE_SIZE = 100;
+const MENU_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 const PRODUCT_CLOUD_PAGE_SIZE = 200;
-let menuVisibleCountsByCategory = new Map();
+let menuPageSize = 100;
+let menuPage = 1;
 let menuRenderFilterKey = '';
 let productTableVisibleRowCount = PRODUCT_RENDER_PAGE_SIZE;
 let transactionCloudPagination = {
@@ -6982,7 +6984,7 @@ function renderMenu() {
   const filterKey = `${searchTerm}\u0000${categoryFilter}`;
   if (filterKey !== menuRenderFilterKey) {
     menuRenderFilterKey = filterKey;
-    menuVisibleCountsByCategory = new Map();
+    menuPage = 1;
   }
   renderPickedItems();
 
@@ -6995,8 +6997,26 @@ function renderMenu() {
     return matchesSearch && matchesCategory && isSellable;
   });
 
+  const totalPages = Math.max(1, Math.ceil(filteredMenu.length / menuPageSize));
+  menuPage = Math.max(1, Math.min(menuPage, totalPages));
+  const pageStartIndex = (menuPage - 1) * menuPageSize;
+  const pageEndIndex = Math.min(pageStartIndex + menuPageSize, filteredMenu.length);
+  const pageProducts = filteredMenu.slice(pageStartIndex, pageEndIndex);
+  const pageSizeSelect = document.getElementById('menuPageSize');
+  if (pageSizeSelect) pageSizeSelect.value = String(menuPageSize);
+  const pageStatus = document.getElementById('menuPageStatus');
+  if (pageStatus) {
+    pageStatus.textContent = filteredMenu.length === 0
+      ? 'Showing 0 of 0'
+      : `Showing ${pageStartIndex + 1}-${pageEndIndex} of ${filteredMenu.length}`;
+  }
+  const previousPageButton = document.getElementById('menuPreviousPage');
+  const nextPageButton = document.getElementById('menuNextPage');
+  if (previousPageButton) previousPageButton.disabled = menuPage <= 1;
+  if (nextPageButton) nextPageButton.disabled = menuPage >= totalPages;
+
   const productsByCategory = new Map();
-  filteredMenu.forEach(dish => {
+  pageProducts.forEach(dish => {
     const category = dish.category || 'Uncategorized';
     if (!productsByCategory.has(category)) productsByCategory.set(category, []);
     productsByCategory.get(category).push(dish);
@@ -7015,7 +7035,7 @@ function renderMenu() {
     });
   });
 
-  if (searchTerm && filteredMenu.length === 0) {
+  if ((searchTerm || categoryFilter) && filteredMenu.length === 0) {
     const emptyMessage = document.createElement('p');
     emptyMessage.className = 'u-text-center';
     emptyMessage.textContent = 'No data found.';
@@ -7024,16 +7044,13 @@ function renderMenu() {
 
   categories.forEach(cat => {
     const categoryProducts = productsByCategory.get(cat) || [];
-    const visibleCount = menuVisibleCountsByCategory.get(cat) || PRODUCT_RENDER_PAGE_SIZE;
     const catDiv = document.createElement('div');
     if (cat !== "Uncategorized") {
       catDiv.innerHTML = `<h4>${cat}</h4>`;
     }
     const grid = document.createElement('div');
     grid.className = 'menu-grid' + (window.productViewMode === 'list' ? ' list-view' : '');
-    categoryProducts
-      .slice(0, visibleCount)
-      .forEach((dish, i) => {
+    categoryProducts.forEach(dish => {
         const item = document.createElement('div');
         const totalInCarts = totalInCartsByProduct.get(dish.name) || 0;
         const quantity = currentCartQuantityByProduct.get(dish.name) || 0;
@@ -7109,16 +7126,6 @@ function renderMenu() {
         } catch (e) { console.warn('Failed to attach img diagnostics', e); }
       });
     catDiv.appendChild(grid);
-    if (categoryProducts.length > visibleCount) {
-      const showMoreButton = document.createElement('button');
-      showMoreButton.className = 'btn btn-secondary';
-      showMoreButton.textContent = `Show ${Math.min(PRODUCT_RENDER_PAGE_SIZE, categoryProducts.length - visibleCount)} more products (${categoryProducts.length - visibleCount} remaining)`;
-      showMoreButton.onclick = () => {
-        menuVisibleCountsByCategory.set(cat, visibleCount + PRODUCT_RENDER_PAGE_SIZE);
-        renderMenu();
-      };
-      catDiv.appendChild(showMoreButton);
-    }
     container.appendChild(catDiv);
   });
 
@@ -7126,7 +7133,29 @@ function renderMenu() {
   updateOrders(CART_ID, false);
 }
 
+function setMenuPageSize(value) {
+  const pageSize = Number(value);
+  if (!MENU_PAGE_SIZE_OPTIONS.includes(pageSize)) {
+    console.error(`[MENU] Invalid products-per-page value: ${value}`);
+    return;
+  }
+  menuPageSize = pageSize;
+  menuPage = 1;
+  renderMenu();
+}
+
+function changeMenuPage(direction) {
+  if (direction !== -1 && direction !== 1) {
+    console.error(`[MENU] Invalid page direction: ${direction}`);
+    return;
+  }
+  menuPage += direction;
+  renderMenu();
+}
+
 window.renderMenu = renderMenu;
+window.setMenuPageSize = setMenuPageSize;
+window.changeMenuPage = changeMenuPage;
 
 function renderPickedItems() {
   const container = document.getElementById('menuPickedItems');
@@ -16478,76 +16507,187 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
   const inputEl = document.getElementById('appPopupInput');
   const confirmBtn = document.getElementById('appPopupConfirm');
   const cancelBtn = document.getElementById('appPopupCancel');
+  const popupCard = modal.querySelector('.app-popup-card');
+  const iconWrap = document.getElementById('appPopupIconWrap');
 
   titleEl.textContent = 'Record Adjustment';
   titleEl.style.marginBottom = '4px';
   messageEl.style.marginBottom = '0';
+  popupCard?.classList.remove('danger');
+  confirmBtn.style.background = '';
+  confirmBtn.disabled = false;
+  if (iconWrap) iconWrap.style.display = 'none';
   messageEl.innerHTML = `
-    <p class="adjHelperText" style="margin:0 0 10px; color:var(--text-muted,#666); font-size:0.96rem; line-height:1.5;">
-      Choose a payment method below, then enter the adjustment amount.
-    </p>
-    <div id="adjMethodSelector" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:6px;">
-      <button id="adjModeCash" class="btn">Cash</button>
-      <button id="adjModeMobile" class="btn">Mobile Money</button>
-      <button id="adjModeCard" class="btn">Credit/Debit Card</button>
-    </div>
-    <div id="adjAmountWrapper" style="display:none; margin-top:0;">
-      <label style="display:block; margin-bottom:2px;">Enter amount to adjust</label>
+    <div class="invoice-adjustment-wizard">
+      <ol class="invoice-adjustment-stepper" aria-label="Adjustment progress">
+        <li class="invoice-adjustment-step is-active" data-adjustment-indicator="1" aria-current="step">
+          <span class="invoice-adjustment-step-marker" data-adjustment-marker>1</span>
+          <span class="invoice-adjustment-step-label"><strong>Payment details</strong><small>Method and date</small></span>
+        </li>
+        <li class="invoice-adjustment-step" data-adjustment-indicator="2">
+          <span class="invoice-adjustment-step-marker" data-adjustment-marker>2</span>
+          <span class="invoice-adjustment-step-label"><strong>Amount</strong><small>Review and save</small></span>
+        </li>
+      </ol>
+      <div class="invoice-adjustment-progress" role="progressbar" aria-label="Adjustment progress" aria-valuemin="1" aria-valuemax="2" aria-valuenow="1">
+        <span class="invoice-adjustment-progress-fill"></span>
+      </div>
+      <div class="invoice-adjustment-panel" data-adjustment-panel="1">
+        <p class="invoice-adjustment-step-note">Select a payment method and date to continue.</p>
+        <div class="invoice-adjustment-methods" role="group" aria-label="Payment method">
+          <button type="button" class="btn invoice-adjustment-method" data-adjustment-method="Cash" aria-pressed="false">Cash</button>
+          <button type="button" class="btn invoice-adjustment-method" data-adjustment-method="Mobile Money" aria-pressed="false">Mobile Money</button>
+          <button type="button" class="btn invoice-adjustment-method" data-adjustment-method="Card" aria-pressed="false">Credit/Debit Card</button>
+        </div>
+        <label class="invoice-adjustment-date-label" for="adjDateInput">Adjustment date</label>
+        <input id="adjDateInput" class="app-popup-input invoice-adjustment-date" type="date" required>
+      </div>
+      <div class="invoice-adjustment-panel" data-adjustment-panel="2" hidden>
+        <p class="invoice-adjustment-step-note">Review the payment details, then enter the adjustment amount.</p>
+        <div class="invoice-adjustment-summary">
+          <div><span>Payment method</span><strong data-adjustment-method-summary></strong></div>
+          <div><span>Adjustment date</span><strong data-adjustment-date-summary></strong></div>
+        </div>
+        <label class="invoice-adjustment-amount-label" for="appPopupInput">Amount to adjust</label>
+      </div>
+      <p id="adjValidationMessage" class="invoice-adjustment-validation" role="alert" aria-live="polite"></p>
     </div>
   `;
+
+  const adjustmentDateInput = document.getElementById('adjDateInput');
+  if (adjustmentDateInput) adjustmentDateInput.value = getLocalDateInputValue();
+  const backBtn = document.createElement('button');
+  backBtn.type = 'button';
+  backBtn.className = 'btn btn-secondary invoice-adjustment-back';
+  backBtn.textContent = 'Back';
+  backBtn.style.display = 'none';
+  cancelBtn.before(backBtn);
 
   inputWrapper.style.display = 'none';
   inputEl.type = 'number';
   inputEl.placeholder = '0.00';
+  inputEl.min = '0.01';
+  inputEl.step = '0.01';
   inputEl.value = '';
 
-  confirmBtn.style.display = 'none';
-  cancelBtn.style.display = 'none';
+  confirmBtn.style.display = 'inline-flex';
+  cancelBtn.style.display = 'inline-flex';
+  cancelBtn.textContent = 'Cancel';
+  confirmBtn.textContent = 'Continue';
 
   modal.style.display = 'flex';
   document.body.style.overflow = 'hidden';
 
   let selectedMethod = null;
-
-  const showAmountField = () => {
-    inputWrapper.style.display = 'block';
-    const amtWrapper = document.getElementById('adjAmountWrapper');
-    if (amtWrapper) amtWrapper.style.display = 'block';
-    confirmBtn.style.display = 'inline-flex';
-    cancelBtn.style.display = 'inline-flex';
-    confirmBtn.textContent = 'Save Adjustment';
-    cancelBtn.textContent = 'Cancel';
-    titleEl.textContent = `Record Adjustment — ${selectedMethod}`;
-    const helperText = messageEl.querySelector('.adjHelperText');
-    const selector = document.getElementById('adjMethodSelector');
-    if (helperText) helperText.style.display = 'none';
-    if (selector) selector.style.display = 'none';
-    setTimeout(() => inputEl.focus(), 50);
+  let currentStep = 1;
+  const validationMessage = document.getElementById('adjValidationMessage');
+  const methodButtons = Array.from(messageEl.querySelectorAll('[data-adjustment-method]'));
+  const updateMethodButtons = () => {
+    methodButtons.forEach(button => {
+      const isSelected = button.dataset.adjustmentMethod === selectedMethod;
+      button.classList.toggle('is-selected', isSelected);
+      button.setAttribute('aria-pressed', String(isSelected));
+    });
   };
 
-  const modeHandler = (method) => {
-    selectedMethod = method;
-    showAmountField();
+  const updateConfirmButton = () => {
+    confirmBtn.disabled = false;
   };
 
-  const btnCash = document.getElementById('adjModeCash');
-  const btnMobile = document.getElementById('adjModeMobile');
-  const btnCard = document.getElementById('adjModeCard');
-  if (btnCash) btnCash.onclick = () => modeHandler('Cash');
-  if (btnMobile) btnMobile.onclick = () => modeHandler('Mobile Money');
-  if (btnCard) btnCard.onclick = () => modeHandler('Card');
+  const showStep = step => {
+    currentStep = step;
+    messageEl.querySelectorAll('[data-adjustment-panel]').forEach(panel => {
+      panel.hidden = Number(panel.dataset.adjustmentPanel) !== step;
+    });
+    messageEl.querySelectorAll('[data-adjustment-indicator]').forEach(indicator => {
+      const indicatorStep = Number(indicator.dataset.adjustmentIndicator);
+      const isComplete = indicatorStep < step;
+      indicator.classList.toggle('is-active', indicatorStep === step);
+      indicator.classList.toggle('is-complete', isComplete);
+      if (indicatorStep === step) indicator.setAttribute('aria-current', 'step');
+      else indicator.removeAttribute('aria-current');
+      const marker = indicator.querySelector('[data-adjustment-marker]');
+      if (marker) marker.textContent = isComplete ? '✓' : String(indicatorStep);
+    });
+    const progress = messageEl.querySelector('[role="progressbar"]');
+    const progressFill = messageEl.querySelector('.invoice-adjustment-progress-fill');
+    if (progress) progress.setAttribute('aria-valuenow', String(step));
+    if (progressFill) progressFill.style.width = step === 1 ? '50%' : '100%';
+    inputWrapper.style.display = step === 1 ? 'none' : 'block';
+    backBtn.style.display = step === 1 ? 'none' : 'inline-flex';
+    confirmBtn.textContent = step === 1 ? 'Continue' : 'Save Adjustment';
+    if (validationMessage) validationMessage.textContent = '';
+    updateConfirmButton();
+  };
+
+  methodButtons.forEach(button => {
+    button.addEventListener('click', () => {
+      selectedMethod = button.dataset.adjustmentMethod || null;
+      updateMethodButtons();
+      if (validationMessage) validationMessage.textContent = '';
+      updateConfirmButton();
+    });
+  });
+  adjustmentDateInput?.addEventListener('input', () => {
+    if (validationMessage) validationMessage.textContent = '';
+    updateConfirmButton();
+  });
+  inputEl.oninput = updateConfirmButton;
+  backBtn.onclick = () => showStep(1);
+  showStep(1);
+
+  const cleanupWizard = () => {
+    inputWrapper.style.display = 'none';
+    inputEl.oninput = null;
+    inputEl.removeAttribute('min');
+    inputEl.removeAttribute('step');
+    confirmBtn.disabled = false;
+    titleEl.style.marginBottom = '';
+    messageEl.style.marginBottom = '';
+    backBtn.remove();
+  };
 
   const onConfirm = async () => {
-    const amount = parseFloat(inputEl.value);
-    if (isNaN(amount) || amount <= 0) {
+    if (currentStep === 1) {
+      if (!selectedMethod) {
+        if (validationMessage) validationMessage.textContent = 'Choose a payment method to continue.';
+        methodButtons[0]?.focus();
+        return;
+      }
+      if (!adjustmentDateInput?.value) {
+        if (validationMessage) validationMessage.textContent = 'Choose an adjustment date to continue.';
+        adjustmentDateInput?.focus();
+        return;
+      }
+      const methodSummary = messageEl.querySelector('[data-adjustment-method-summary]');
+      const dateSummary = messageEl.querySelector('[data-adjustment-date-summary]');
+      if (methodSummary) methodSummary.textContent = selectedMethod;
+      if (dateSummary) {
+        dateSummary.textContent = formatInvoiceDisplayDate(new Date(`${adjustmentDateInput.value}T00:00:00`));
+      }
+      showStep(2);
+      setTimeout(() => inputEl.focus(), 50);
+      return;
+    }
+
+    const amount = Number(inputEl.value);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      if (validationMessage) validationMessage.textContent = 'Enter an amount greater than zero.';
       inputEl.style.boxShadow = '0 0 0 3px rgba(220,53,69,0.08)';
       setTimeout(() => inputEl.style.boxShadow = '', 800);
+      inputEl.focus();
+      return;
+    }
+    if (!adjustmentDateInput?.value) {
+      showStep(1);
+      if (validationMessage) validationMessage.textContent = 'Choose an adjustment date to continue.';
+      adjustmentDateInput?.focus();
       return;
     }
 
     const adjustment = {
       id: `adj-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
-      date: new Date().toISOString(),
+      date: new Date(adjustmentDateInput.value).toISOString(),
       amount,
       method: selectedMethod || 'On Account',
       note: ''
@@ -16592,11 +16732,13 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
 
     modal.style.display = 'none';
     document.body.style.overflow = '';
+    cleanupWizard();
   };
 
   const onCancel = () => {
     modal.style.display = 'none';
     document.body.style.overflow = '';
+    cleanupWizard();
   };
 
   confirmBtn.onclick = onConfirm;

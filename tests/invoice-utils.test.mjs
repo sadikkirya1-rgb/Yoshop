@@ -120,13 +120,43 @@ test('historical sales queries preserve cached records outside the requested ran
   );
 });
 
-test('large product catalogs render progressively and precompute cart quantities once', () => {
+test('large product catalogs render in pages and precompute cart quantities once', () => {
   const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 
   assert.match(appSource, /const PRODUCT_RENDER_PAGE_SIZE = 100/);
-  assert.match(appSource, /categoryProducts\s*\.slice\(0, visibleCount\)/);
   assert.match(appSource, /productsForTable\.slice\(0, productTableVisibleRowCount\)/);
   assert.match(appSource, /totalInCartsByProduct\.set\(/);
+});
+
+test('Shop paginates the filtered product catalog and exposes page-size controls', () => {
+  const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const indexHtml = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+
+  assert.match(indexHtml, /id="menuPageSize"/);
+  assert.match(indexHtml, /id="menuPreviousPage"/);
+  assert.match(indexHtml, /id="menuNextPage"/);
+  assert.ok(indexHtml.indexOf('id="menuCategories"') < indexHtml.indexOf('class="menu-pagination-controls"'));
+  assert.match(appSource, /const MENU_PAGE_SIZE_OPTIONS = \[10, 25, 50, 100\]/);
+  assert.match(appSource, /filteredMenu\.slice\(pageStartIndex, pageEndIndex\)/);
+  assert.match(appSource, /window\.setMenuPageSize = setMenuPageSize/);
+});
+
+test('invoice adjustment prompt records the selected adjustment date', () => {
+  const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const adjustmentPrompt = appSource.slice(
+    appSource.indexOf('async function showInvoiceAdjustmentPrompt'),
+    appSource.indexOf('function toggleCustomerAdjustmentPanel')
+  );
+
+  assert.match(adjustmentPrompt, /<input id="adjDateInput"[^>]+type="date"/);
+  assert.match(adjustmentPrompt, /class="invoice-adjustment-stepper"/);
+  assert.match(adjustmentPrompt, /<div class="invoice-adjustment-panel" data-adjustment-panel="1">/);
+  assert.match(adjustmentPrompt, /class="invoice-adjustment-progress"/);
+  assert.match(adjustmentPrompt, /marker\.textContent = isComplete \? '✓'/);
+  assert.match(adjustmentPrompt, /const updateConfirmButton = \(\) => \{\s*confirmBtn\.disabled = false;/);
+  assert.doesNotMatch(adjustmentPrompt, /Choose a payment method below, then enter the adjustment amount\./);
+  assert.match(adjustmentPrompt, /adjustmentDateInput\.value = getLocalDateInputValue\(\)/);
+  assert.match(adjustmentPrompt, /date: new Date\(adjustmentDateInput\.value\)\.toISOString\(\)/);
 });
 
 test('product cloud sync hydrates in pages and uses a bounded realtime change feed', () => {
