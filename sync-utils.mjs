@@ -74,7 +74,10 @@ export function shouldProtectEmptyOverwriteField(field, action = {}) {
     'suppliers',
     'dishCategories',
     'units',
-    'restockHistory'
+    'restockHistory',
+    'purchaseHistory',
+    'wastageLossHistory',
+    'expenses'
   ]);
 
   if (!field || !protectedFields.has(field)) {
@@ -107,4 +110,24 @@ export function getPendingArraySnapshot(queue = [], entityType = '', stateId = '
     });
 
   return pendingActions.length ? pendingActions[0].payload.value : undefined;
+}
+
+export function summarizeSyncResults(results = []) {
+  const summary = {
+    processed: 0,
+    failed: 0,
+    scheduled: 0,
+    total: Array.isArray(results) ? results.length : 0
+  };
+
+  if (!Array.isArray(results)) return summary;
+
+  results.forEach(result => {
+    if (!result || !result.status) return;
+    if (result.status === 'processed') summary.processed += 1;
+    if (result.status === 'failed' || result.error) summary.failed += 1;
+    if (result.status === 'scheduled') summary.scheduled += 1;
+  });
+
+  return summary;
 }

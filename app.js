@@ -12,7 +12,7 @@ import { getMessaging, getToken, deleteToken, isSupported, onMessage } from "htt
 import { createBusinessRepository, createSyncEnvelope, mergeSnapshotData, createEntityId, calculatePendingSyncCount } from './offline-architecture.mjs';
 import { createAuditEvent, limitAuditTrail, pruneExpiredAuditEntries, acquireRecordLock, releaseRecordLock } from './audit-utils.mjs';
 import { getConfiguredAdminEntries as getConfiguredAdminEntriesFromUtils, getSubscriptionMeta, isAppAdminRestrictedIdentity, mapWithConcurrency } from './admin-utils.mjs';
-import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField, getPendingArraySnapshot } from './sync-utils.mjs';
+import { buildSettingsSyncPayload, buildTransactionSyncPayload, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField, getPendingArraySnapshot, summarizeSyncResults } from './sync-utils.mjs';
 import { DEFAULT_LOYALTY_SETTINGS, getLoyaltySummary, calculateLoyaltyRedemption, reconcileLoyaltyTransaction, reconcileLoyaltyPayment } from './loyalty-utils.mjs';
 import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
@@ -2182,7 +2182,10 @@ const PROTECTED_EMPTY_OVERWRITE_FIELDS = [
   'suppliers',
   'dishCategories',
   'units',
-  'restockHistory'
+  'restockHistory',
+  'purchaseHistory',
+  'wastageLossHistory',
+  'expenses'
 ];
 
 function isNonEmptyArray(value) {
@@ -2976,40 +2979,23 @@ async function flushLocalSyncQueue(options = {}) {
     });
   }
   const failedActions = results.filter(result => result && (result.status === 'failed' || result.error));
-  if (failedActions.length > 0) {
+  const retryCount = pendingSyncQueue.filter(item => item && (item.syncStatus === 'retry' || item.syncStatus === 'failed')).length;
+  if (failedActions.length > 0 || retryCount > 0) {
     hasRecentSyncFailure = true;
+    updateSyncFailureNotification(Math.max(failedActions.length, retryCount));
     const successNotice = document.getElementById('successSyncNotice');
     if (successNotice && lastProcessedTransaction) {
       successNotice.textContent = 'Sale complete. Weak network: saved on this device; cloud sync will retry automatically.';
       successNotice.style.color = '#b45309';
     }
-  } else if (results.length > 0 && results.every(result => result && result.status === 'processed')) {
+  } else {
     hasRecentSyncFailure = false;
+    updateSyncFailureNotification(0);
   }
   if (pendingSyncQueue.length > 0 && navigator.onLine) {
     scheduleBackgroundSync();
   }
   return results;
-}
-
-function summarizeSyncResults(results = []) {
-  const summary = {
-    processed: 0,
-    failed: 0,
-    scheduled: 0,
-    total: Array.isArray(results) ? results.length : 0
-  };
-
-  if (!Array.isArray(results)) return summary;
-
-  results.forEach(result => {
-    if (!result || !result.status) return;
-    if (result.status === 'processed') summary.processed += 1;
-    if (result.status === 'failed') summary.failed += 1;
-    if (result.status === 'scheduled') summary.scheduled += 1;
-  });
-
-  return summary;
 }
 
 async function scheduleBackgroundSync({ immediate = false } = {}) {
@@ -5585,7 +5571,6 @@ async function syncNow() {
 
     if (syncSummary.failed > 0) {
       syncFailureCount += syncSummary.failed;
-      alert(`${syncSummary.failed} sync item(s) could not upload. They will retry automatically.`);
     } else {
       syncFailureCount = 0;
     }
@@ -23147,15 +23132,15 @@ function testLocalNotification() {
 // ===== Notification Center Logic =====
 let appNotifications = [];
 let syncPendingNotificationActive = false;
+let syncFailureNotificationActive = false;
 
-function showSyncPendingSystemNotification(message) {
+function showSyncPendingSystemNotification(message, { title = 'YoShop sync pending', tag = 'yoshop-sync-pending' } = {}) {
   if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
 
-  const title = 'YoShop sync pending';
   const options = {
     body: message,
     icon: 'assets/icons/icon.png',
-    tag: 'yoshop-sync-pending',
+    tag,
     renotify: false,
     data: { url: './' }
   };
@@ -23170,6 +23155,45 @@ function showSyncPendingSystemNotification(message) {
   }
 
   try { new Notification(title, options); } catch (error) { console.warn('[SYNC] System notification failed:', error); }
+}
+
+function updateSyncFailureNotification(failedCount = 0) {
+  const existingIndex = appNotifications.findIndex(notification => notification.id === 'sync-failed');
+
+  if (failedCount > 0) {
+    const message = `${failedCount} record(s) could not sync to the cloud. The data remains saved on this device and will retry automatically.`;
+    const existing = existingIndex >= 0 ? appNotifications[existingIndex] : null;
+    const notification = {
+      id: 'sync-failed',
+      message,
+      type: 'sync-failed',
+      action: 'syncNow()',
+      date: existing?.date || new Date()
+    };
+
+    if (existingIndex >= 0) appNotifications[existingIndex] = notification;
+    else appNotifications.unshift(notification);
+
+    if (!syncFailureNotificationActive) {
+      void showAppAlert(`${message} Please keep this device connected until the sync completes.`, 'Cloud Sync Failed');
+      showSyncPendingSystemNotification(message, {
+        title: 'YoShop cloud sync failed',
+        tag: 'yoshop-sync-failed'
+      });
+    }
+
+    syncFailureNotificationActive = true;
+    updateNotificationBadge();
+    renderNotifications();
+    return;
+  }
+
+  syncFailureNotificationActive = false;
+  if (existingIndex >= 0) {
+    appNotifications.splice(existingIndex, 1);
+    updateNotificationBadge();
+    renderNotifications();
+  }
 }
 
 function updateSyncPendingNotification({ pendingCount = 0, retryCount = 0 } = {}) {
@@ -23347,11 +23371,11 @@ function renderNotifications() {
   }
 
   list.innerHTML = appNotifications.map(n => {
-    const actionLabel = n.type === 'sync-pending' ? 'Sync Now' : 'View';
+    const actionLabel = n.type === 'sync-pending' || n.type === 'sync-failed' ? 'Sync Now' : 'View';
     const actionBtn = n.action ? `<button class="btn" onclick="${n.action}" style="font-size: 0.8em; padding: 4px 8px; margin-top: 5px; background: var(--primary);">${actionLabel}</button>` : '';
-    const background = n.type === 'alert' ? 'rgba(255,0,0,0.05)' : (n.type === 'admin-notice' ? 'rgba(255, 0, 0, 0.08)' : (n.type === 'sync-pending' ? 'rgba(245,158,11,0.12)' : 'transparent'));
+    const background = n.type === 'alert' || n.type === 'sync-failed' ? 'rgba(255,0,0,0.05)' : (n.type === 'admin-notice' ? 'rgba(255, 0, 0, 0.08)' : (n.type === 'sync-pending' ? 'rgba(245,158,11,0.12)' : 'transparent'));
     const encodedId = typeof n.id === 'string' ? JSON.stringify(n.id) : n.id;
-    const dismissBtn = n.type === 'sync-pending' || n.type === 'kiosk-attention' ? '' : `<button onclick="dismissNotification(${encodedId})" style="background: none; border: none; cursor: pointer; color: #888; font-size: 1.2em; padding: 0 5px;">&times;</button>`;
+    const dismissBtn = n.type === 'sync-pending' || n.type === 'sync-failed' || n.type === 'kiosk-attention' ? '' : `<button onclick="dismissNotification(${encodedId})" style="background: none; border: none; cursor: pointer; color: #888; font-size: 1.2em; padding: 0 5px;">&times;</button>`;
     return `
             <div style="padding: 10px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: start; background: ${background};">
                 <div style="font-size: 0.9em; flex-grow: 1;">
@@ -23366,7 +23390,7 @@ function renderNotifications() {
 
 function dismissNotification(id) {
   const existing = appNotifications.find(n => n.id === id);
-  if (existing && existing.type === 'sync-pending') return;
+  if (existing && (existing.type === 'sync-pending' || existing.type === 'sync-failed')) return;
   if (existing && existing.type === 'admin-notice' && currentUser && existing.sentAt) {
     markNoticeReadOnServer(currentUser.uid, existing.sentAt);
     removeAdminNoticeNotification();
@@ -23378,7 +23402,7 @@ function dismissNotification(id) {
 }
 
 function clearAllNotifications() {
-  appNotifications = appNotifications.filter(notification => notification.type === 'sync-pending');
+  appNotifications = appNotifications.filter(notification => notification.type === 'sync-pending' || notification.type === 'sync-failed');
   updateNotificationBadge();
   renderNotifications();
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildSettingsSyncPayload, buildTransactionSyncPayload, buildInvoiceNumber, normalizeInvoiceNumber, parseInvoiceSequence, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField, getPendingArraySnapshot } from '../sync-utils.mjs';
+import { buildSettingsSyncPayload, buildTransactionSyncPayload, buildInvoiceNumber, normalizeInvoiceNumber, parseInvoiceSequence, getSyncQueueCollectionPath, getSyncQueueDocumentPath, shouldProtectEmptyOverwriteField, getPendingArraySnapshot, summarizeSyncResults } from '../sync-utils.mjs';
 
 test('getPendingArraySnapshot preserves the latest queued full-array state including intentional deletes', () => {
   const queue = [
@@ -58,9 +58,24 @@ test('buildInvoiceNumber and parser support the new date-based invoice format', 
   assert.equal(sequence, 7);
 });
 
-test('explicit purchase and waste deletes are allowed to clear cloud arrays', () => {
-  assert.equal(shouldProtectEmptyOverwriteField('purchaseHistory', {}), false);
-  assert.equal(shouldProtectEmptyOverwriteField('wastageLossHistory', {}), false);
+test('empty purchase and expense snapshots are protected unless an intentional clear is allowed', () => {
+  for (const field of ['purchaseHistory', 'wastageLossHistory', 'expenses']) {
+    assert.equal(shouldProtectEmptyOverwriteField(field, {}), true);
+    assert.equal(shouldProtectEmptyOverwriteField(field, { allowEmptyOverwriteFields: [field] }), false);
+  }
   assert.equal(shouldProtectEmptyOverwriteField('menu', {}), true);
   assert.equal(shouldProtectEmptyOverwriteField('customers', { payload: { allowEmptyOverwriteFields: ['customers'] } }), false);
+});
+
+test('summarizeSyncResults counts pending actions with errors as failed syncs', () => {
+  assert.deepEqual(summarizeSyncResults([
+    { status: 'processed' },
+    { status: 'pending', error: 'Network unavailable' },
+    { status: 'scheduled' }
+  ]), {
+    processed: 1,
+    failed: 1,
+    scheduled: 1,
+    total: 3
+  });
 });
