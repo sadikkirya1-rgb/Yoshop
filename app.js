@@ -23,6 +23,7 @@ import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, fin
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange, getTransactionsForCustomer, calculateCustomerTotalPaid, reconcileCustomerTransactionReferences as reconcileCustomerTransactionRecords } from './invoice-utils.mjs';
+import { allocatePharmacyBatches, getPharmacyAvailableStock, getPharmacyPrescriptionErrors, receivePharmacyBatch, removePharmacyBatches, restorePharmacyBatchAllocations, sumPharmacyBatchStock } from './pharmacy-utils.mjs';
 
 // Your web app's Firebase configuration
 // For Firebase JS SDK v7.20.0 and later, measurementId is optional
@@ -3119,6 +3120,7 @@ const defaultSettings = {
   transactionEditWindowMinutes: 30,
   ...DEFAULT_LOYALTY_SETTINGS,
   serviceMode: false,
+  pharmacyMode: false,
   invoiceDateFormat: 'locale',
   invoiceCustomDateFormat: ''
 };
@@ -7066,6 +7068,9 @@ function renderMenu() {
         const stockStatusHtml = isStockTrackingEnabled() && dish.type !== 'service'
           ? `<p class="stock-status ${isOutOfStock ? 'out-of-stock' : 'in-stock'}">${stockLabel}</p>`
           : '';
+        const pharmacyItemStatusHtml = isPharmacyMedicine(dish)
+          ? `<small style="display:block; color:#166534; margin:3px 0;">${dish.requiresPrescription === true ? 'Prescription required' : 'OTC / non-prescription'}${dish.medicineStrength ? ` • ${escapeHtml(dish.medicineStrength)}` : ''}</small>`
+          : '';
         const isLongProductName = (dish.name || '').trim().length >= 18;
         const headerClass = isLongProductName ? 'menu-item-header menu-item-header-stacked' : 'menu-item-header menu-item-header-inline';
         item.innerHTML = `
@@ -7075,6 +7080,7 @@ function renderMenu() {
                   <h4>${dish.name}</h4>
                   <p><span class="currency-symbol">${settings.currency || '$'}</span>${formatCurrency(dish.price)}</p>
                 </div>
+                ${pharmacyItemStatusHtml}
                 ${stockStatusHtml}
                 <div class="item-controls">
                   <button onclick="decreaseQty('${CART_ID}', '${escapeJsString(dish.name)}')" ${quantity === 0 ? 'disabled' : ''}>-</button>
@@ -7179,6 +7185,128 @@ function isStockTrackingEnabled() {
   return settings?.serviceMode !== true;
 }
 
+function isPharmacyMedicine(item) {
+  return settings?.pharmacyMode === true && settings?.serviceMode !== true && item?.isMedicine === true;
+}
+
+function getPharmacyProductKey(product) {
+  return String(product?.recordId || product?.id || product?.name || '');
+}
+
+function findProductForTransactionItem(item) {
+  const productId = item?.productId || item?.productRecordId || item?.product?.recordId || item?.product?.id || '';
+  return menu.find(entry => (
+    entry && productId && String(entry.recordId || entry.id) === String(productId)
+  )) || menu.find(entry => entry && entry.name === (item?.name || item?.productName || item?.itemName));
+}
+
+function preparePharmacySale(items, prescriptionRecord = null) {
+  const states = new Map();
+  const allocationsByItemIndex = new Map();
+  const prescriptionRequired = [];
+
+  (Array.isArray(items) ? items : []).forEach((item, index) => {
+    if ((parseInt(item?.qty ?? item?.quantity, 10) || 0) <= 0) return;
+    const product = findProductForTransactionItem(item);
+    if (!isPharmacyMedicine(product)) return;
+    if (product.requiresPrescription === true) prescriptionRequired.push(product.name);
+
+    const key = getPharmacyProductKey(product);
+    if (!states.has(key)) {
+      states.set(key, { product, batches: Array.isArray(product.pharmacyBatches) ? product.pharmacyBatches : [] });
+    }
+    const state = states.get(key);
+    const result = allocatePharmacyBatches(state.batches, Number(item.qty), getLocalDateInputValue());
+    state.batches = result.batches;
+    allocationsByItemIndex.set(index, result.allocations);
+  });
+
+  if (prescriptionRequired.length > 0) {
+    const errors = getPharmacyPrescriptionErrors(prescriptionRecord, getLocalDateInputValue());
+    if (errors.length > 0) {
+      throw new Error(`Prescription required for ${[...new Set(prescriptionRequired)].join(', ')}. ${errors[0]}`);
+    }
+  }
+
+  return { states, allocationsByItemIndex };
+}
+
+function commitPharmacySale(plan) {
+  if (!plan?.states) return;
+  plan.states.forEach(({ product, batches }) => {
+    product.pharmacyBatches = batches;
+    setProductStock(product, sumPharmacyBatchStock(batches));
+    product.expiryDate = batches.map(batch => batch.expiryDate).sort()[0] || '';
+    const index = menu.indexOf(product);
+    if (index >= 0) {
+      menu[index] = enrichEnterpriseRecord('products', product, product);
+      enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
+    }
+  });
+}
+
+function attachPharmacyAllocations(items, plan) {
+  return (Array.isArray(items) ? items : []).map((item, index) => {
+    const allocations = plan?.allocationsByItemIndex.get(index);
+    if (!allocations) return item;
+    return { ...item, batchAllocations: allocations };
+  });
+}
+
+function readPharmacyPrescriptionForm() {
+  return {
+    patientName: document.getElementById('pharmacyPatientName')?.value.trim() || '',
+    prescriberName: document.getElementById('pharmacyPrescriberName')?.value.trim() || '',
+    date: document.getElementById('pharmacyPrescriptionDate')?.value || '',
+    reference: document.getElementById('pharmacyPrescriptionReference')?.value.trim() || '',
+    directions: document.getElementById('pharmacyPrescriptionDirections')?.value.trim() || '',
+    capturedAt: new Date().toISOString()
+  };
+}
+
+function hasPrescriptionRequiredItem(items) {
+  return settings?.pharmacyMode === true && (Array.isArray(items) ? items : []).some(item => {
+    if ((parseInt(item?.qty ?? item?.quantity, 10) || 0) <= 0) return false;
+    const product = findProductForTransactionItem(item);
+    return product?.isMedicine === true && product.requiresPrescription === true;
+  });
+}
+
+function hasUnallocatedPharmacyItems(transaction) {
+  return settings?.pharmacyMode === true && (Array.isArray(transaction?.items) ? transaction.items : []).some(item => (
+    isPharmacyMedicine(findProductForTransactionItem(item))
+    && (parseInt(item?.qty ?? item?.quantity, 10) || 0) > 0
+    && (
+      !Array.isArray(item?.batchAllocations)
+      || item.batchAllocations.reduce((total, allocation) => total + (Number(allocation?.quantity) || 0), 0)
+        !== (parseInt(item?.qty ?? item?.quantity, 10) || 0)
+    )
+  ));
+}
+
+function transactionHasPharmacyMedicine(transaction) {
+  return settings?.pharmacyMode === true && (Array.isArray(transaction?.items) ? transaction.items : []).some(item => (
+    isPharmacyMedicine(findProductForTransactionItem(item))
+    && (parseInt(item?.qty ?? item?.quantity, 10) || 0) > 0
+  ));
+}
+
+function getPharmacyItemSignature(transaction) {
+  return JSON.stringify((Array.isArray(transaction?.items) ? transaction.items : [])
+    .filter(item => isPharmacyMedicine(findProductForTransactionItem(item)))
+    .map(item => ({
+      product: getPharmacyProductKey(findProductForTransactionItem(item)),
+      quantity: parseInt(item?.qty ?? item?.quantity, 10) || 0
+    }))
+    .sort((left, right) => left.product.localeCompare(right.product)));
+}
+
+function updatePharmacyPrescriptionFields(items = activeOrders[CART_ID]?.items) {
+  const section = document.getElementById('pharmacyPrescriptionFields');
+  if (!section) return;
+  section.style.display = hasPrescriptionRequiredItem(items) ? 'block' : 'none';
+}
+
 function getOrderStatusLabel(status = 'pending') {
   const normalized = String(status || 'pending').toLowerCase();
   if (normalized === 'draft') return 'Draft';
@@ -7216,16 +7344,58 @@ function toggleDraftPaymentFields() {
 function toggleServiceMode() {
   const serviceModeCheckbox = document.getElementById('serviceMode');
   if (!serviceModeCheckbox) return;
+  if (serviceModeCheckbox.checked && settings?.pharmacyMode === true) {
+    serviceModeCheckbox.checked = false;
+    showAppAlert('Turn off Pharmacy inventory before enabling the service-only workflow. Pharmacy dispensing requires inventory tracking.', 'Incompatible Business Settings');
+    return;
+  }
   settings.serviceMode = serviceModeCheckbox.checked;
   settings = touchSettingsRecord({ ...settings, serviceMode: settings.serviceMode }, 'settings');
   saveData();
   enqueueSettingsSync(settings).catch(console.warn);
   applyServiceModeUI(settings.serviceMode === true);
+  applyPharmacyModeUI(settings.pharmacyMode === true);
   renderMenu();
   renderTransactions();
   renderStockListTable();
   renderCustomerList();
   renderInvoices();
+}
+
+function applyPharmacyModeUI(enabled = settings?.pharmacyMode === true) {
+  enabled = enabled && settings?.serviceMode !== true;
+  document.body.classList.toggle('pharmacy-mode', enabled);
+  const banner = document.getElementById('pharmacyModeBanner');
+  if (banner) banner.style.display = enabled ? 'block' : 'none';
+  const pharmacySettings = document.getElementById('pharmacyMode');
+  if (pharmacySettings) pharmacySettings.checked = enabled;
+  const stockFields = document.getElementById('pharmacyStockFields');
+  if (stockFields) stockFields.style.display = enabled ? 'block' : 'none';
+  const batchFields = document.getElementById('purchasePharmacyBatchFields');
+  if (batchFields) batchFields.style.display = enabled && isPharmacyMedicine(
+    menu.find(entry => entry?.name === document.getElementById('purchaseItem')?.value)
+  ) ? 'flex' : 'none';
+  toggleStockMedicineFields();
+  updatePharmacyPrescriptionFields();
+}
+
+function toggleStockMedicineFields() {
+  const medicineCheckbox = document.getElementById('newStockItemMedicine');
+  const details = document.getElementById('pharmacyMedicineDetails');
+  if (details) details.style.display = medicineCheckbox?.checked ? 'block' : 'none';
+  const initialExpiry = document.getElementById('newStockItemInitialBatchExpiry');
+  const itemExpiry = document.getElementById('newStockItemExpiryDate');
+  if (medicineCheckbox?.checked && initialExpiry && !initialExpiry.value && itemExpiry?.value) {
+    initialExpiry.value = itemExpiry.value;
+  }
+}
+window.toggleStockMedicineFields = toggleStockMedicineFields;
+
+function updatePurchasePharmacyBatchFields() {
+  const batchFields = document.getElementById('purchasePharmacyBatchFields');
+  const itemName = document.getElementById('purchaseItem')?.value;
+  const item = menu.find(entry => entry?.name === itemName);
+  if (batchFields) batchFields.style.display = isPharmacyMedicine(item) ? 'flex' : 'none';
 }
 
 function updateMenuItemQuantity(name, value) {
@@ -8522,6 +8692,21 @@ function processBill() { // This now opens the payment modal
   document.getElementById('paymentLoyaltyPoints').value = '0';
   const draftCheckbox = document.getElementById('savePaymentAsDraft');
   if (draftCheckbox) draftCheckbox.checked = false;
+  ['pharmacyPatientName', 'pharmacyPrescriberName', 'pharmacyPrescriptionDate', 'pharmacyPrescriptionReference', 'pharmacyPrescriptionDirections'].forEach(id => {
+    const field = document.getElementById(id);
+    if (field) field.value = '';
+  });
+  const prescriptionDateField = document.getElementById('pharmacyPrescriptionDate');
+  if (prescriptionDateField) prescriptionDateField.value = getLocalDateInputValue();
+  const savedPrescription = currentOrder.pharmacyPrescription;
+  if (savedPrescription) {
+    document.getElementById('pharmacyPatientName').value = savedPrescription.patientName || '';
+    document.getElementById('pharmacyPrescriberName').value = savedPrescription.prescriberName || '';
+    document.getElementById('pharmacyPrescriptionDate').value = savedPrescription.date || getLocalDateInputValue();
+    document.getElementById('pharmacyPrescriptionReference').value = savedPrescription.reference || '';
+    document.getElementById('pharmacyPrescriptionDirections').value = savedPrescription.directions || '';
+  }
+  updatePharmacyPrescriptionFields(currentOrder.items);
   toggleDraftPaymentFields();
   document.getElementById('changeDue').textContent = '0.00';
 
@@ -8576,6 +8761,7 @@ function updatePaymentTotals() {
   const paymentSubtotalEl = document.getElementById('paymentSubtotal');
   const paymentTaxEl = document.getElementById('paymentTax');
   const currentOrder = activeOrders[CART_ID];
+  updatePharmacyPrescriptionFields(currentOrder?.items);
   const totals = currentOrder && Array.isArray(currentOrder.items)
     ? calculateTransactionTotals(currentOrder.items)
     : { subtotal: 0, tax: 0, total: 0 };
@@ -8779,6 +8965,26 @@ async function finalizePayment(isSplit = false) {
     return;
   }
 
+  const pharmacyPrescription = settings?.pharmacyMode === true && hasPrescriptionRequiredItem(currentOrder.items)
+    ? readPharmacyPrescriptionForm()
+    : null;
+  if (pharmacyPrescription) {
+    const prescriptionErrors = getPharmacyPrescriptionErrors(pharmacyPrescription, getLocalDateInputValue());
+    if (prescriptionErrors.length > 0) {
+      await showAppAlert(prescriptionErrors[0], 'Prescription Details Required');
+      return;
+    }
+  }
+  let pharmacySalePlan = null;
+  if (!isDraft && settings?.pharmacyMode === true) {
+    try {
+      pharmacySalePlan = preparePharmacySale(currentOrder.items, pharmacyPrescription);
+    } catch (error) {
+      await showAppAlert(error.message, 'Medicine Stock Unavailable');
+      return;
+    }
+  }
+
   isPaymentFinalizing = true;
   setPaymentProcessingState(true, navigator.onLine ? 'Saving sale on this device…' : 'Weak network: saving sale locally…', navigator.onLine ? 'info' : 'success');
 
@@ -8790,6 +8996,7 @@ async function finalizePayment(isSplit = false) {
           deductStock(dish.name, orderItem.qty);
         }
       });
+      commitPharmacySale(pharmacySalePlan);
     }
 
     const balanceChange = !isDraft && isCustomerSelected ? (amountPaid - finalTotal) : 0;
@@ -8803,14 +9010,18 @@ async function finalizePayment(isSplit = false) {
       tableNo: currentOrder.table || 'Shop',
       orderSource: currentOrder.source || 'pos',
       items: currentOrder.items
-        .filter(item => (parseInt(item?.qty, 10) || 0) > 0)
-        .map(item => ({
+        .map((item, itemIndex) => ({
           ...item,
+          ...(pharmacySalePlan?.allocationsByItemIndex.has(itemIndex)
+            ? { batchAllocations: pharmacySalePlan.allocationsByItemIndex.get(itemIndex) }
+            : {}),
           stockBeforeSale: Number.isFinite(Number(item?.stock))
             ? Number(item.stock)
             : (Number.isFinite(Number(item?.stockBeforeSale)) ? Number(item.stockBeforeSale) : null),
           discountAmount: Number(item?.discountAmount || 0)
-        })),
+        }))
+        .filter(item => (parseInt(item?.qty, 10) || 0) > 0),
+      ...(pharmacyPrescription ? { pharmacyPrescription } : {}),
       total: finalTotal,
       subtotal: totals.subtotal,
       tax: totals.tax,
@@ -8949,6 +9160,10 @@ function calculateDishStock(dish, isForDisplay = false, visited = new Set()) {
   }
   visited.add(dish.name);
 
+  if (isPharmacyMedicine(dish)) {
+    return getPharmacyAvailableStock(dish.pharmacyBatches, getLocalDateInputValue());
+  }
+
   // Base case: If the item has no recipe, it's a primary ingredient. Return its own stock.
   if (!dish.recipe || dish.recipe.length === 0) {
     return dish.stock !== undefined ? dish.stock : (isForDisplay ? 0 : Infinity);
@@ -8992,6 +9207,7 @@ function deductStock(itemName, quantity, visited = new Set()) {
 
   const dish = menu.find(d => d.name === itemName);
   if (!dish) return;
+  if (isPharmacyMedicine(dish)) return;
 
   if (!dish.recipe || dish.recipe.length === 0) {
     if (dish.stock !== undefined) {
@@ -9117,7 +9333,65 @@ async function restoreTransactionStock(transaction) {
     return transaction.items.reduce((total, item) => total + Math.max(0, parseInt(item?.qty ?? item?.quantity, 10) || 0), 0);
   }
 
-  const restoredItems = transaction.items.map(async item => {
+  let pharmacyRestoredQuantity = 0;
+  let pharmacyRestoreFailed = false;
+  const pharmacyBatchStates = new Map();
+  const inventoryItems = [];
+  transaction.items.forEach(item => {
+    const product = findProductForTransactionItem(item);
+    if (!isPharmacyMedicine(product)) {
+      inventoryItems.push(item);
+      return;
+    }
+    const quantity = parseInt(item?.qty ?? item?.quantity, 10) || 0;
+    if (quantity <= 0) return;
+    if (!Array.isArray(item.batchAllocations)) {
+      pharmacyRestoreFailed = true;
+      console.error('[STOCK_RESTORE] Pharmacy sale has no recorded batch allocation', {
+        transactionId: transaction.id || transaction.recordId || transaction.date,
+        item
+      });
+      return;
+    }
+    const allocatedQuantity = item.batchAllocations.reduce((total, allocation) => total + (Number(allocation?.quantity) || 0), 0);
+    if (allocatedQuantity !== quantity) {
+      pharmacyRestoreFailed = true;
+      console.error('[STOCK_RESTORE] Pharmacy batch allocation does not match the sold quantity', {
+        transactionId: transaction.id || transaction.recordId || transaction.date,
+        quantity,
+        allocatedQuantity,
+        item
+      });
+      return;
+    }
+    const productKey = getPharmacyProductKey(product);
+    const currentBatches = pharmacyBatchStates.get(productKey)?.batches || product.pharmacyBatches || [];
+    try {
+      pharmacyBatchStates.set(productKey, {
+        product,
+        batches: restorePharmacyBatchAllocations(currentBatches, item.batchAllocations)
+      });
+      pharmacyRestoredQuantity += quantity;
+    } catch (error) {
+      pharmacyRestoreFailed = true;
+      console.error('[STOCK_RESTORE] Could not restore medicine batch allocation:', error);
+    }
+  });
+  if (pharmacyRestoreFailed) return 0;
+  pharmacyBatchStates.forEach(({ product, batches }) => {
+    product.pharmacyBatches = batches;
+    setProductStock(product, sumPharmacyBatchStock(batches));
+    product.expiryDate = batches.map(batch => batch.expiryDate).sort()[0] || '';
+    const index = menu.indexOf(product);
+    if (index >= 0) {
+      menu[index] = enrichEnterpriseRecord('products', product, product);
+      enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(error => {
+        console.warn('[STOCK] Failed to queue restored medicine batches:', error);
+      });
+    }
+  });
+
+  const restoredItems = inventoryItems.map(async item => {
     const quantity = parseInt(item?.qty ?? item?.quantity, 10) || 0;
     const itemName = item?.name || item?.productName || item?.itemName || '';
     const productId = item?.productId || item?.productRecordId || item?.product?.recordId || item?.product?.id || '';
@@ -9146,7 +9420,7 @@ async function restoreTransactionStock(transaction) {
     return restoreStock(itemName, quantity, new Set(), productId, stockBeforeSale);
   });
   const restoredQuantities = await Promise.all(restoredItems);
-  const restoredTotal = restoredQuantities.reduce((total, restoredQuantity) => total + restoredQuantity, 0);
+  const restoredTotal = restoredQuantities.reduce((total, restoredQuantity) => total + restoredQuantity, pharmacyRestoredQuantity);
   console.info('[STOCK_RESTORE] Transaction restoration complete', {
     transactionId: transaction.id || transaction.recordId || transaction.date,
     requestedItems: transaction.items.length,
@@ -9298,6 +9572,9 @@ async function deleteItem(i) {
   const index = Number(i); // Ensure index is a number
   const item = menu[index];
   if (!item) return;
+  if (isPharmacyMedicine(item)) {
+    return showAppAlert('Medicine records cannot be deleted while Pharmacy inventory is enabled. Set the batches to zero through a recorded adjustment and keep the sale/prescription history.', 'Pharmacy Record Protected');
+  }
   const preserveStock = document.getElementById('addDishTab')?.classList.contains('active') === true;
 
   if (typeof showAppConfirm === 'function') {
@@ -10965,6 +11242,29 @@ async function confirmDraftTransaction(index) {
     syncStatus: 'pending'
   });
 
+  let pharmacySalePlan = null;
+  if (settings?.pharmacyMode === true && isStockTrackingEnabled()) {
+    try {
+      if (hasPrescriptionRequiredItem(updatedTransaction.items)) {
+        const prescriptionErrors = getPharmacyPrescriptionErrors(draft.pharmacyPrescription, getLocalDateInputValue());
+        if (prescriptionErrors.length > 0) {
+          await showAppAlert(`This draft needs prescription details before it can be confirmed. ${prescriptionErrors[0]}`, 'Prescription Details Required');
+          return;
+        }
+      }
+      pharmacySalePlan = preparePharmacySale(updatedTransaction.items, draft.pharmacyPrescription);
+      updatedTransaction.items = updatedTransaction.items.map((item, itemIndex) => ({
+        ...item,
+        ...(pharmacySalePlan.allocationsByItemIndex.has(itemIndex)
+          ? { batchAllocations: pharmacySalePlan.allocationsByItemIndex.get(itemIndex) }
+          : {})
+      }));
+    } catch (error) {
+      await showAppAlert(error.message, 'Medicine Stock Unavailable');
+      return;
+    }
+  }
+
   if (isStockTrackingEnabled() && !updatedTransaction.inventoryRestored) {
     updatedTransaction.items = updatedTransaction.items.map(item => {
       const product = Array.isArray(menu) ? menu.find(entry => entry?.name === item.name) : null;
@@ -10973,6 +11273,7 @@ async function confirmDraftTransaction(index) {
         stockBeforeSale: product && Number.isFinite(Number(product.stock)) ? Number(product.stock) : null
       };
     });
+    commitPharmacySale(pharmacySalePlan);
     deductTransactionStock(updatedTransaction);
   }
 
@@ -11102,15 +11403,46 @@ async function saveTransactionEdit() {
   });
 
   const hasRestoredStock = original.inventoryRestored === true || Boolean(original.inventoryRestoredAt);
+  const updatedIsCanceled = updatedStatus === 'canceled' || updatedStatus === 'cancelled';
+  const originalIsCanceled = originalStatus === 'canceled' || originalStatus === 'cancelled';
+  const includesPharmacyMedicine = settings?.pharmacyMode === true && (
+    (original.items || []).some(item => isPharmacyMedicine(findProductForTransactionItem(item)))
+    || (updatedTransaction.items || []).some(item => isPharmacyMedicine(findProductForTransactionItem(item)))
+  );
+  if (includesPharmacyMedicine && !isDraftOriginal
+    && getPharmacyItemSignature(original) !== getPharmacyItemSignature(updatedTransaction)) {
+    await showAppAlert('Medicine quantities cannot be changed in an already recorded sale. Reopen the sale and check it out again so batches and prescription details are recorded correctly.', 'Batch-Controlled Sale');
+    return;
+  }
+  if (includesPharmacyMedicine && !originalIsCanceled && updatedIsCanceled && !hasRestoredStock && hasUnallocatedPharmacyItems(original)) {
+    await showAppAlert('This sale has no complete medicine batch allocation, so it cannot be canceled safely. Review the sale and batch records first.', 'Batch Record Missing');
+    return;
+  }
   if (!isDraftOriginal && isStockTrackingEnabled()) {
-    const wasCanceled = originalStatus === 'canceled' || originalStatus === 'cancelled';
-    const isCanceled = updatedStatus === 'canceled' || updatedStatus === 'cancelled';
+    const wasCanceled = originalIsCanceled;
+    const isCanceled = updatedIsCanceled;
     if (!wasCanceled && isCanceled) {
-      if (!hasRestoredStock) await restoreTransactionStock(original);
+      if (!hasRestoredStock) {
+        const restoredQuantity = await restoreTransactionStock(original);
+        if (includesPharmacyMedicine && restoredQuantity === 0) {
+          await showAppAlert('Medicine batches could not be restored. The sale was not canceled.', 'Inventory Restore Incomplete');
+          return;
+        }
+      }
       updatedTransaction.inventoryRestored = true;
       updatedTransaction.inventoryRestoredAt = original.inventoryRestoredAt || new Date().toISOString();
     } else if (wasCanceled && !isCanceled) {
       if (hasRestoredStock) {
+        if (includesPharmacyMedicine) {
+          try {
+            const pharmacyPlan = preparePharmacySale(updatedTransaction.items, updatedTransaction.pharmacyPrescription);
+            updatedTransaction.items = attachPharmacyAllocations(updatedTransaction.items, pharmacyPlan);
+            commitPharmacySale(pharmacyPlan);
+          } catch (error) {
+            await showAppAlert(error.message, 'Medicine Stock Unavailable');
+            return;
+          }
+        }
         updatedTransaction.items = updatedTransaction.items.map(item => {
           const product = Array.isArray(menu) ? menu.find(entry => entry?.name === item.name) : null;
           return {
@@ -11679,9 +12011,20 @@ async function deleteTransaction(index, permission = 'sales.delete') {
   ), 0) : 0;
   const isCanceledTransaction = String(txToDelete?.orderStatus || txToDelete?.status || '').toLowerCase() === 'canceled';
   const canSkipRestoration = isCanceledTransaction && txToDelete?.inventoryRestored === true;
+  if (!canSkipRestoration && hasUnallocatedPharmacyItems(txToDelete)) {
+    await showAppAlert('This sale has no complete medicine batch allocation, so it cannot be deleted safely. Review the sale and batch records first.', 'Batch Record Missing');
+    return;
+  }
   const restoredQuantity = !tracksInventory || canSkipRestoration
     ? requestedStockQuantity
     : await restoreTransactionStock(txToDelete);
+
+  if (tracksInventory && !canSkipRestoration && settings?.pharmacyMode === true
+    && (txToDelete.items || []).some(item => isPharmacyMedicine(findProductForTransactionItem(item)))
+    && restoredQuantity < requestedStockQuantity) {
+    await showAppAlert('Inventory could not be fully restored from the recorded medicine batches. The transaction was not deleted.', 'Inventory Restore Incomplete');
+    return;
+  }
 
   if (requestedStockQuantity > 0 && !canSkipRestoration && restoredQuantity < requestedStockQuantity) {
     console.warn('[STOCK_RESTORE] Sale deletion continuing after incomplete inventory restoration', {
@@ -11772,18 +12115,28 @@ async function reopenTransaction(index) {
     await showAppAlert(`Cannot re-open this bill because the cart is currently occupied. Please clear the cart first.`, "Action Blocked");
     return;
   }
+  const inventoryAlreadyRestored = transactionToEdit.inventoryRestored === true || Boolean(transactionToEdit.inventoryRestoredAt);
+  if (!inventoryAlreadyRestored && hasUnallocatedPharmacyItems(transactionToEdit)) {
+    await showAppAlert('This sale has no complete medicine batch allocation, so it cannot be reopened safely. Review the sale and batch records first.', 'Batch Record Missing');
+    return;
+  }
 
   const confirmed = await showAppConfirm(`This will move the transaction back to the active cart and delete the original bill record. Do you want to continue?`, "Reopen Transaction", "Continue", "Cancel");
   if (!confirmed) return;
 
-  if (transactionToEdit && !transactionToEdit.inventoryRestored) {
-    await restoreTransactionStock(transactionToEdit);
+  if (transactionToEdit && !inventoryAlreadyRestored) {
+    const restoredQuantity = await restoreTransactionStock(transactionToEdit);
+    if (transactionHasPharmacyMedicine(transactionToEdit) && restoredQuantity === 0) {
+      await showAppAlert('Medicine batches could not be restored. The sale was not reopened.', 'Inventory Restore Incomplete');
+      return;
+    }
   }
 
   // Restore the order
   activeOrders[CART_ID] = {
     items: transactionToEdit.items,
-    server: transactionToEdit.customerName
+    server: transactionToEdit.customerName,
+    pharmacyPrescription: transactionToEdit.pharmacyPrescription || null
   };
 
   // Delete the old transaction
@@ -13772,6 +14125,15 @@ async function saveSettings() {
     return alert("ShopAdmin PINs do not match. Please verify and try again.");
   }
 
+  const nextServiceMode = Boolean(document.getElementById('serviceMode')?.checked);
+  const nextPharmacyMode = Boolean(document.getElementById('pharmacyMode')?.checked);
+  if (nextServiceMode && nextPharmacyMode) {
+    alert('Pharmacy inventory requires stock tracking. Turn off the service-only workflow or Pharmacy inventory before saving.');
+    document.getElementById('serviceMode').checked = settings.serviceMode === true;
+    document.getElementById('pharmacyMode').checked = settings.pharmacyMode === true;
+    return;
+  }
+
   settings.name = document.getElementById('companyName').value;
   settings.address = document.getElementById('companyAddress').value;
   settings.contact = document.getElementById('companyContact').value;
@@ -13804,12 +14166,13 @@ async function saveSettings() {
   }
   const transactionWindow = parseInt(document.getElementById('transactionEditWindowMinutes')?.value, 10);
   settings.transactionEditWindowMinutes = Number.isFinite(transactionWindow) ? Math.max(0, transactionWindow) : 30;
-  settings.serviceMode = Boolean(document.getElementById('serviceMode')?.checked);
+  settings.serviceMode = nextServiceMode;
+  settings.pharmacyMode = nextPharmacyMode;
   settings.dashboardCardVisibility = readDashboardCardVisibilitySettings();
   applyDashboardCardVisibility(settings.dashboardCardVisibility);
   settings.promoMessage = document.getElementById('promoMessage').value.trim();
   settings.ShopAdminPIN = pin;
-  settings = touchSettingsRecord({ ...settings, serviceMode: settings.serviceMode }, 'settings');
+  settings = touchSettingsRecord({ ...settings, serviceMode: settings.serviceMode, pharmacyMode: settings.pharmacyMode }, 'settings');
 
   const logoField = document.getElementById('companyLogo');
   const logoFile = logoField && logoField.files[0];
@@ -14071,6 +14434,8 @@ function showAdminNoticesOverlay(notices = []) {
   setVal('confirmShopAdminPIN', settings.ShopAdminPIN || "");
   const serviceModeCheckbox = document.getElementById('serviceMode');
   if (serviceModeCheckbox) serviceModeCheckbox.checked = settings.serviceMode === true;
+  const pharmacyModeCheckbox = document.getElementById('pharmacyMode');
+  if (pharmacyModeCheckbox) pharmacyModeCheckbox.checked = settings.pharmacyMode === true;
   renderDashboardCardSettings();
 
   const logoPreview = document.getElementById('logoPreview');
@@ -14087,6 +14452,7 @@ function showAdminNoticesOverlay(notices = []) {
   }
 
   applyServiceModeUI(settings.serviceMode === true);
+  applyPharmacyModeUI(settings.pharmacyMode === true);
   applyDashboardCardVisibility();
   checkNotificationStatus();
 }
@@ -15347,8 +15713,27 @@ async function updateTransactionStatusByIndex(transactionIndex, status) {
   const isBeingReopened = previousStatus === 'canceled' && normalizedStatus !== 'canceled';
   const hasRestoredStock = transaction.inventoryRestored === true || Boolean(transaction.inventoryRestoredAt);
 
+  if (isBeingCanceled && !hasRestoredStock && hasUnallocatedPharmacyItems(transaction)) {
+    await showAppAlert('This sale has no complete medicine batch allocation, so it cannot be canceled safely. Review the sale and batch records first.', 'Batch Record Missing');
+    return null;
+  }
+  if (isBeingReopened && hasRestoredStock && settings?.pharmacyMode === true) {
+    try {
+      const pharmacyPlan = preparePharmacySale(transaction.items, transaction.pharmacyPrescription);
+      transaction.items = attachPharmacyAllocations(transaction.items, pharmacyPlan);
+      commitPharmacySale(pharmacyPlan);
+    } catch (error) {
+      await showAppAlert(error.message, 'Medicine Stock Unavailable');
+      return null;
+    }
+  }
+
   if (isBeingCanceled && !hasRestoredStock) {
-    await restoreTransactionStock(transaction);
+    const restoredQuantity = await restoreTransactionStock(transaction);
+    if (transactionHasPharmacyMedicine(transaction) && restoredQuantity === 0) {
+      await showAppAlert('Medicine batches could not be restored. The sale status was not changed.', 'Inventory Restore Incomplete');
+      return null;
+    }
   } else if (isBeingReopened && hasRestoredStock) {
     deductTransactionStock(transaction);
   }
@@ -16847,6 +17232,9 @@ function renderStockListTable() {
     const stockStatusBadge = isAddedToShop
       ? '<span style="display:inline-block; padding:4px 8px; border-radius:999px; background:#d1fae5; color:#166534; font-weight:700; font-size:0.78rem;">Added to Shop</span>'
       : '<span style="display:inline-block; padding:4px 8px; border-radius:999px; background:#e5e7eb; color:#374151; font-weight:600; font-size:0.78rem;">Stock Only</span>';
+    const pharmacyBatchSummary = isPharmacyMedicine(item)
+      ? `<small style="display:block; color:#166534;">Medicine • ${Array.isArray(item.pharmacyBatches) ? item.pharmacyBatches.length : 0} batches${item.requiresPrescription === true ? ' • Rx required' : ' • OTC'}</small>`
+      : '';
 
     tr.innerHTML = `
         <td style="text-align: center;"><input type="checkbox" class="table-row-select" onchange="updateSelectAllHeader('stockListBody','selectAllStock')"></td>
@@ -16854,7 +17242,7 @@ function renderStockListTable() {
         <td class="u-fs-08 u-text-break">
           <div style="display:flex; align-items:center; gap:8px;">
             <img src="${item.image || 'https://placehold.co/40x40?text=No+Image'}" alt="${escapeHtml(item.name || 'Stock item')}" style="width:36px; height:36px; object-fit:cover; border-radius:6px; border:1px solid #d9d9d9; background:#f7f7f7;">
-            <span>${item.name}</span>
+            <span>${item.name}${pharmacyBatchSummary}</span>
           </div>
         </td>
         <td class="u-fs-08">${item.unit || 'N/A'}</td>
@@ -16914,6 +17302,14 @@ function editStockItem(index) {
   document.getElementById('newStockItemExpiryDate').value = item.expiryDate || '';
   document.getElementById('newStockItemLowStockThreshold').value = item.lowStockThreshold ?? '';
   document.getElementById('newStockItemCategory').value = item.category || '';
+  document.getElementById('newStockItemMedicine').checked = item.isMedicine === true;
+  document.getElementById('newStockItemGenericName').value = item.genericName || '';
+  document.getElementById('newStockItemStrength').value = item.medicineStrength || '';
+  document.getElementById('newStockItemDosageForm').value = item.dosageForm || '';
+  document.getElementById('newStockItemRequiresPrescription').checked = item.requiresPrescription === true;
+  document.getElementById('newStockItemInitialBatchNumber').value = '';
+  document.getElementById('newStockItemInitialBatchExpiry').value = '';
+  toggleStockMedicineFields();
   document.getElementById('newStockItemImageBase64').value = item.image || '';
   const preview = document.getElementById('newStockItemImagePreview');
   if (preview) {
@@ -17009,7 +17405,6 @@ async function saveStockAdjustment() {
   if (index === '' || !Number.isFinite(newStock) || newStock < 0 || (lowStockValue !== '' && (!Number.isFinite(Number(lowStockValue)) || Number(lowStockValue) < 0))) {
     return showAppAlert("Please enter a valid, non-negative number for the stock.", 'Invalid Stock');
   }
-
   const lockTarget = menu[index];
   const lockKey = String(lockTarget?.recordId || lockTarget?.id || lockTarget?.name || '');
   if (lockKey) {
@@ -17045,8 +17440,29 @@ async function saveStockAdjustment() {
     }
   }
 
+  let adjustedStock = newStock;
+  let batchAllocations = [];
+  if (isPharmacyMedicine(menu[index])) {
+    const recordedStock = sumPharmacyBatchStock(menu[index].pharmacyBatches);
+    if (newStock > recordedStock) {
+      if (lockKey) releaseSharedRecordLock('inventory', lockKey, getCurrentLockingStaffId());
+      return showAppAlert('Use a purchase entry with a lot number and expiry to add medicine stock.', 'Batch-Controlled Stock');
+    }
+    if (newStock < recordedStock) {
+      try {
+        const adjustment = removePharmacyBatches(menu[index].pharmacyBatches, recordedStock - newStock);
+        menu[index].pharmacyBatches = adjustment.batches;
+        batchAllocations = adjustment.allocations;
+        adjustedStock = sumPharmacyBatchStock(adjustment.batches);
+      } catch (error) {
+        if (lockKey) releaseSharedRecordLock('inventory', lockKey, getCurrentLockingStaffId());
+        return showAppAlert(error.message, 'Batch Adjustment Failed');
+      }
+    }
+  }
+
   const oldStock = menu[index].stock;
-  setProductStock(menu[index], newStock);
+  setProductStock(menu[index], adjustedStock);
   if (lowStockValue === '') {
     delete menu[index].lowStockThreshold;
   } else {
@@ -17059,9 +17475,10 @@ async function saveStockAdjustment() {
     date: new Date().toISOString(),
     itemName: menu[index].name,
     itemId: menu[index].recordId || menu[index].id || null,
-    adjustment: newStock - oldStock,
-    newTotal: newStock,
-    note: 'Manual Stock Adjustment'
+    adjustment: adjustedStock - oldStock,
+    newTotal: adjustedStock,
+    note: 'Manual Stock Adjustment',
+    batchAllocations
   });
   restockHistory.unshift(restockRecord);
   enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
@@ -17167,6 +17584,42 @@ async function saveNewStockItem() {
   }
 
   const existingMatchIndex = itemIndexNumber === null || Number.isNaN(itemIndexNumber) ? getProductCatalogMatchIndex(name) : -1;
+  const existingItem = itemIndexNumber !== null && !Number.isNaN(itemIndexNumber)
+    ? menu[itemIndexNumber]
+    : (existingMatchIndex >= 0 ? menu[existingMatchIndex] : null);
+  const isMedicine = settings?.pharmacyMode === true && document.getElementById('newStockItemMedicine')?.checked === true;
+  const genericName = document.getElementById('newStockItemGenericName')?.value.trim() || '';
+  const medicineStrength = document.getElementById('newStockItemStrength')?.value.trim() || '';
+  const dosageForm = document.getElementById('newStockItemDosageForm')?.value.trim() || '';
+  const requiresPrescription = document.getElementById('newStockItemRequiresPrescription')?.checked === true;
+  const initialBatchNumber = document.getElementById('newStockItemInitialBatchNumber')?.value.trim() || '';
+  const initialBatchExpiry = document.getElementById('newStockItemInitialBatchExpiry')?.value || '';
+  if (isPharmacyMedicine(existingItem) && !isMedicine) {
+    return showAppAlert('Remove all medicine batches through the proper inventory process before changing this item out of Pharmacy inventory.', 'Medicine Classification Locked');
+  }
+  let pharmacyBatches = Array.isArray(existingItem?.pharmacyBatches)
+    ? existingItem.pharmacyBatches.map(batch => ({ ...batch }))
+    : [];
+  if (isMedicine) {
+    const recordedStock = sumPharmacyBatchStock(pharmacyBatches);
+    if (pharmacyBatches.length > 0 && recordedStock !== stock) {
+      return showAppAlert(`This medicine has ${recordedStock} units across its batches. Change stock only by receiving a batch purchase.`, 'Batch Stock Mismatch');
+    }
+    if (stock > 0 && pharmacyBatches.length === 0) {
+      try {
+        pharmacyBatches = receivePharmacyBatch([], {
+          id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          batchNumber: initialBatchNumber,
+          expiryDate: initialBatchExpiry,
+          quantity: stock,
+          cost: costPrice,
+          receivedAt: new Date().toISOString()
+        });
+      } catch (error) {
+        return showAppAlert(error.message, 'Initial Batch Required');
+      }
+    }
+  }
 
   let uploadedImage = localImageBase64 || undefined;
   if (typeof uploadedImage === 'string' && uploadedImage.startsWith('data:image')) {
@@ -17186,6 +17639,15 @@ async function saveNewStockItem() {
     setProductStock(item, stock);
     item.manufactureDate = manufactureDate || '';
     item.expiryDate = expiryDate || '';
+    if (isMedicine) {
+      item.isMedicine = true;
+      item.genericName = genericName;
+      item.medicineStrength = medicineStrength;
+      item.dosageForm = dosageForm;
+      item.requiresPrescription = requiresPrescription;
+      item.pharmacyBatches = pharmacyBatches;
+      if (pharmacyBatches.length > 0) item.expiryDate = pharmacyBatches.map(batch => batch.expiryDate).sort()[0];
+    }
     item.image = uploadedImage || item.image || undefined;
     if (lowStockInput === '') delete item.lowStockThreshold;
     else item.lowStockThreshold = lowStockThreshold;
@@ -17236,6 +17698,15 @@ async function saveNewStockItem() {
       unit,
       manufactureDate,
       expiryDate,
+      ...(isMedicine ? {
+        isMedicine: true,
+        genericName,
+        medicineStrength,
+        dosageForm,
+        requiresPrescription,
+        pharmacyBatches,
+        expiryDate: pharmacyBatches.length > 0 ? pharmacyBatches.map(batch => batch.expiryDate).sort()[0] : expiryDate
+      } : {}),
       lowStockThreshold: lowStockInput === '' ? existingItem?.lowStockThreshold : lowStockThreshold,
       price: (() => {
         if (sellingPriceInput && !isNaN(parseFloat(sellingPriceInput))) return parseFloat(sellingPriceInput);
@@ -17276,6 +17747,15 @@ async function saveNewStockItem() {
       unit,
       manufactureDate,
       expiryDate,
+      ...(isMedicine ? {
+        isMedicine: true,
+        genericName,
+        medicineStrength,
+        dosageForm,
+        requiresPrescription,
+        pharmacyBatches,
+        expiryDate: pharmacyBatches.length > 0 ? pharmacyBatches.map(batch => batch.expiryDate).sort()[0] : expiryDate
+      } : {}),
       lowStockThreshold,
       price,
       image: uploadedImage || undefined
@@ -17387,6 +17867,14 @@ function clearNewStockItemForm() {
   document.getElementById('newStockItemCategory').value = '';
   document.getElementById('newStockItemImageBase64').value = '';
   document.getElementById('newStockItemImage').value = '';
+  document.getElementById('newStockItemMedicine').checked = false;
+  document.getElementById('newStockItemGenericName').value = '';
+  document.getElementById('newStockItemStrength').value = '';
+  document.getElementById('newStockItemDosageForm').value = '';
+  document.getElementById('newStockItemRequiresPrescription').checked = false;
+  document.getElementById('newStockItemInitialBatchNumber').value = '';
+  document.getElementById('newStockItemInitialBatchExpiry').value = '';
+  toggleStockMedicineFields();
   const preview = document.getElementById('newStockItemImagePreview');
   if (preview) {
     preview.src = 'https://placehold.co/100';
@@ -17455,6 +17943,7 @@ function populatePurchaseFormOptions() {
 
     populatePurchaseCost();
   }
+  updatePurchasePharmacyBatchFields();
 }
 
 function populatePurchaseCost() {
@@ -17466,6 +17955,7 @@ function populatePurchaseCost() {
   const defaultCost = Number(selectedOption?.dataset.cost || 0);
   costInput.value = defaultCost.toFixed(2);
   updatePurchaseTotals();
+  updatePurchasePharmacyBatchFields();
 }
 
 function updatePurchaseTotals() {
@@ -17506,6 +17996,7 @@ function togglePurchaseTypeFields() {
     if (purchaseType === 'personal-exp') sourceSelect.value = 'internal';
   }
   togglePurchasePaymentMode();
+  updatePurchasePharmacyBatchFields();
 }
 
 function getLocalDateInputValue(date = new Date()) {
@@ -17528,7 +18019,7 @@ function togglePurchaseForm() {
 }
 
 function clearPurchaseForm() {
-  const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseType', 'purchaseSource', 'purchaseItem', 'purchaseQty', 'purchaseCost', 'purchaseTotal', 'purchaseServiceName', 'purchaseServiceCost', 'purchasePersonalExpItem', 'purchasePersonalExpDescription', 'purchasePersonalExpQty', 'purchasePersonalExpUnitCost', 'purchasePersonalExpTotal', 'purchaseNewItemName', 'purchaseNewItemCategory', 'purchaseNewItemCost', 'purchaseNewItemQty'];
+  const formFields = ['purchaseSupplier', 'purchaseDate', 'purchaseType', 'purchaseSource', 'purchaseItem', 'purchaseQty', 'purchaseCost', 'purchaseTotal', 'purchaseServiceName', 'purchaseServiceCost', 'purchasePersonalExpItem', 'purchasePersonalExpDescription', 'purchasePersonalExpQty', 'purchasePersonalExpUnitCost', 'purchasePersonalExpTotal', 'purchaseNewItemName', 'purchaseNewItemCategory', 'purchaseNewItemCost', 'purchaseNewItemQty', 'purchaseBatchNumber', 'purchaseBatchExpiry'];
   formFields.forEach(id => {
     const el = document.getElementById(id);
     if (el) {
@@ -17559,13 +18050,16 @@ function renderPurchaseHistory() {
   tbody.innerHTML = rows.map((entry, index) => {
     const amount = Number(entry.purchaseAmount ?? entry.amount ?? entry.cost ?? entry.totalCost ?? entry.total ?? entry.value ?? 0);
     const dateLabel = entry.date ? new Date(entry.date).toLocaleDateString() : '—';
+    const batchLabel = entry.batchNumber
+      ? `<small style="display:block;">Lot ${escapeHtml(entry.batchNumber)} • Exp ${escapeHtml(entry.batchExpiry || 'not recorded')}</small>`
+      : '';
     return `
       <tr>
         <td>${index + 1}</td>
         <td><input type="checkbox"></td>
         <td>${dateLabel}</td>
         <td>${entry.supplier || '—'}</td>
-        <td>${entry.item || entry.itemName || '—'}</td>
+        <td>${entry.item || entry.itemName || '—'}${batchLabel}</td>
         <td class="u-text-right">${entry.qty ?? entry.quantity ?? 0}</td>
         <td>${escapeHtml(entry.paymentMethod || (entry.purchaseSource === 'internal' ? 'Cash' : 'External'))}</td>
         <td class="u-text-right">${formatCurrency(amount)}</td>
@@ -17603,6 +18097,8 @@ async function savePurchaseEntry() {
   const newItemCategory = document.getElementById('purchaseNewItemCategory')?.value?.trim();
   const newItemCost = Number(document.getElementById('purchaseNewItemCost')?.value || 0);
   const newItemQty = Number(document.getElementById('purchaseNewItemQty')?.value || 0);
+  const purchaseBatchNumber = document.getElementById('purchaseBatchNumber')?.value.trim() || '';
+  const purchaseBatchExpiry = document.getElementById('purchaseBatchExpiry')?.value || '';
 
   if (!supplier && purchaseType !== 'personal-exp') {
     showAppAlert('Please select a supplier for the purchase.', 'Supplier Required');
@@ -17663,7 +18159,26 @@ async function savePurchaseEntry() {
     displayItem = item;
 
     if (stockItem) {
-      const newStock = (Number(stockItem.stock || 0) + parsedQty);
+      let newStock;
+      if (isPharmacyMedicine(stockItem)) {
+        try {
+          stockItem.pharmacyBatches = receivePharmacyBatch(stockItem.pharmacyBatches, {
+            id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            batchNumber: purchaseBatchNumber,
+            expiryDate: purchaseBatchExpiry,
+            quantity: parsedQty,
+            cost: unitCost,
+            receivedAt: new Date().toISOString()
+          });
+        } catch (error) {
+          await showAppAlert(error.message, 'Invalid Medicine Batch');
+          return;
+        }
+        newStock = sumPharmacyBatchStock(stockItem.pharmacyBatches);
+        stockItem.expiryDate = stockItem.pharmacyBatches.map(batch => batch.expiryDate).sort()[0];
+      } else {
+        newStock = Number(stockItem.stock || 0) + parsedQty;
+      }
       setProductStock(stockItem, newStock);
       stockUpdated = true;
       stockValueImpact = purchaseAmount;
@@ -17698,7 +18213,9 @@ async function savePurchaseEntry() {
     purchaseSource,
     paymentMethod,
     stockUpdated,
-    stockValueImpact
+    stockValueImpact,
+    batchNumber: purchaseType === 'stock' ? purchaseBatchNumber : '',
+    batchExpiry: purchaseType === 'stock' ? purchaseBatchExpiry : ''
   };
 
   purchaseHistory.unshift(entry);
@@ -17845,7 +18362,10 @@ async function saveWastageLossEntry() {
     return;
   }
 
-  const availableStock = Number(calculateDishStock(stockItem, true) || 0);
+  const isMedicine = isPharmacyMedicine(stockItem);
+  const availableStock = isMedicine
+    ? sumPharmacyBatchStock(stockItem.pharmacyBatches)
+    : Number(calculateDishStock(stockItem, true) || 0);
   if (!Number.isFinite(qty) || qty <= 0) {
     showAppAlert('Please enter a valid quantity greater than zero.', 'Invalid Quantity');
     return;
@@ -17858,7 +18378,22 @@ async function saveWastageLossEntry() {
 
   const unitCost = Number.isFinite(cost) && cost >= 0 ? cost : Number(stockItem.costPrice || 0);
   const amount = unitCost * qty;
-  const newStock = Math.max(0, Number(stockItem.stock || 0) - qty);
+  let batchAllocations = [];
+  let newStock;
+  if (isMedicine) {
+    try {
+      const removal = removePharmacyBatches(stockItem.pharmacyBatches, qty);
+      stockItem.pharmacyBatches = removal.batches;
+      batchAllocations = removal.allocations;
+      newStock = sumPharmacyBatchStock(removal.batches);
+      stockItem.expiryDate = removal.batches.map(batch => batch.expiryDate).sort()[0] || '';
+    } catch (error) {
+      await showAppAlert(error.message, 'Batch Write-off Failed');
+      return;
+    }
+  } else {
+    newStock = Math.max(0, Number(stockItem.stock || 0) - qty);
+  }
 
   setProductStock(stockItem, newStock);
   stockItem = enrichEnterpriseRecord('products', stockItem, stockItem);
@@ -17870,7 +18405,8 @@ async function saveWastageLossEntry() {
     itemId: stockItem.recordId || stockItem.id || null,
     adjustment: -qty,
     newTotal: newStock,
-    note: note || 'Waste/Loss'
+    note: note || 'Waste/Loss',
+    batchAllocations
   });
   restockHistory.unshift(restockRecord);
   enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
@@ -17882,7 +18418,8 @@ async function saveWastageLossEntry() {
     cost: unitCost,
     amount,
     total: amount,
-    note
+    note,
+    ...(isMedicine ? { batchAllocations } : {})
   };
 
   wastageLossHistory.unshift(entry);
@@ -17988,6 +18525,10 @@ async function saveWastageEdit() {
   if (!id) return;
   const idx = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).findIndex(e => e.id === id);
   if (idx === -1) return;
+  if (Array.isArray(wastageLossHistory[idx].batchAllocations)) {
+    await showAppAlert('Batch-based medicine write-offs cannot be edited in place. Delete the record to restore its exact batches, then create the corrected write-off.', 'Batch Write-off Locked');
+    return;
+  }
   const qty = Number(document.getElementById('editWastageQty')?.value || 0);
   const cost = Number(document.getElementById('editWastageCost')?.value || 0);
   const amount = qty * cost;
@@ -18029,13 +18570,44 @@ async function deleteWastageLossEntry(id) {
   );
   if (!confirmed || !confirmed.confirmed) return;
 
+  const medicine = menu.find(product => product && product.name === (entry.item || entry.itemName) && isPharmacyMedicine(product));
+  let restoredBatches = null;
+  if (medicine && !Array.isArray(entry.batchAllocations)) {
+    await showAppAlert('This write-off has no recorded batch allocation, so it cannot be deleted safely.', 'Batch Record Missing');
+    return;
+  }
+  if (medicine && entry.batchAllocations.reduce((total, allocation) => total + (Number(allocation?.quantity) || 0), 0) !== Number(entry.qty ?? entry.quantity)) {
+    await showAppAlert('This write-off does not match its batch allocations, so it cannot be deleted safely.', 'Batch Record Mismatch');
+    return;
+  }
+  if (medicine) {
+    try {
+      restoredBatches = restorePharmacyBatchAllocations(medicine.pharmacyBatches, entry.batchAllocations);
+    } catch (error) {
+      await showAppAlert(error.message, 'Batch Restore Failed');
+      return;
+    }
+  }
+
+  const previousWastageLossHistory = wastageLossHistory;
   wastageLossHistory = (Array.isArray(wastageLossHistory) ? wastageLossHistory : []).filter(e => e.id !== id);
   try {
     await saveState('wastageLossHistory', wastageLossHistory);
   } catch (error) {
+    wastageLossHistory = previousWastageLossHistory;
     console.error('[WASTAGE] Could not persist waste/loss deletion:', error);
     await showAppAlert('The deletion could not be saved locally. The record remains pending on this device.', 'Delete Needs Attention');
     return;
+  }
+  if (medicine && restoredBatches) {
+    medicine.pharmacyBatches = restoredBatches;
+    setProductStock(medicine, sumPharmacyBatchStock(restoredBatches));
+    medicine.expiryDate = restoredBatches.map(batch => batch.expiryDate).sort()[0] || '';
+    const index = menu.indexOf(medicine);
+    if (index >= 0) {
+      menu[index] = enrichEnterpriseRecord('products', medicine, medicine);
+      enqueueEnterpriseRecordChange('products', menu[index], 'upsert').catch(console.warn);
+    }
   }
   renderWastageLossHistory();
   updateDashboard();
@@ -18050,6 +18622,9 @@ function editPurchaseEntry(id) {
   if (!requireActionPermission('purchases.edit', 'editing a purchase or expense')) return;
   const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(e => e.id === id);
   if (!entry) return;
+  if (settings?.pharmacyMode === true && entry.batchNumber) {
+    return showAppAlert('Medicine batch purchases are locked after receiving. Do not edit the audit record; use a separate stock adjustment with the correct batch details.', 'Medicine Purchase Locked');
+  }
   const modal = document.getElementById('editPurchaseModal');
   if (!modal) return;
   document.getElementById('editPurchaseId').value = id;
@@ -18115,6 +18690,10 @@ async function deletePurchaseEntry(id) {
 
   const entry = (Array.isArray(purchaseHistory) ? purchaseHistory : []).find(e => e.id === id);
   if (!entry) return;
+  if (settings?.pharmacyMode === true && entry.batchNumber) {
+    await showAppAlert('Medicine batch purchases cannot be deleted because stock may already have been dispensed. Record a separate batch adjustment instead.', 'Medicine Purchase Locked');
+    return;
+  }
 
   const confirmed = await showAppConfirm(
     `Are you sure you want to delete the purchase for ${entry.item || 'this item'}?`,

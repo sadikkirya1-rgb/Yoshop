@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yoshop-v107';
+const CACHE_NAME = 'yoshop-v108';
 
 const APP_SHELL_URLS = [
   '/',
@@ -29,6 +29,7 @@ const APP_SHELL_URLS = [
   '/service-ticket-page.css?v=20261109-service-ticket-layout-v5',
   '/kiosk.js?v=20261109-service-ticket-v4',
   '/invoice-utils.mjs',
+  '/pharmacy-utils.mjs',
 
   '/offline-architecture.mjs',
   '/auth-utils.mjs',
@@ -86,6 +87,7 @@ const QUERYLESS_APP_PATHS = new Set([
   '/assetlinks.json',
   '/app.js',
   '/invoice-utils.mjs',
+  '/pharmacy-utils.mjs',
   '/style.css',
   '/offline-architecture.mjs',
   '/auth-utils.mjs',

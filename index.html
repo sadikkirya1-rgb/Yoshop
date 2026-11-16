@@ -351,6 +351,20 @@
             <textarea id="serviceNotes" placeholder="Enter notes for laundry, repairs, pickup/dropoff preferences" style="width:100%; min-height:72px; padding:8px; border-radius:8px; border:1px solid #cbd5e1;"></textarea>
           </div>
         </div>
+        <div id="pharmacyPrescriptionFields" style="display:none; margin:10px 0; padding:12px; border:1px solid #f0c36d; background:#fff8e6; border-radius:8px;">
+          <strong>Prescription record</strong>
+          <small style="display:block; margin:4px 0 8px; color:#6b7280;">Required for prescription-only items. This records the supplied prescription; it does not verify a prescriber.</small>
+          <div class="input-row">
+            <input id="pharmacyPatientName" type="text" placeholder="Patient name" autocomplete="off">
+            <input id="pharmacyPrescriberName" type="text" placeholder="Prescriber name" autocomplete="off">
+          </div>
+          <div class="input-row">
+            <label for="pharmacyPrescriptionDate">Prescription date:</label>
+            <input id="pharmacyPrescriptionDate" type="date">
+            <input id="pharmacyPrescriptionReference" type="text" placeholder="Prescription reference (optional)" autocomplete="off">
+          </div>
+          <textarea id="pharmacyPrescriptionDirections" placeholder="Prescriber’s directions" style="width:100%; min-height:64px; padding:8px; border-radius:8px; border:1px solid #cbd5e1;"></textarea>
+        </div>
         <div id="paymentCustomerBalanceRow" style="display:none; justify-content:space-between; margin-bottom:10px; padding:8px; background:rgba(0,0,0,0.05); border-radius:6px; font-size:0.9em;">
           <span>Current Account Balance:</span>
           <span id="paymentCustomerBalanceVal" style="font-weight:bold;">$0</span>
@@ -1462,6 +1476,28 @@
             <label>Man <input type="date" id="newStockItemManufactureDate" title="Manufacture date"></label>
             <label>Exp <input type="date" id="newStockItemExpiryDate" title="Expiry date"></label>
           </div>
+          <div id="pharmacyStockFields" style="display:none; padding:12px; margin:8px 0; border:1px solid #cbd5e1; border-radius:8px;">
+            <label style="display:flex; align-items:center; gap:8px;">
+              <input type="checkbox" id="newStockItemMedicine" onchange="toggleStockMedicineFields()">
+              <strong>Manage as a medicine (pharmacy)</strong>
+            </label>
+            <div id="pharmacyMedicineDetails" style="display:none; margin-top:10px;">
+              <div class="input-row">
+                <input id="newStockItemGenericName" type="text" placeholder="Generic / active ingredient">
+                <input id="newStockItemStrength" type="text" placeholder="Strength (e.g. 500 mg)">
+                <input id="newStockItemDosageForm" type="text" placeholder="Dosage form (e.g. tablet)">
+              </div>
+              <label style="display:flex; align-items:center; gap:8px;">
+                <input type="checkbox" id="newStockItemRequiresPrescription">
+                Prescription required (ordinary prescription medicine)
+              </label>
+              <div class="input-row">
+                <input id="newStockItemInitialBatchNumber" type="text" placeholder="Initial batch / lot number">
+                <label>Initial batch expiry <input id="newStockItemInitialBatchExpiry" type="date"></label>
+              </div>
+              <small>Initial quantity must be assigned to a batch. Further quantities are received as purchases. Controlled-medicine workflows are not included.</small>
+            </div>
+          </div>
           <div class="input-row" style="align-items: center; gap: 12px; flex-wrap: wrap;">
             <input type="file" id="newStockItemImage" accept="image/*" onchange="previewStockItemImage(this)" style="max-width: 280px;">
             <button type="button" class="btn btn-secondary" onclick="clearStockItemImage()">Clear Image</button>
@@ -1565,6 +1601,11 @@
             <input type="number" id="purchaseQty" placeholder="Qty" min="0" step="1" oninput="updatePurchaseTotals()">
             <input type="number" id="purchaseCost" placeholder="Unit Cost" min="0" step="0.01" oninput="updatePurchaseTotals()">
             <input type="number" id="purchaseTotal" placeholder="Total" readonly aria-label="Purchase total">
+          </div>
+          <div class="input-row" id="purchasePharmacyBatchFields" style="display:none;">
+            <input id="purchaseBatchNumber" type="text" placeholder="Medicine batch / lot number">
+            <label>Batch expiry <input id="purchaseBatchExpiry" type="date"></label>
+            <small>Medicine stock is added to a dated batch so expired stock cannot be dispensed.</small>
           </div>
           <div class="input-row" id="purchaseServiceFields" style="display:none;">
             <input type="text" id="purchaseServiceName" placeholder="Service / Expense name" class="u-flex-grow-1">
@@ -1957,13 +1998,25 @@
               <input type="number" id="loyaltyGoldSpendThreshold" min="0" step="1" value="1500">
             </div>
             <small class="u-fs-08 u-text-muted">New sales earn points only on amounts collected. Existing sales are not automatically backfilled.</small>
+            <h4>Sales workflow</h4>
             <div class="input-row">
-              <label for="serviceMode">Service Business Mode:</label>
+              <label for="serviceMode">Service-only workflow:</label>
               <label style="display:flex; align-items:center; gap:8px; margin:0;">
                 <input type="checkbox" id="serviceMode" onchange="toggleServiceMode()">
-                <span>Disable stock tracking and use service workflow states</span>
+                <span>Use service workflow states and turn off stock tracking</span>
               </label>
             </div>
+            <small class="u-fs-08 u-text-muted">Leave this off to use the standard stock-tracked product sales workflow.</small>
+            <h4>Optional business modules</h4>
+            <div class="input-row">
+              <label for="pharmacyMode">Pharmacy inventory:</label>
+              <label style="display:flex; align-items:center; gap:8px; margin:0;">
+                <input type="checkbox" id="pharmacyMode">
+                <span>Enable medicine batches, expiry-aware dispensing, and ordinary prescription capture</span>
+              </label>
+            </div>
+            <small class="u-fs-08 u-text-muted">Pharmacy inventory requires stock tracking, so it cannot be used with the service-only workflow. Controlled medicines and regulatory compliance workflows are not included; confirm current requirements with the relevant authorities.</small>
+            <small class="u-fs-08 u-text-muted">Production workflows are not currently available in the app; neither of these settings enables production tracking.</small>
             <div class="dashboard-card-settings">
               <h4>Dashboard Cards</h4>
               <label class="dashboard-card-setting-option dashboard-card-setting-all">
@@ -2143,6 +2196,9 @@
         </div>
         <div id="serviceModeBanner" class="service-mode-banner" style="display:none; text-align:center; padding:8px 10px; background:#fff4e5; color:#975a16; border:1px solid #f7d7ac; border-radius:8px; font-weight:700; font-size:0.82rem; margin-top:8px;">
           SERVICE MODE ACTIVE — Stock tracking disabled. This app is now optimized for service workflows like laundry, repairs, and appointments.
+        </div>
+        <div id="pharmacyModeBanner" style="display:none; text-align:center; padding:8px 10px; background:#ecfdf5; color:#166534; border:1px solid #86efac; border-radius:8px; font-weight:700; font-size:0.82rem; margin-top:8px;">
+          PHARMACY INVENTORY ACTIVE — Use recorded batches and check prescription details for prescription-only items. Controlled-medicine workflows are not included.
         </div>
         <div id="subscription-footer-status" style="font-size: 0.78em; color: #6c757d; margin-top:8px;">Checking plan status...</div>
       </div>
