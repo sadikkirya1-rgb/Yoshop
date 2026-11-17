@@ -58,6 +58,9 @@ healthMetrics.firebaseCalls    // Total API calls
   mirroring every product, transaction, and other entity when only settings change.
 - Transaction rows use a single index pass before rendering visible rows, avoiding
   repeated linear searches as the in-memory history grows.
+- Loading a shop from local storage refreshes only the active section rather than
+  rendering every hidden section first. Other sections render when opened, avoiding
+  duplicate table and report work during login and background data refreshes.
 
 ### 3. Real-Time Sync Debouncing (200ms)
 

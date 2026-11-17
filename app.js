@@ -19946,16 +19946,18 @@ function refreshCurrentView() {
     'dashboardTab': updateDashboard,
     'transactionsTab': renderTransactions,
     'menuTab': renderMenu,
+    'kioskMenuTab': initializeKioskMenuTab,
     'addDishTab': renderDishesTable,
     'categoryTab': renderCategoryList,
     'unitTab': renderUnitList,
     'staffTab': renderStaffList,
-    'customerTab': renderCustomerList,
+    'customerTab': () => { renderCustomerList(); renderInvoices(); },
+    'invoicesTab': renderInvoices,
     'settingsTab': () => { loadSettings(); },
     'stockTab': () => { renderInventoryReport(); renderStockListTable(); renderUnitList(); renderRestockHistoryTable(); },
-    'purchaseTab': () => { renderPurchaseHistory(); },
+    'purchaseTab': () => { populatePurchaseFormOptions(); renderPurchaseHistory(); },
     'supplierTab': () => { renderSupplierList(); populatePurchaseFormOptions(); },
-    'wastageLossTab': () => { renderWastageLossHistory(); },
+    'wastageLossTab': () => { populateWastageLossItemOptions(); renderWastageLossHistory(); },
     'reportsTab': () => { populateReportFilters(); renderReport(); }
   };
   if (renderMap[activeTab.id]) renderMap[activeTab.id]();
@@ -20061,26 +20063,9 @@ async function loadLocalBusinessDataForUid(uid, options = {}) {
     populateCurrencies();
     transactions = deduplicateTransactions(transactions);
     saveState('transactions', transactions, { enqueueSync: false }).catch(() => {});
-    updateDashboard();
-    renderDishesTable();
-    renderMenu();
-    renderTransactions();
-    renderCategoryList();
-    renderInventoryReport();
-    renderStockListTable();
-    renderCustomerList();
-    renderStaffList();
-    renderUnitList();
-    renderRestockHistoryTable();
-    renderSupplierList();
-    renderPurchaseHistory();
-    renderWastageLossHistory();
-    populatePurchaseFormOptions();
     populateCategoryDropdown();
     populateCategoryFilter();
-    populateReportFilters();
     populateUnitDropdown();
-    loadSettings();
     refreshCurrentView();
   }
 
@@ -20219,9 +20204,6 @@ async function mainInit() {
     initializeDashboardFilters();
     updateDashboard();
 
-    renderDishesTable();
-    renderMenu();
-    loadSettings();
     updateVersionDisplay();
     checkShopStatus();
 
