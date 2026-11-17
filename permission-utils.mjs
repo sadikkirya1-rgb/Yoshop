@@ -146,6 +146,13 @@ function hasPermission(role, permissions = [], feature = '') {
   return false;
 }
 
+function canModifyTransaction(role, permissions = [], options = {}) {
+  const { ownsTransaction = false, withinEditWindow = false, actionPermission = '' } = options;
+  if (['appAdmin', 'shopAdmin'].includes(normalizeRole(role))) return true;
+  if (actionPermission && hasPermission(role, permissions, actionPermission)) return true;
+  return ownsTransaction && withinEditWindow;
+}
+
 function getEffectivePermissions(role, permissions = []) {
   const normalizedRole = normalizeRole(role);
   if (normalizedRole === 'appAdmin' || normalizedRole === 'shopAdmin') return [];
@@ -176,6 +183,7 @@ export {
   FEATURE_ALIASES,
   normalizePermissions,
   hasPermission,
+  canModifyTransaction,
   getEffectivePermissions,
   getFirstAllowedTab
 };

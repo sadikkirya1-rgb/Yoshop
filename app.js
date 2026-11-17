@@ -18,7 +18,7 @@ import { normalizeSettings, getThemePreference } from './theme-utils.mjs';
 import { createRepositoryService } from './repository-service.mjs';
 import { createCloudRepositoryService } from './cloud-service.mjs';
 import { resetActiveOrdersCart } from './dashboard-state-utils.mjs';
-import { normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from './permission-utils.mjs';
+import { normalizePermissions, hasPermission, canModifyTransaction as canModifyTransactionByPermission, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from './permission-utils.mjs';
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, hasNewerStockUpdate, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
@@ -3151,20 +3151,24 @@ function getTransactionStaffName(transaction = {}) {
   return transaction.servedBy || transaction.staffName || transaction.cashier || transaction.createdByName || 'N/A';
 }
 
-function canModifyTransaction(transaction = {}) {
-  if (!transaction || isFullAccessRole()) return true;
+function canModifyTransaction(transaction = {}, actionPermission = '') {
+  if (!transaction) return true;
   const currentStaff = String(getCurrentServerName() || '').trim().toLowerCase();
   const transactionStaff = String(getTransactionStaffName(transaction) || '').trim().toLowerCase();
-  if (!currentStaff || currentStaff === 'n/a' || !transactionStaff || currentStaff !== transactionStaff) return false;
   const windowMinutes = Math.max(0, Number(settings?.transactionEditWindowMinutes ?? 30));
-  if (windowMinutes === 0) return false;
   const transactionTime = new Date(transaction.createdAt || transaction.date || 0).getTime();
-  return Number.isFinite(transactionTime) && Date.now() - transactionTime <= windowMinutes * 60 * 1000;
+  const ownsTransaction = Boolean(currentStaff && currentStaff !== 'n/a' && transactionStaff && currentStaff === transactionStaff);
+  const withinEditWindow = windowMinutes > 0 && Number.isFinite(transactionTime)
+    && Date.now() - transactionTime <= windowMinutes * 60 * 1000;
+  return canModifyTransactionByPermission(currentUserRole, currentUserPermissions, {
+    ownsTransaction,
+    withinEditWindow,
+    actionPermission
+  });
 }
 
-function getTransactionActionLockTitle(transaction = {}) {
-  if (isFullAccessRole()) return '';
-  return canModifyTransaction(transaction)
+function getTransactionActionLockTitle(transaction = {}, actionPermission = '') {
+  return canModifyTransaction(transaction, actionPermission)
     ? ''
     : 'Locked: staff transaction action window has expired or this sale belongs to another staff member';
 }
@@ -3307,8 +3311,8 @@ function updateInvoiceDateTimeByKey(recordKey, dateTimeValue) {
     String(entry.id || entry.recordId || entry.invoiceNumber || entry.date || '') === key
   ));
   if (!transaction) return false;
-  if (!canModifyTransaction(transaction)) {
-    showAppAlert(getTransactionActionLockTitle(transaction), 'Transaction Locked');
+  if (!canModifyTransaction(transaction, 'invoices.edit')) {
+    showAppAlert(getTransactionActionLockTitle(transaction, 'invoices.edit'), 'Transaction Locked');
     return false;
   }
 
@@ -11350,8 +11354,8 @@ function editTransaction(index, permission = 'sales.edit') {
   const source = Array.isArray(transactions) ? transactions[index] : null;
   if (!source) return;
   if (!requireActionPermission(permission, 'editing this transaction')) return;
-  if (!canModifyTransaction(source)) {
-    return showAppAlert(getTransactionActionLockTitle(source), 'Transaction Locked');
+  if (!canModifyTransaction(source, permission)) {
+    return showAppAlert(getTransactionActionLockTitle(source, permission), 'Transaction Locked');
   }
 
   const recordId = String(source.recordId || source.id || source.date || '');
@@ -12026,8 +12030,8 @@ function populateReceiptContent(transaction) {
 async function deleteTransaction(index, permission = 'sales.delete') {
   const transactionToDelete = Array.isArray(transactions) ? transactions[index] : null;
   if (!requireActionPermission(permission, 'deleting this transaction')) return;
-  if (!canModifyTransaction(transactionToDelete)) {
-    await showAppAlert(getTransactionActionLockTitle(transactionToDelete), 'Transaction Locked');
+  if (!canModifyTransaction(transactionToDelete, permission)) {
+    await showAppAlert(getTransactionActionLockTitle(transactionToDelete, permission), 'Transaction Locked');
     return;
   }
   const pin = await showAppPrompt("Enter Admin PIN to delete transaction:", "Admin PIN Required", "Admin PIN");
@@ -15755,8 +15759,8 @@ async function updateTransactionStatusByIndex(transactionIndex, status) {
   const transaction = transactions[transactionIndex];
   if (!transaction || typeof status !== 'string') return null;
   if (!requireActionPermission('sales.edit', 'updating this transaction')) return null;
-  if (!canModifyTransaction(transaction)) {
-    await showAppAlert(getTransactionActionLockTitle(transaction), 'Transaction Locked');
+  if (!canModifyTransaction(transaction, 'sales.edit')) {
+    await showAppAlert(getTransactionActionLockTitle(transaction, 'sales.edit'), 'Transaction Locked');
     return null;
   }
   const previousStatus = String(transaction.orderStatus || transaction.status || '').trim().toLowerCase();
@@ -16236,6 +16240,12 @@ function renderInvoices() {
         const salesBy = getTransactionStaffName(row.transaction || {});
         const invoicePreviewData = { ...previewData, servedBy: salesBy };
         const transactionActionsAllowed = canModifyTransaction(row.transaction || {});
+        const canAdjustInvoice = canPerformAction('invoices.adjust')
+          && canModifyTransaction(row.transaction || {}, 'invoices.adjust');
+        const canEditInvoice = canPerformAction('invoices.edit')
+          && canModifyTransaction(row.transaction || {}, 'invoices.edit');
+        const canDeleteInvoice = canPerformAction('invoices.delete')
+          && canModifyTransaction(row.transaction || {}, 'invoices.delete');
         const isDraft = String(row.transaction?.orderStatus || row.transaction?.status || '').toLowerCase() === 'draft';
         const allAdjustments = Array.isArray(previewData?.adjustments) ? previewData.adjustments : [];
         const lastAdjustment = previewData?.lastAdjustment || (allAdjustments.length > 0 ? allAdjustments[allAdjustments.length - 1] : null);
@@ -16249,7 +16259,7 @@ function renderInvoices() {
         adjustButton.className = 'btn invoice-action-btn';
         adjustButton.type = 'button';
         adjustButton.textContent = '🛠️ Adjust';
-        adjustButton.disabled = adjustDisabled || !transactionActionsAllowed || !canPerformAction('invoices.adjust');
+        adjustButton.disabled = adjustDisabled || !canAdjustInvoice;
         adjustButton.style.cssText = adjustButton.disabled ? 'opacity:0.45; pointer-events:none;' : '';
         adjustButton.addEventListener('click', event => {
           event.stopPropagation();
@@ -16267,10 +16277,15 @@ function renderInvoices() {
         undoAdjustmentButton.type = 'button';
         undoAdjustmentButton.textContent = '↩️ Undo';
         undoAdjustmentButton.title = hasInvoiceAdjustment ? 'Reverse the latest invoice adjustment' : 'No adjustment to reverse';
-        undoAdjustmentButton.disabled = !hasInvoiceAdjustment || !transactionActionsAllowed;
+        undoAdjustmentButton.disabled = !hasInvoiceAdjustment || !canAdjustInvoice;
         if (undoAdjustmentButton.disabled) undoAdjustmentButton.style.cssText = 'opacity:0.45; pointer-events:none;';
         undoAdjustmentButton.addEventListener('click', async event => {
           event.stopPropagation();
+          if (!requireActionPermission('invoices.adjust', 'reversing an invoice adjustment')) return;
+          if (!canModifyTransaction(row.transaction || {}, 'invoices.adjust')) {
+            await showAppAlert(getTransactionActionLockTitle(row.transaction, 'invoices.adjust'), 'Transaction Locked');
+            return;
+          }
           if (!row.transaction || !latestInvoiceAdjustment) return;
           const adjustmentAmount = Number(latestInvoiceAdjustment.amount) || 0;
           const confirmed = await showAppConfirm(
@@ -16373,8 +16388,10 @@ function renderInvoices() {
         editButton.className = 'btn invoice-action-btn';
         editButton.type = 'button';
         editButton.textContent = '✏️ Edit';
-        editButton.disabled = !transactionActionsAllowed;
-        editButton.title = transactionActionsAllowed ? 'Edit invoice' : getTransactionActionLockTitle(row.transaction);
+        editButton.disabled = !canEditInvoice;
+        editButton.title = !canPerformAction('invoices.edit')
+          ? 'You do not have permission to edit invoices'
+          : canEditInvoice ? 'Edit invoice' : getTransactionActionLockTitle(row.transaction, 'invoices.edit');
         editButton.addEventListener('click', event => {
           event.stopPropagation();
           if (transactionIndex >= 0) editTransaction(transactionIndex, 'invoices.edit');
@@ -16385,7 +16402,7 @@ function renderInvoices() {
         deleteInvoiceButton.type = 'button';
         deleteInvoiceButton.textContent = '🗑️ Delete';
         deleteInvoiceButton.title = 'Delete invoice';
-        deleteInvoiceButton.disabled = !transactionActionsAllowed;
+        deleteInvoiceButton.disabled = !canDeleteInvoice;
         if (deleteInvoiceButton.disabled) deleteInvoiceButton.style.cssText = 'opacity:0.45; pointer-events:none;';
         deleteInvoiceButton.addEventListener('click', event => {
           event.stopPropagation();
@@ -16462,7 +16479,9 @@ function renderInvoices() {
           } else if (index === 2) {
             const dateInput = document.createElement('input');
             dateInput.type = 'datetime-local';
-            dateInput.disabled = !transactionActionsAllowed;
+            const canEditInvoiceDate = canPerformAction('invoices.edit')
+              && canModifyTransaction(row.transaction || {}, 'invoices.edit');
+            dateInput.disabled = !canEditInvoiceDate;
             dateInput.value = toDateTimeLocalValue(row.transaction?.invoiceDate || row.transaction?.date || row.date);
             dateInput.title = 'Edit invoice date';
             dateInput.style.cssText = 'min-width:190px; padding:6px; border:1px solid #cbd5e1; border-radius:6px;';
@@ -16473,7 +16492,11 @@ function renderInvoices() {
                 dateInput.value = toDateTimeLocalValue(row.transaction?.invoiceDate || row.transaction?.date);
               }
             });
-            if (dateInput.disabled) dateInput.title = getTransactionActionLockTitle(row.transaction);
+            if (dateInput.disabled) {
+              dateInput.title = canPerformAction('invoices.edit')
+                ? getTransactionActionLockTitle(row.transaction, 'invoices.edit')
+                : 'You do not have permission to edit invoice dates';
+            }
             cell.appendChild(dateInput);
           } else {
             cell.textContent = value;
@@ -16519,6 +16542,10 @@ async function showInvoiceAdjustmentPrompt(transactionOrCustomer) {
   if (!resolvedTransaction) return;
 
   const activeTransaction = transaction || resolvedTransaction;
+  if (!canModifyTransaction(activeTransaction, 'invoices.adjust')) {
+    await showAppAlert(getTransactionActionLockTitle(activeTransaction, 'invoices.adjust'), 'Transaction Locked');
+    return;
+  }
 
   const customer = activeTransaction.customerId
     ? customers.find(c => c && (c.id === activeTransaction.customerId || String(c.id) === String(activeTransaction.customerId))) || null

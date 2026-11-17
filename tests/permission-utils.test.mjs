@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_PERMISSION_TOKENS, normalizePermissions, hasPermission, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from '../permission-utils.mjs';
+import { DEFAULT_PERMISSION_TOKENS, normalizePermissions, hasPermission, canModifyTransaction, getEffectivePermissions, getFirstAllowedTab, ACTION_PERMISSION_TOKENS } from '../permission-utils.mjs';
 
 test('normalizePermissions collapses duplicates and filters empty values', () => {
   assert.deepEqual(normalizePermissions(['menuTab', '', 'menuTab', 'reportsTab']), ['menuTab', 'reportsTab']);
@@ -42,6 +42,28 @@ test('invoice adjustment is a distinct action and invoice write implies it', () 
   assert.equal(hasPermission('staff', ['invoices.adjust'], 'invoices.adjust'), true);
   assert.equal(hasPermission('staff', ['invoices.edit'], 'invoices.adjust'), false);
   assert.equal(hasPermission('staff', ['invoices.write'], 'invoices.adjust'), true);
+});
+
+test('explicit transaction action grants override the owner and edit-window restriction', () => {
+  assert.equal(canModifyTransaction('staff', ['invoices.adjust'], {
+    ownsTransaction: false,
+    withinEditWindow: false,
+    actionPermission: 'invoices.adjust'
+  }), true);
+  assert.equal(canModifyTransaction('staff', [], {
+    ownsTransaction: false,
+    withinEditWindow: false,
+    actionPermission: 'invoices.adjust'
+  }), false);
+  assert.equal(canModifyTransaction('staff', [], {
+    ownsTransaction: true,
+    withinEditWindow: true
+  }), true);
+  assert.equal(canModifyTransaction('staff', ['invoices.write'], {
+    ownsTransaction: false,
+    withinEditWindow: false,
+    actionPermission: 'invoices.adjust'
+  }), true);
 });
 
 test('section read and write permissions are distinct and write implies actions', () => {
