@@ -1104,12 +1104,12 @@
             <input type="hidden" id="customerIndex">
             <div class="input-row">
               <input type="text" id="customerNameInput" placeholder="Customer Name" class="u-flex-2">
-              <input type="text" id="customerContactInput" placeholder="Phone" class="u-flex-2">
             </div>
             <div class="input-row">
               <input type="email" id="customerEmailInput" placeholder="Email" class="u-flex-2">
               <input type="text" id="customerWhatsAppInput" placeholder="WhatsApp Number" class="u-flex-2">
             </div>
+            <div class="input-row"><input type="text" id="customerCompanyInput" placeholder="Company Name (optional)"></div>
             <div class="input-row"><input type="text" id="customerAddressInput" placeholder="Address"></div>
             <div class="input-row" style="justify-content: flex-end;">
               <button class="btn" id="saveCustomerBtn" onclick="addCustomer()">💾 Save Customer</button>
@@ -1160,6 +1160,7 @@
                 <th style="width: 36px; text-align: center;"><input type="checkbox" id="selectAllCustomers" onchange="toggleSelectAllCustomers(this.checked)"></th>
                 <th>#</th>
                 <th>Name</th>
+                <th>Company</th>
                 <th>Membership</th>
                 <th class="u-text-right">Points</th>
                 <th>WhatsApp</th>

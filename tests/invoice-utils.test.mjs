@@ -97,6 +97,21 @@ test('A4 invoice total summary row uses green cell styling for all invoices', ()
   assert.match(appSource, /background:\s*linear-gradient\(135deg,#10b981,#059669\)/i, 'A4 invoice total summary row should use the green invoice total styling.');
 });
 
+test('optional customer company details are saved and included on receipt and A4 invoices', () => {
+  const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
+  const htmlSource = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+
+  assert.match(htmlSource, /id="customerCompanyInput"[^>]*optional/i);
+  assert.match(htmlSource, /<th>Company<\/th>/);
+  assert.doesNotMatch(htmlSource, /id="customerContactInput"/);
+  assert.match(appSource, /companyName:\s*document\.getElementById\('customerCompanyInput'\)/);
+  assert.match(appSource, /contact:\s*existingCustomer\?\.contact/);
+  assert.match(appSource, /escapeHtml\(customer\.companyName \|\| ''\)/);
+  assert.match(appSource, /linkedCustomer\?\.companyName/);
+  assert.match(appSource, /customerCompanyLine/);
+  assert.match(appSource, /safeCustomerCompany/);
+});
+
 test('tenant sales load in cursor pages and render only expanded rows', () => {
   const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 

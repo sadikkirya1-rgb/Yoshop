@@ -3174,11 +3174,14 @@ function repairConflictingCustomerName(source = {}) {
 
   const customerList = Array.isArray(customers) ? customers : [];
   const linkedCustomer = source.customerId
-    ? customerList.find(candidate => candidate && (candidate.id === source.customerId || String(candidate.id) === String(source.customerId))) || null
+    ? customerList.find(candidate => candidate && [candidate.id, candidate.recordId].some(id => id && String(id) === String(source.customerId))) || null
     : null;
 
   const preferredName = source.customerNameReal || source.customer?.name || linkedCustomer?.name || source.customerName || '';
 
+  if (!source.customerCompany) {
+    source.customerCompany = source.customer?.companyName || source.customer?.company || linkedCustomer?.companyName || '';
+  }
   if (!source.customerNameReal && preferredName) source.customerNameReal = preferredName;
   if (!source.customerName && source.customerNameReal) source.customerName = source.customerNameReal;
   if (source.customer && typeof source.customer === 'object' && !source.customer.name && preferredName) {
@@ -3204,6 +3207,7 @@ function normalizeInvoicePrintData(source = {}) {
   const servedBy = repairedSource.servedBy || repairedSource.cashier || repairedSource.staffName || getCurrentServerName() || 'Staff';
   const canonicalCustomerName = repairedSource.customerNameReal || repairedSource.customer?.name || repairedSource.customerName || 'Walk-in Customer';
   const customerName = canonicalCustomerName;
+  const customerCompany = repairedSource.customerCompany || repairedSource.customer?.companyName || repairedSource.customer?.company || '';
   const customerPhone = repairedSource.customerPhone || repairedSource.customerContact || repairedSource.contact || repairedSource.customer?.phone || repairedSource.customer?.mobile || repairedSource.customer?.whatsapp || repairedSource.phone || '';
   const customerAddress = repairedSource.customerAddress || repairedSource.address || repairedSource.customer?.address || '';
   const paymentMethod = repairedSource.paymentMethod || repairedSource.payment?.method || repairedSource.method || 'Cash';
@@ -3230,6 +3234,7 @@ function normalizeInvoicePrintData(source = {}) {
     servedBy,
     customerName,
     customerNameReal: repairedSource.customerNameReal || canonicalCustomerName,
+    customerCompany,
     customerPhone,
     customerAddress,
     paymentMethod,
@@ -9056,6 +9061,7 @@ async function finalizePayment(isSplit = false) {
       customerPhone: customer ? (customer.phone || customer.mobile || customer.whatsapp || customer.contact || '') : '',
       customerWhatsApp: customer ? customer.whatsapp || '' : '',
       customerAddress: customer ? customer.address || '' : '',
+      customerCompany: customer ? customer.companyName || '' : '',
       customerId: customer ? customer.id || customer.recordId : null,
       customerNameReal: customer ? customer.name : 'Walk-in Customer',
       amountPaid: isDraft ? 0 : amountPaid,
@@ -9633,6 +9639,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const customerName = data.customerNameReal || data.customer?.name || data.customerName || 'Walk-in Customer';
   const customerPhone = data.customerPhone;
   const customerAddress = data.customerAddress;
+  const customerCompany = data.customerCompany;
   const paymentMethod = data.paymentMethod;
   const receiptType = data.receiptType || data.type || 'transaction';
   const tableNo = data.tableNo || data.table || 'Shop';
@@ -9658,6 +9665,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
   const logoUrl = sanitizeLogoUrl(settings?.logo);
   const safeStoreName = escapeHtml(storeName);
   const safeCustomerName = escapeHtml(customerName);
+  const safeCustomerCompany = escapeHtml(customerCompany);
   const safeCustomerPhone = escapeHtml(customerPhone);
   const safeCustomerAddress = escapeHtml(customerAddress);
   const safePaymentMethod = escapeHtml(paymentMethod);
@@ -9781,6 +9789,7 @@ window.openA4InvoicePreview = function openA4InvoicePreview(transactionData = nu
             <div class="card">
               <h3>Customer</h3>
               <p>${safeCustomerName}</p>
+              ${safeCustomerCompany ? `<p>Company: ${safeCustomerCompany}</p>` : ''}
               <p>${safeCustomerPhone || '—'}</p>
               <p>${safeCustomerAddress || '—'}</p>
             </div>
@@ -11080,6 +11089,7 @@ function updateTransactionEditDetails(field, value) {
     transaction.customerContact = transaction.customerPhone;
     transaction.customerWhatsApp = customer?.whatsapp || '';
     transaction.customerAddress = customer?.address || '';
+    transaction.customerCompany = customer?.companyName || '';
     const phoneInput = document.getElementById('transactionEditCustomerPhone');
     const addressInput = document.getElementById('transactionEditCustomerAddress');
     if (phoneInput) phoneInput.value = transaction.customerPhone;
@@ -11345,6 +11355,7 @@ function editTransaction(index, permission = 'sales.edit') {
       customerNameReal: linkedCustomer?.name || source.customerNameReal,
       customerPhone: source.customerPhone ?? source.customerContact ?? linkedCustomer?.phone ?? linkedCustomer?.contact,
       customerAddress: source.customerAddress ?? linkedCustomer?.address,
+      customerCompany: source.customerCompany ?? linkedCustomer?.companyName,
       items: (Array.isArray(source.items) ? source.items : []).map(item => ({ ...item })),
       serviceOrder: { ...(source.serviceOrder || {}) },
       taxRate: source.taxRate ?? (
@@ -11907,6 +11918,9 @@ function populateReceiptContent(transaction) {
   const isDebtReceipt = receiptType === 'customerDebtInvoice';
   const titleText = isAdjustmentReceipt ? 'CUSTOMER PAYMENT INVOICE' : isDebtReceipt ? 'CUSTOMER DEBT INVOICE' : 'TRANSACTION INVOICE';
   const customerLine = displayCustomerName ? `<div class="summary-line"><span>Customer</span> <span>${escapeHtml(displayCustomerName)}</span></div>` : '';
+  const customerCompanyLine = normalizedTransaction.customerCompany
+    ? `<div class="summary-line"><span>Company</span> <span>${escapeHtml(normalizedTransaction.customerCompany)}</span></div>`
+    : '';
   const customerContactLine = (transaction.customerContact || transaction.contact || transaction.customer?.phone || transaction.customer?.mobile || transaction.customer?.whatsapp) ? `<div class="summary-line"><span>Contact</span> <span>${escapeHtml(transaction.customerContact || transaction.contact || transaction.customer?.phone || transaction.customer?.mobile || transaction.customer?.whatsapp)}</span></div>` : '';
   const customerAddressLine = (transaction.customerAddress || transaction.address || transaction.customer?.address) ? `<div class="summary-line"><span>Address</span> <span>${escapeHtml(transaction.customerAddress || transaction.address || transaction.customer?.address)}</span></div>` : '';
   const methodLine = paymentMethod ? `<div class="summary-line"><span>Method</span> <span>${escapeHtml(paymentMethod)}</span></div>` : '';
@@ -11953,6 +11967,7 @@ function populateReceiptContent(transaction) {
         <div class="receipt-summary">
           <div class="summary-line"><span>Subtotal</span> <span><span class="currency-symbol">${currencySymbol}</span>${formatCurrency(displaySubtotal)}</span></div>
           ${customerLine}
+          ${customerCompanyLine}
           ${customerContactLine}
           ${customerAddressLine}
           ${serviceTypeLine}
@@ -15361,8 +15376,8 @@ function toggleAddCustomerForm(show) {
     formContainer.style.display = 'block';
     if (toggleButton) toggleButton.style.display = 'none'; // Hide the 'Add New' button
     document.getElementById('customerNameInput').value = '';
-    document.getElementById('customerContactInput').value = '';
     document.getElementById('customerWhatsAppInput').value = '';
+    document.getElementById('customerCompanyInput').value = '';
     document.getElementById('customerAddressInput').value = '';
   } else {
     formContainer.style.display = 'none';
@@ -15415,6 +15430,7 @@ function renderCustomerList() {
     tr.innerHTML = `<td style="text-align: center;"><input type="checkbox" class="customer-row-select" value="${i}" onchange="document.getElementById('selectAllCustomers').checked = document.querySelectorAll('.customer-row-select:checked').length === document.querySelectorAll('.customer-row-select').length"></td>
                         <td>${i + 1}</td>
                         <td>${escapeHtml(customer.name)}</td>
+                        <td>${escapeHtml(customer.companyName || '')}</td>
                         <td>${loyaltySummary.tier}</td>
                         <td class="u-text-right">${loyaltySummary.pointsBalance}</td>
                         <td style="white-space:nowrap;">${whatsappCell}</td>
@@ -15953,6 +15969,7 @@ function createCustomerDebtInvoice(customer) {
     date: customer.lastTransactionDate || new Date().toISOString(),
     customerName: customer.name || 'Unknown Customer',
     customerNameReal: customer.name || 'Unknown Customer',
+    customerCompany: customer.companyName || '',
     customerContact: customer.contact || customer.phone || customer.mobile || '',
     customerAddress: customer.address || '',
     tableNo: 'Customer Account',
@@ -16759,6 +16776,7 @@ function showCustomerAdjustmentReceipt(index, adjustmentIndex = null) {
     date: adjustment.date || new Date().toISOString(),
     customerName: customer.name,
     customerNameReal: customer.name,
+    customerCompany: customer.companyName || '',
     customerContact: customer.contact || customer.phone || customer.mobile || '',
     customerAddress: customer.address || '',
     tableNo: 'Customer Account',
@@ -17008,7 +17026,6 @@ function onPaymentCustomerChange() {
 function addCustomer() {
   if (!requireActionPermission('customers.edit', 'customer changes')) return;
   const nameInput = document.getElementById('customerNameInput');
-  const contactInput = document.getElementById('customerContactInput');
   const emailInput = document.getElementById('customerEmailInput');
   const addressInput = document.getElementById('customerAddressInput');
   const index = document.getElementById('customerIndex').value;
@@ -17021,7 +17038,8 @@ function addCustomer() {
   const whatsappInput = document.getElementById('customerWhatsAppInput');
   const customerData = enrichEnterpriseRecord('customers', {
     name: nameInput.value.trim(),
-    contact: contactInput.value.trim(),
+    companyName: document.getElementById('customerCompanyInput')?.value.trim() || '',
+    contact: existingCustomer?.contact || existingCustomer?.phone || existingCustomer?.mobile || '',
     email: emailInput?.value.trim() || '',
     whatsapp: whatsappInput?.value.trim() || '',
     address: addressInput.value.trim(),
@@ -17055,7 +17073,6 @@ function editCustomer(index) {
   const customer = customers[index];
   toggleAddCustomerForm(true);
   document.getElementById('customerNameInput').value = customer.name;
-  document.getElementById('customerContactInput').value = customer.contact;
   document.getElementById('customerEmailInput').value = customer.email || '';
   document.getElementById('customerWhatsAppInput').value = customer.whatsapp || '';
   document.getElementById('customerAddressInput').value = customer.address;
