@@ -690,6 +690,93 @@ export function calculateDashboardPaymentMethodTotals({ transactions = [], adjus
   return totals;
 }
 
+export function calculateInternalFundsAvailability({
+  transactions = [],
+  adjustments = [],
+  purchases = [],
+  paymentMethod = 'Cash',
+  now = new Date()
+} = {}) {
+  const normalizePaymentBucket = method => {
+    const normalizedMethod = typeof method === 'string' ? method.trim().toLowerCase() : '';
+    if (normalizedMethod === 'cash') return 'cash';
+    if (normalizedMethod.includes('digital')
+      || normalizedMethod.includes('transfer')
+      || normalizedMethod.includes('bank')
+      || normalizedMethod.includes('card')
+      || normalizedMethod.includes('debit')
+      || normalizedMethod.includes('credit')
+      || normalizedMethod.includes('mobile')
+      || normalizedMethod.includes('momo')
+      || normalizedMethod.includes('wallet')) return 'digital';
+    return null;
+  };
+  const requestedBucket = normalizePaymentBucket(paymentMethod);
+  if (!requestedBucket) return { today: 0, month: 0, allTime: 0 };
+
+  const todayKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  const monthKey = todayKey.slice(0, 7);
+  const values = { today: 0, month: 0, allTime: 0 };
+  const add = (method, amount, dateValue, direction = 1) => {
+    if (normalizePaymentBucket(method) !== requestedBucket) return;
+    const value = Number(amount);
+    if (!Number.isFinite(value)) return;
+    const delta = value * direction;
+    values.allTime += delta;
+    if (!dateValue) return;
+    const dateOnly = typeof dateValue === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue);
+    const date = dateValue instanceof Date
+      ? dateValue
+      : (typeof dateValue?.toDate === 'function' ? dateValue.toDate() : new Date(dateValue));
+    if (Number.isNaN(date.getTime())) return;
+    const dateKey = dateOnly
+      ? dateValue
+      : `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    if (dateKey === todayKey) values.today += delta;
+    if (dateKey.slice(0, 7) === monthKey) values.month += delta;
+  };
+
+  const transactionAdjustments = [];
+  (Array.isArray(transactions) ? transactions : []).forEach(transaction => {
+    if (!transaction || typeof transaction !== 'object') return;
+    const saleDate = transaction.date || transaction.createdAt;
+    const saleAdjustments = Array.isArray(transaction.adjustments) && transaction.adjustments.length > 0
+      ? transaction.adjustments.filter(Boolean)
+      : (transaction.lastAdjustment ? [transaction.lastAdjustment] : []);
+    const adjustmentTotal = saleAdjustments.reduce((sum, adjustment) => sum + (Number(adjustment?.amount) || 0), 0);
+    const paymentSummary = calculateInvoicePaymentSummary(transaction, Number(transaction.total || 0));
+    add(transaction.paymentMethod, Math.max(0, paymentSummary.amountPaid - adjustmentTotal), saleDate);
+    saleAdjustments.forEach(adjustment => {
+      transactionAdjustments.push(adjustment);
+      add(adjustment.method, adjustment.amount, adjustment.date || saleDate);
+    });
+  });
+
+  const seenAdjustmentIds = new Set(transactionAdjustments
+    .map(adjustment => adjustment?.id || adjustment?.recordId)
+    .filter(Boolean)
+    .map(String));
+  (Array.isArray(adjustments) ? adjustments : []).forEach(adjustment => {
+    if (!adjustment || typeof adjustment !== 'object') return;
+    const id = adjustment.id || adjustment.recordId;
+    if (id && seenAdjustmentIds.has(String(id))) return;
+    if (id) seenAdjustmentIds.add(String(id));
+    add(adjustment.method, adjustment.amount, adjustment.date);
+  });
+
+  (Array.isArray(purchases) ? purchases : []).forEach(purchase => {
+    if (!purchase || purchase.purchaseSource !== 'internal') return;
+    add(
+      purchase.paymentMethod || 'Cash',
+      Math.max(0, Number(purchase.purchaseAmount ?? purchase.amount ?? purchase.total ?? 0)),
+      purchase.date || purchase.createdAt,
+      -1
+    );
+  });
+
+  return values;
+}
+
 export function summarizeDebtInvoices({ customers = [], transactions = [] } = {}) {
   const invoiceRows = buildInvoiceListItems({ customers, transactions });
   const outstandingDebt = invoiceRows.reduce((sum, row) => {

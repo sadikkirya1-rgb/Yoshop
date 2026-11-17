@@ -22,7 +22,7 @@ import { normalizePermissions, hasPermission, canModifyTransaction as canModifyT
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, hasNewerStockUpdate, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange, getTransactionsForCustomer, calculateCustomerTotalPaid, reconcileCustomerTransactionReferences as reconcileCustomerTransactionRecords } from './invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, calculateInternalFundsAvailability, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange, getTransactionsForCustomer, calculateCustomerTotalPaid, reconcileCustomerTransactionReferences as reconcileCustomerTransactionRecords } from './invoice-utils.mjs';
 import { allocatePharmacyBatches, getPharmacyAvailableStock, getPharmacyPrescriptionErrors, receivePharmacyBatch, removePharmacyBatches, restorePharmacyBatchAllocations, sumPharmacyBatchStock } from './pharmacy-utils.mjs';
 
 // Your web app's Firebase configuration
@@ -18307,6 +18307,7 @@ async function savePurchaseEntry() {
   let displayItem = '';
   let stockUpdated = false;
   let stockValueImpact = 0;
+  let stockPurchase = null;
 
   if (purchaseType === 'service') {
     if (!serviceName) {
@@ -18352,43 +18353,76 @@ async function savePurchaseEntry() {
     displayItem = item;
 
     if (stockItem) {
-      let newStock;
-      if (isPharmacyMedicine(stockItem)) {
-        try {
-          stockItem.pharmacyBatches = receivePharmacyBatch(stockItem.pharmacyBatches, {
-            id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            batchNumber: purchaseBatchNumber,
-            expiryDate: purchaseBatchExpiry,
-            quantity: parsedQty,
-            cost: unitCost,
-            receivedAt: new Date().toISOString()
-          });
-        } catch (error) {
-          await showAppAlert(error.message, 'Invalid Medicine Batch');
-          return;
-        }
-        newStock = sumPharmacyBatchStock(stockItem.pharmacyBatches);
-        stockItem.expiryDate = stockItem.pharmacyBatches.map(batch => batch.expiryDate).sort()[0];
-      } else {
-        newStock = Number(stockItem.stock || 0) + parsedQty;
-      }
-      setProductStock(stockItem, newStock);
-      stockUpdated = true;
-      stockValueImpact = purchaseAmount;
-      stockItem = enrichEnterpriseRecord('products', stockItem, stockItem);
-      enqueueEnterpriseRecordChange('products', stockItem, 'upsert').catch(console.warn);
-
-      const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
-        date: new Date().toISOString(),
-        itemName: stockItem.name,
-        itemId: stockItem.recordId || stockItem.id || null,
-        adjustment: parsedQty,
-        newTotal: newStock,
-        note: `Purchase from ${supplier}`
-      });
-      restockHistory.unshift(restockRecord);
-      enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
+      stockPurchase = { stockItem, parsedQty, unitCost };
     }
+  }
+
+  if (purchaseSource === 'internal' && purchaseAmount > 0) {
+    const availability = calculateInternalFundsAvailability({
+      transactions,
+      adjustments: (Array.isArray(customers) ? customers : []).flatMap(customer =>
+        Array.isArray(customer?.adjustments) ? customer.adjustments : []
+      ),
+      purchases: purchaseHistory,
+      paymentMethod
+    });
+    if (purchaseAmount > availability.today) {
+      const shortfall = purchaseAmount - availability.today;
+      const currency = getCurrencySymbol();
+      const amountLabel = amount => `${currency}${formatCurrency(amount)}`;
+      const message = [
+        `Today's ${paymentMethod} funds are lower than this internal purchase/expenditure.`,
+        '',
+        `Amount entered: ${amountLabel(purchaseAmount)}`,
+        `Available today: ${amountLabel(availability.today)}`,
+        `Shortfall: ${amountLabel(shortfall)}`,
+        `Available this month: ${amountLabel(availability.month)}`,
+        `Available all time: ${amountLabel(availability.allTime)}`,
+        '',
+        'Cancel, reduce the amount, or continue saving.'
+      ].join('\n');
+      const confirmation = await showAppConfirm(message, 'Internal Funds Check', 'Continue to Save', 'Cancel');
+      if (!confirmation?.confirmed) return;
+    }
+  }
+
+  if (stockPurchase) {
+    let newStock;
+    if (isPharmacyMedicine(stockPurchase.stockItem)) {
+      try {
+        stockPurchase.stockItem.pharmacyBatches = receivePharmacyBatch(stockPurchase.stockItem.pharmacyBatches, {
+          id: `batch-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          batchNumber: purchaseBatchNumber,
+          expiryDate: purchaseBatchExpiry,
+          quantity: stockPurchase.parsedQty,
+          cost: stockPurchase.unitCost,
+          receivedAt: new Date().toISOString()
+        });
+      } catch (error) {
+        await showAppAlert(error.message, 'Invalid Medicine Batch');
+        return;
+      }
+      newStock = sumPharmacyBatchStock(stockPurchase.stockItem.pharmacyBatches);
+      stockPurchase.stockItem.expiryDate = stockPurchase.stockItem.pharmacyBatches.map(batch => batch.expiryDate).sort()[0];
+    } else {
+      newStock = Number(stockPurchase.stockItem.stock || 0) + stockPurchase.parsedQty;
+    }
+    setProductStock(stockPurchase.stockItem, newStock);
+    stockUpdated = true;
+    stockValueImpact = purchaseAmount;
+    const updatedStockItem = enrichEnterpriseRecord('products', stockPurchase.stockItem, stockPurchase.stockItem);
+    enqueueEnterpriseRecordChange('products', updatedStockItem, 'upsert').catch(console.warn);
+
+    const restockRecord = enrichEnterpriseRecord('inventoryHistory', {
+      date: new Date().toISOString(),
+      itemName: updatedStockItem.name,
+      itemId: updatedStockItem.recordId || updatedStockItem.id || null,
+      adjustment: stockPurchase.parsedQty,
+      newTotal: newStock,
+      note: `Purchase from ${supplier}`
+    });
+    restockHistory.unshift(restockRecord);
+    enqueueEnterpriseRecordChange('inventory_history', restockRecord, 'upsert').catch(console.warn);
   }
 
   const entry = {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange, getTransactionsForCustomer, calculateCustomerTotalPaid, reconcileCustomerTransactionReferences } from '../invoice-utils.mjs';
+import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, calculateInternalFundsAvailability, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange, getTransactionsForCustomer, calculateCustomerTotalPaid, reconcileCustomerTransactionReferences } from '../invoice-utils.mjs';
 
 test('customer transaction totals use stable ids and ignore ambiguous legacy names', () => {
   const customers = [{ id: 'cust-1', name: 'Alex' }, { id: 'cust-2', name: 'Alex' }];
@@ -650,6 +650,49 @@ test('calculateDashboardPaymentMethodTotals deducts internal purchases by paymen
 
   assert.equal(summary.cash, 70);
   assert.equal(summary.digital, 160);
+});
+
+test('calculateInternalFundsAvailability returns net daily, month-to-date, and lifetime funds by payment mode', () => {
+  const availability = calculateInternalFundsAvailability({
+    now: new Date('2026-10-20T12:00:00'),
+    paymentMethod: 'Cash',
+    transactions: [
+      { date: '2026-10-20T09:00:00', total: 100, amountPaid: 100, paymentMethod: 'Cash' },
+      { date: '2026-10-05T09:00:00', total: 200, amountPaid: 200, paymentMethod: 'Cash' },
+      { date: '2026-09-10T09:00:00', total: 300, amountPaid: 300, paymentMethod: 'Cash' }
+    ],
+    adjustments: [{ id: 'customer-payment-1', date: '2026-10-20T10:00:00', amount: 40, method: 'Cash' }],
+    purchases: [
+      { date: '2026-10-20', purchaseSource: 'internal', paymentMethod: 'Cash', purchaseAmount: 20 },
+      { date: '2026-10-06', purchaseSource: 'internal', paymentMethod: 'Cash', purchaseAmount: 50 },
+      { date: '2026-09-11', purchaseSource: 'internal', paymentMethod: 'Cash', purchaseAmount: 60 },
+      { date: '2026-10-20', purchaseSource: 'internal', paymentMethod: 'Digital Pay', purchaseAmount: 500 },
+      { date: '2026-10-20', purchaseSource: 'external', paymentMethod: 'Cash', purchaseAmount: 500 }
+    ]
+  });
+
+  assert.deepEqual(availability, { today: 120, month: 270, allTime: 510 });
+});
+
+test('calculateInternalFundsAvailability dates adjustments on their receipt date', () => {
+  const availability = calculateInternalFundsAvailability({
+    now: new Date('2026-10-20T12:00:00'),
+    paymentMethod: 'Digital Pay',
+    transactions: [{
+      date: '2026-09-30T09:00:00',
+      total: 100,
+      amountPaid: 50,
+      adjustmentsAppliedToAmountPaid: true,
+      adjustments: [{ id: 'tx-adjustment-1', date: '2026-10-20T10:00:00', amount: 50, method: 'Mobile Money' }]
+    }],
+    adjustments: [
+      { id: 'tx-adjustment-1', date: '2026-10-20T10:00:00', amount: 50, method: 'Mobile Money' },
+      { id: 'customer-adjustment-1', date: '2026-10-01T10:00:00', amount: 20, method: 'Card' }
+    ],
+    purchases: []
+  });
+
+  assert.deepEqual(availability, { today: 50, month: 70, allTime: 70 });
 });
 
 test('calculateDashboardPaymentMethodTotals assigns transaction adjustments to their own payment method', () => {
