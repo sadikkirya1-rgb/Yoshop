@@ -22,6 +22,7 @@ import { normalizePermissions, hasPermission, canModifyTransaction as canModifyT
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, hasNewerStockUpdate, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
+import { groupCustomersByCompany, normalizeCompanyName } from './customer-company-utils.mjs';
 import { BUILT_IN_CUSTOMER_QUICK_MESSAGES, resolveCustomerQuickMessage } from './customer-message-utils.mjs';
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, calculateInternalFundsAvailability, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange, getTransactionsForCustomer, calculateCustomerTotalPaid, reconcileCustomerTransactionReferences as reconcileCustomerTransactionRecords } from './invoice-utils.mjs';
 import { allocatePharmacyBatches, getPharmacyAvailableStock, getPharmacyPrescriptionErrors, receivePharmacyBatch, removePharmacyBatches, restorePharmacyBatchAllocations, sumPharmacyBatchStock } from './pharmacy-utils.mjs';
@@ -15423,6 +15424,11 @@ function toggleSelectAllCustomers(checked) {
 
 window.toggleSelectAllCustomers = toggleSelectAllCustomers;
 
+let customerCompanySummaryCache = {
+  all: { customers: 0, sales: 0, paid: 0, outstanding: 0 },
+  byCompany: new Map()
+};
+
 function getCustomerAccountBalance(customer) {
   if (!customer || typeof customer !== 'object') return 0;
   const customerTransactions = getTransactionsForCustomer(customer, customers, transactions);
@@ -15438,9 +15444,26 @@ function renderCustomerList() {
   if (!tbody) return;
   tbody.innerHTML = '';
   const currencySymbol = getCurrencySymbol();
+  customerCompanySummaryCache = {
+    all: { customers: 0, sales: 0, paid: 0, outstanding: 0 },
+    byCompany: new Map()
+  };
   customers.forEach((customer, i) => {
     const outstandingBalance = getCustomerAccountBalance(customer);
     const totalPaid = calculateCustomerTotalPaid(customer, customers, transactions);
+    const companyKey = normalizeCompanyName(customer.companyName);
+    const customerTransactions = getTransactionsForCustomer(customer, customers, transactions);
+    const sales = customerTransactions.reduce((sum, transaction) =>
+      sum + (Number(transaction?.total ?? transaction?.grandTotal ?? transaction?.amount ?? 0) || 0), 0);
+    const customerTotals = { customers: 1, sales, paid: totalPaid, outstanding: outstandingBalance };
+    const companyTotals = customerCompanySummaryCache.byCompany.get(companyKey) || {
+      customers: 0, sales: 0, paid: 0, outstanding: 0
+    };
+    Object.keys(companyTotals).forEach(key => { companyTotals[key] += customerTotals[key]; });
+    customerCompanySummaryCache.byCompany.set(companyKey, companyTotals);
+    Object.keys(customerCompanySummaryCache.all).forEach(key => {
+      customerCompanySummaryCache.all[key] += customerTotals[key];
+    });
     const loyaltySummary = getLoyaltySummary(customer, settings);
     const outstandingText = outstandingBalance === 0
       ? `${currencySymbol}0`
@@ -15452,6 +15475,7 @@ function renderCustomerList() {
     const sendStatusAction = '';
     const tr = document.createElement('tr');
     tr.dataset.customerName = String(customer.name || '').trim().toLowerCase();
+    tr.dataset.customerCompany = normalizeCompanyName(customer.companyName);
     tr.dataset.customerOutstanding = String(outstandingBalance < 0);
     tr.dataset.customerCredit = String(outstandingBalance > 0);
     tr.dataset.customerPaid = String(totalPaid > 0);
@@ -15476,9 +15500,69 @@ function renderCustomerList() {
                         </td>`;
     tbody.appendChild(tr);
   });
-  
+
+  renderCustomerCompanyFilter();
+  renderCustomerCompanySummary();
   populateCustomerDropdowns();
   renderInvoices();
+}
+
+function renderCustomerCompanyFilter() {
+  const select = document.getElementById('customerCompanyFilter');
+  if (!select) return;
+  const selectedValue = select.value || 'all';
+  const groups = groupCustomersByCompany(customers);
+  select.replaceChildren(new Option('All companies', 'all'));
+  groups.forEach(group => {
+    const value = `company:${group.key}`;
+    select.add(new Option(group.name || 'No company recorded', value));
+  });
+  select.value = [...select.options].some(option => option.value === selectedValue) ? selectedValue : 'all';
+}
+
+function renderCustomerCompanySummary() {
+  const summary = document.getElementById('customerCompanySummary');
+  const select = document.getElementById('customerCompanyFilter');
+  if (!summary) return;
+
+  const selectedValue = select?.value || 'all';
+  const selectedKey = selectedValue.startsWith('company:')
+      ? selectedValue.slice('company:'.length)
+      : null;
+  const groups = groupCustomersByCompany(customers);
+  const selectedGroup = selectedKey === null ? null : groups.find(group => group.key === selectedKey);
+  const totals = selectedKey === null
+    ? customerCompanySummaryCache.all
+    : customerCompanySummaryCache.byCompany.get(selectedKey) || { customers: 0, sales: 0, paid: 0, outstanding: 0 };
+  const companyLabel = selectedKey === null
+    ? 'All customers'
+    : selectedGroup?.name || 'No company recorded';
+  const currencySymbol = getCurrencySymbol();
+  const metrics = [
+    ['Customers', String(totals.customers)],
+    ['Sales', `${currencySymbol}${formatCurrency(totals.sales)}`],
+    ['Total Paid', `${currencySymbol}${formatCurrency(totals.paid)}`],
+    ['Outstanding Balance', `${currencySymbol}${formatCurrency(totals.outstanding)}`]
+  ];
+
+  summary.replaceChildren();
+  const heading = document.createElement('h5');
+  heading.textContent = `${companyLabel} Summary`;
+  heading.style.margin = '0 0 10px';
+  const cards = document.createElement('div');
+  cards.style.cssText = 'display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px;';
+  metrics.forEach(([label, value]) => {
+    const card = document.createElement('div');
+    card.style.cssText = 'padding:12px; border:1px solid var(--border-color); border-radius:8px;';
+    const metricLabel = document.createElement('div');
+    metricLabel.className = 'u-fs-08 u-text-muted';
+    metricLabel.textContent = label;
+    const metricValue = document.createElement('strong');
+    metricValue.textContent = value;
+    card.append(metricLabel, metricValue);
+    cards.appendChild(card);
+  });
+  summary.append(heading, cards);
 }
 
 function getCustomerWhatsAppNumber(customer) {
@@ -19147,6 +19231,8 @@ function applyDataTableControls(toolbar, resetPage = false) {
 
   const search = toolbar.querySelector('[data-table-search]');
   const filter = toolbar.querySelector('[data-table-filter]');
+  const companyFilter = toolbar.querySelector('[data-company-filter]');
+  const companyFilterValue = companyFilter?.value || 'all';
   const searchValue = String(search?.value || '').trim().toLowerCase();
   const filterValue = String(filter?.value || 'all').toLowerCase();
   const customerFilterValue = toolbar.dataset.customerFilter || 'all';
@@ -19175,16 +19261,18 @@ function applyDataTableControls(toolbar, resetPage = false) {
       || (filterValue === 'product' && !isService)
       || rowText.includes(filterValue);
     const matchesCustomerFilter = !customerFilterDataKey || row.dataset[customerFilterDataKey] === 'true';
+    const matchesCompany = companyFilterValue === 'all'
+      || row.dataset.customerCompany === companyFilterValue.slice('company:'.length);
     const matchesSearch = !searchValue || (prioritizedCustomerRows.size > 0
       ? prioritizedCustomerRows.has(row)
       : rowText.includes(searchValue));
-    const filterHidden = !(matchesFilter && matchesCustomerFilter && matchesSearch);
+    const filterHidden = !(matchesFilter && matchesCustomerFilter && matchesCompany && matchesSearch);
     row.dataset.dataTableFilterHidden = String(filterHidden);
     row.hidden = filterHidden;
   });
   applyDataTablePagination(body);
 
-  const shouldShowEmptyRow = (Boolean(searchValue) || filterValue !== 'all' || Boolean(customerFilterDataKey))
+  const shouldShowEmptyRow = (Boolean(searchValue) || filterValue !== 'all' || Boolean(customerFilterDataKey) || companyFilterValue !== 'all')
     && rows.every(row => row.dataset.dataTableFilterHidden === 'true');
   let emptyRow = body.querySelector(':scope > tr[data-search-empty-row]');
   if (shouldShowEmptyRow && !emptyRow) {
@@ -19300,8 +19388,13 @@ function initializeDataTableControls() {
 
     const search = toolbar.querySelector('[data-table-search]');
     const filter = toolbar.querySelector('[data-table-filter]');
+    const companyFilter = toolbar.querySelector('[data-company-filter]');
     search?.addEventListener('input', () => applyDataTableControls(toolbar, true));
     filter?.addEventListener('change', () => applyDataTableControls(toolbar, true));
+    companyFilter?.addEventListener('change', () => {
+      applyDataTableControls(toolbar, true);
+      renderCustomerCompanySummary();
+    });
     toolbar.querySelectorAll('[data-customer-filter]').forEach(button => {
       button.addEventListener('click', () => {
         toolbar.dataset.customerFilter = button.dataset.customerFilter || 'all';
@@ -19317,11 +19410,13 @@ function initializeDataTableControls() {
     toolbar.querySelector('[data-table-reset]')?.addEventListener('click', () => {
       if (search) search.value = '';
       if (filter) filter.value = 'all';
+      if (companyFilter) companyFilter.value = 'all';
       toolbar.dataset.customerFilter = 'all';
       toolbar.querySelectorAll('[data-customer-filter]').forEach(option => {
         option.setAttribute('aria-pressed', String(option.dataset.customerFilter === 'all'));
       });
       applyDataTableControls(toolbar, true);
+      renderCustomerCompanySummary();
     });
 
     const body = document.getElementById(toolbar.dataset.tableControls);

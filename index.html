@@ -1137,6 +1137,10 @@
           </div>
           <div class="data-table-toolbar" data-table-controls="customerListBody" data-table-search-priority="customer-name">
             <input type="search" data-table-search placeholder="Search customers..." aria-label="Search customers">
+            <label for="customerCompanyFilter">Company:</label>
+            <select id="customerCompanyFilter" data-company-filter aria-label="Filter customers by company">
+              <option value="all">All companies</option>
+            </select>
             <div class="customer-filter-buttons" role="group" aria-label="Filter customers">
               <button type="button" class="btn btn-secondary" data-customer-filter="all" aria-pressed="true">All</button>
               <button type="button" class="btn btn-secondary" data-customer-filter="outstanding" aria-pressed="false">Outstanding</button>
@@ -1147,6 +1151,7 @@
             </div>
             <button type="button" class="btn btn-secondary" data-table-reset>Clear</button>
           </div>
+          <div id="customerCompanySummary" class="u-mt-10" aria-live="polite"></div>
           <table class="u-mt-15 table-excel">
             <thead>
               <tr>
