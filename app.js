@@ -5383,6 +5383,14 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, 
     await saveState('transactions', transactions.slice(0, 1000), { enqueueSync: false });
     renderTransactions();
     updateDashboard();
+    if (document.getElementById('invoicesTab')?.classList.contains('active')) {
+      renderInvoices();
+    }
+    if (!append && transactionCloudPagination.hasMore) {
+      loadAllTransactionsFromCloud(uid, generation).catch(error => {
+        console.warn('[TX_LOAD] Background transaction paging failed:', error);
+      });
+    }
     return true;
   } catch (e) {
     if (transactionCloudPagination.generation === generation) {
@@ -5394,6 +5402,18 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, 
     if (typeof renderTransactions === 'function') renderTransactions();
     if (typeof updateDashboard === 'function') updateDashboard();
     return false;
+  }
+}
+
+async function loadAllTransactionsFromCloud(uid, generation) {
+  while (
+    transactionCloudPagination.generation === generation &&
+    transactionCloudPagination.uid === uid &&
+    transactionCloudPagination.hasMore
+  ) {
+    const page = transactionCloudPagination;
+    const loaded = await loadTransactionsFromCloud(uid, page.startDate, page.endDate, { append: true });
+    if (!loaded) return;
   }
 }
 
@@ -13566,7 +13586,9 @@ window.addEventListener('online', () => {
   const page = transactionCloudPagination;
   if (page.uid && page.loadFailed && !page.isLoading && getEffectiveUid() === page.uid) {
     if (page.hasMore) {
-      loadMoreTransactionsFromCloud();
+      loadAllTransactionsFromCloud(page.uid, page.generation).catch(error => {
+        console.warn('[TX_LOAD] Background transaction paging failed:', error);
+      });
     } else {
       loadTransactionsFromCloud(page.uid, page.startDate, page.endDate);
     }

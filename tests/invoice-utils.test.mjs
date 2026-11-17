@@ -112,12 +112,14 @@ test('optional customer company details are saved and included on receipt and A4
   assert.match(appSource, /safeCustomerCompany/);
 });
 
-test('tenant sales load in cursor pages and render only expanded rows', () => {
+test('tenant sales load all cloud cursor pages and render only expanded rows', () => {
   const appSource = fs.readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 
   assert.match(appSource, /const TRANSACTION_CLOUD_PAGE_SIZE = 200/);
   assert.match(appSource, /startAfter\(transactionCloudPagination\.lastDocument\)/);
   assert.match(appSource, /constraints\.push\(limit\(TRANSACTION_CLOUD_PAGE_SIZE\)\)/);
+  assert.match(appSource, /if \(!append && transactionCloudPagination\.hasMore\)\s*\{\s*loadAllTransactionsFromCloud\(uid, generation\)/);
+  assert.match(appSource, /async function loadAllTransactionsFromCloud\(uid, generation\)/);
   assert.match(appSource, /sourceArray\.slice\(0, transactionVisibleRowCount\)/);
 });
 
