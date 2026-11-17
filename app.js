@@ -5378,11 +5378,6 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, 
     await saveState('transactions', transactions.slice(0, 1000), { enqueueSync: false });
     renderTransactions();
     updateDashboard();
-    if (!append && transactionCloudPagination.hasMore) {
-      loadAllTransactionsFromCloud(uid, generation).catch(error => {
-        console.warn('[TX_LOAD] Background transaction paging failed:', error);
-      });
-    }
     return true;
   } catch (e) {
     if (transactionCloudPagination.generation === generation) {
@@ -5394,18 +5389,6 @@ async function loadTransactionsFromCloud(uid, startDate = null, endDate = null, 
     if (typeof renderTransactions === 'function') renderTransactions();
     if (typeof updateDashboard === 'function') updateDashboard();
     return false;
-  }
-}
-
-async function loadAllTransactionsFromCloud(uid, generation) {
-  while (
-    transactionCloudPagination.generation === generation &&
-    transactionCloudPagination.uid === uid &&
-    transactionCloudPagination.hasMore
-  ) {
-    const page = transactionCloudPagination;
-    const loaded = await loadTransactionsFromCloud(uid, page.startDate, page.endDate, { append: true });
-    if (!loaded) return;
   }
 }
 
@@ -11629,6 +11612,7 @@ function renderTransactions() {
   const staffValue = String(document.getElementById('transactionStaffFilter')?.value || 'all');
 
   const normalizedTransactions = deduplicateTransactions(Array.isArray(transactions) ? transactions : []);
+  const transactionIndexes = new Map(normalizedTransactions.map((transaction, index) => [transaction, index]));
   if (Array.isArray(transactions) && normalizedTransactions.length !== transactions.length) {
     transactions = normalizedTransactions;
     saveState('transactions', transactions, { enqueueSync: false }).catch(() => {});
@@ -11677,7 +11661,7 @@ function renderTransactions() {
 
   const visibleTransactions = sourceArray.slice(0, transactionVisibleRowCount);
   const tableRows = visibleTransactions.map((t, i) => {
-    const txIndex = normalizedTransactions.indexOf(t);
+    const txIndex = transactionIndexes.get(t);
     const tr = document.createElement('tr');
     tr.className = `u-cursor-pointer${(t.duplicateCount || 0) > 0 ? ' duplicate-sale-row' : ''}`;
 
@@ -13567,7 +13551,7 @@ window.addEventListener('online', () => {
   const page = transactionCloudPagination;
   if (page.uid && page.loadFailed && !page.isLoading && getEffectiveUid() === page.uid) {
     if (page.hasMore) {
-      loadAllTransactionsFromCloud(page.uid, page.generation);
+      loadMoreTransactionsFromCloud();
     } else {
       loadTransactionsFromCloud(page.uid, page.startDate, page.endDate);
     }
@@ -14228,32 +14212,33 @@ async function saveSettings() {
 
   settings = touchSettingsRecord(settings, 'settings');
 
-  await saveData(false);
   const settingsForCloud = { ...settings };
   if (logoUploadData) settingsForCloud.logo = previousLogo;
   if (String(settingsForCloud.logo || '').startsWith('data:image/')) {
     delete settingsForCloud.logo;
   }
-  await enqueueSettingsSync(settingsForCloud).catch(console.warn);
+  await Promise.all([
+    saveState('settings', settings, { enqueueSync: false }),
+    persistImageCache()
+  ]);
+  let cloudSyncQueued = false;
+  try {
+    await enqueueSettingsSync(settingsForCloud);
+    cloudSyncQueued = true;
+  } catch (error) {
+    console.error('[SYNC] Could not queue settings for cloud sync:', error);
+  }
   if (logoUploadData) {
     await enqueueLocalSyncAction({
       entityType: 'businessLogo',
       payload: { id: 'business-logo', dataUrl: logoUploadData }
     }).catch(error => console.warn('[SYNC] Could not queue business logo upload:', error));
   }
-  alert('Settings saved!');
+  alert(cloudSyncQueued
+    ? 'Settings saved and queued for cloud sync.'
+    : 'Settings saved on this device, but cloud sync could not be queued. Please retry sync.');
   loadSettings(); // Reload to show preview
-
-  // --- Re-render all relevant sections to reflect currency change ---
-  updateDashboard();
-  renderMenu();
-  renderDishesTable();
-  renderInventoryReport();
-  renderStockListTable();
-  renderTransactions();
-  renderCustomerList();
-  renderReport();
-  updateCurrencyDisplay(); // Call this AFTER all sections are re-rendered
+  updateCurrencyDisplay();
 }
 
 function loadSettings() {
@@ -22648,7 +22633,7 @@ function setupRealTimeTransactionsSync(uid) {
     console.log('🟢 [SYNC] Setting up real-time listener for transaction notifications...');
     const txRef = collection(dbFirestore, "users", uid, "transactions");
     
-    // Initially load ALL transactions (not just last 10) on first setup
+    // Load the newest page first; older sales are fetched on demand.
     loadTransactionsFromCloud(uid).catch(e => {
       console.warn('[SYNC] Initial transaction cloud load failed:', e);
     });

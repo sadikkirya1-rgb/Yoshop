@@ -48,6 +48,17 @@ healthMetrics.firebaseCalls    // Total API calls
 - Lower memory usage: 200MB → 60MB
 - Smoother scrolling and interactions
 
+### Transaction History and Settings Updates
+
+- The transaction history loads the newest cloud page first (200 records maximum).
+  Older cloud pages are fetched when the user selects **Load older sales** instead
+  of being downloaded all at once in the background.
+- Settings are written to the local repository independently from large business
+  collections, then queued immediately for cloud sync. This avoids re-saving and
+  mirroring every product, transaction, and other entity when only settings change.
+- Transaction rows use a single index pass before rendering visible rows, avoiding
+  repeated linear searches as the in-memory history grows.
+
 ### 3. Real-Time Sync Debouncing (200ms)
 
 **What it does:**
