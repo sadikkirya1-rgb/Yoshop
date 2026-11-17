@@ -6990,8 +6990,8 @@ function renderMenu() {
   const pageStatus = document.getElementById('menuPageStatus');
   if (pageStatus) {
     pageStatus.textContent = filteredMenu.length === 0
-      ? 'Showing 0 of 0'
-      : `Showing ${pageStartIndex + 1}-${pageEndIndex} of ${filteredMenu.length}`;
+      ? '0/0'
+      : `${pageEndIndex}/${filteredMenu.length}`;
   }
   const previousPageButton = document.getElementById('menuPreviousPage');
   const nextPageButton = document.getElementById('menuNextPage');
@@ -17401,8 +17401,8 @@ function renderStockListTable() {
   if (pageStatus) {
     const endVisibleIndex = Math.min(firstVisibleIndex + visibleStockItems.length, stockItems.length);
     pageStatus.textContent = stockItems.length === 0
-      ? 'Showing 0 of 0'
-      : `Showing ${firstVisibleIndex + 1}-${endVisibleIndex} of ${stockItems.length}`;
+      ? '0/0'
+      : `${endVisibleIndex}/${stockItems.length}`;
   }
   const previousButton = document.getElementById('stockTablePreviousPage');
   const nextButton = document.getElementById('stockTableNextPage');
@@ -18945,8 +18945,8 @@ function applyDataTablePagination(body) {
   const status = controls.querySelector('[data-row-status]');
   if (status) {
     status.textContent = visibleRows.length === 0
-      ? 'Showing 0 of 0'
-      : `Showing ${firstVisibleIndex + 1}-${endVisibleIndex} of ${visibleRows.length}`;
+      ? '0/0'
+      : `${endVisibleIndex}/${visibleRows.length}`;
   }
   const previousButton = controls.querySelector('[data-row-previous]');
   const nextButton = controls.querySelector('[data-row-next]');
