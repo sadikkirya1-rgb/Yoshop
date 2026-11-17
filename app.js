@@ -22,6 +22,7 @@ import { normalizePermissions, hasPermission, canModifyTransaction as canModifyT
 import { deduplicateRecords, getCanonicalProductCatalog, mergeProductRecord, findMatchingProductEntry, hasNewerStockUpdate, shouldPreferIncomingRecord } from './record-utils.mjs';
 import { getAuthErrorMessage, isDeletedAccountStatus } from './auth-utils.mjs';
 import { APP_STORAGE_KEYS_TO_CLEAR, getAppResetState, persistResetGuard, readResetGuard, clearResetGuard } from './reset-utils.mjs';
+import { BUILT_IN_CUSTOMER_QUICK_MESSAGES, resolveCustomerQuickMessage } from './customer-message-utils.mjs';
 import { buildInvoiceListItems, mergeTransactionsPreservingDuplicates, deduplicateTransactions, getTransactionDuplicateKey, summarizeDebtInvoices, filterInvoiceRowsByStatus, filterInvoiceRowsBySalesBy, filterInvoiceRowsBySearch, calculateTotalExpenses, calculateTotalWastageLoss, calculatePurchaseAmount, summarizePurchaseImpact, calculateDashboardRevenueMetrics, calculateInvoicePaymentSummary, calculateDashboardPaymentMethodTotals, calculateInternalFundsAvailability, reverseLastInvoiceAdjustment, INVOICE_ROWS_PER_PAGE, paginateInvoiceItems, calculateInvoiceItemQuantityDeltas, retainTransactionsOutsideDateRange, getTransactionsForCustomer, calculateCustomerTotalPaid, reconcileCustomerTransactionReferences as reconcileCustomerTransactionRecords } from './invoice-utils.mjs';
 import { allocatePharmacyBatches, getPharmacyAvailableStock, getPharmacyPrescriptionErrors, receivePharmacyBatch, removePharmacyBatches, restorePharmacyBatchAllocations, sumPharmacyBatchStock } from './pharmacy-utils.mjs';
 
@@ -3124,7 +3125,8 @@ const defaultSettings = {
   serviceMode: false,
   pharmacyMode: false,
   invoiceDateFormat: 'locale',
-  invoiceCustomDateFormat: ''
+  invoiceCustomDateFormat: '',
+  customerQuickMessages: []
 };
 let settings = { ...defaultSettings };
 const defaultStaff = [];
@@ -14509,6 +14511,8 @@ function showAdminNoticesOverlay(notices = []) {
   applyServiceModeUI(settings.serviceMode === true);
   applyPharmacyModeUI(settings.pharmacyMode === true);
   applyDashboardCardVisibility();
+  renderCustomerQuickMessageOptions();
+  renderCustomerQuickMessageManager();
   checkNotificationStatus();
 }
 
@@ -15497,17 +15501,194 @@ function getCustomerQuickMessageText(customer, template) {
 
   const balanceText = `${currencySymbol}${formatCurrency(Math.abs(customerBalance))}`;
 
-  const templates = {
-    order_received: 'We have received your order and are now preparing it with care. We will keep you updated shortly.',
-    order_ready: 'Great news! Your order is now ready for collection. Please visit us at your convenience.',
-    invoice_ready: 'Your invoice is now ready for review. Thank you for choosing us for your service.',
-    payment_received: 'We have successfully received your payment. Thank you for your trust and continued support.',
-    balance_due: `This is a friendly reminder that your outstanding balance is ${balanceText}. Please contact us if you need any assistance.`,
-    special_offer: 'We have a special offer just for you. Please reach out to us to discover more about this exclusive deal.',
-    welcome: 'Welcome to our business! We are delighted to assist you and look forward to serving you again.'
+  return resolveCustomerQuickMessage(template, settings?.customerQuickMessages, {
+    customerName: customer?.name || 'Customer',
+    businessName: settings?.name || 'YoShop',
+    balance: balanceText
+  });
+}
+
+function renderCustomerQuickMessageOptions() {
+  const select = document.getElementById('customerStatusTemplateSelect');
+  if (!select) return;
+  const selectedValue = select.value;
+  const messages = Array.isArray(settings?.customerQuickMessages) ? settings.customerQuickMessages : [];
+  select.replaceChildren(new Option('Quick messages', ''));
+  BUILT_IN_CUSTOMER_QUICK_MESSAGES.forEach(message => {
+    select.add(new Option(message.label, `builtin:${message.id}`));
+  });
+  messages.forEach(message => {
+    if (!message || !String(message.id || '').trim() || !String(message.label || '').trim()) return;
+    select.add(new Option(`${message.label} (Custom)`, `custom:${message.id}`));
+  });
+  if ([...select.options].some(option => option.value === selectedValue)) {
+    select.value = selectedValue;
+  }
+}
+
+let editingCustomerQuickMessageId = '';
+
+function renderCustomerQuickMessageManager() {
+  const list = document.getElementById('customerQuickMessageList');
+  if (!list) return;
+  list.replaceChildren();
+
+  const appendMessageRow = (label, text, isBuiltIn, messageId = '') => {
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex; justify-content:space-between; align-items:flex-start; gap:12px; padding:12px; border:1px solid var(--border-color); border-radius:8px; margin-top:8px;';
+    const content = document.createElement('div');
+    content.style.cssText = 'min-width:0; flex:1;';
+    const heading = document.createElement('strong');
+    heading.textContent = label;
+    const typeLabel = document.createElement('span');
+    typeLabel.className = 'u-fs-08 u-text-muted';
+    typeLabel.textContent = isBuiltIn ? ' · Built-in' : ' · Custom';
+    const body = document.createElement('div');
+    body.className = 'u-fs-08 u-text-muted';
+    body.style.cssText = 'white-space:pre-wrap; overflow-wrap:anywhere; margin-top:4px;';
+    body.textContent = text;
+    content.append(heading, typeLabel, body);
+    row.appendChild(content);
+
+    if (!isBuiltIn) {
+      const actions = document.createElement('div');
+      actions.style.cssText = 'display:flex; gap:6px; flex-shrink:0;';
+      const editButton = document.createElement('button');
+      editButton.type = 'button';
+      editButton.className = 'btn btn-secondary';
+      editButton.textContent = 'Edit';
+      editButton.onclick = () => editCustomerQuickMessage(messageId);
+      const deleteButton = document.createElement('button');
+      deleteButton.type = 'button';
+      deleteButton.className = 'btn btn-secondary';
+      deleteButton.textContent = 'Delete';
+      deleteButton.onclick = () => deleteCustomerQuickMessage(messageId);
+      actions.append(editButton, deleteButton);
+      row.appendChild(actions);
+    }
+
+    list.appendChild(row);
   };
 
-  return templates[template] || '';
+  BUILT_IN_CUSTOMER_QUICK_MESSAGES.forEach(message => {
+    appendMessageRow(message.label, message.text, true);
+  });
+  (Array.isArray(settings?.customerQuickMessages) ? settings.customerQuickMessages : []).forEach(message => {
+    if (!message || !message.id || !message.label || !message.text) return;
+    appendMessageRow(message.label, message.text, false, message.id);
+  });
+}
+
+function resetCustomerQuickMessageForm() {
+  editingCustomerQuickMessageId = '';
+  const labelInput = document.getElementById('customerQuickMessageLabel');
+  const textInput = document.getElementById('customerQuickMessageText');
+  const saveButton = document.getElementById('saveCustomerQuickMessageButton');
+  const cancelButton = document.getElementById('cancelCustomerQuickMessageEditButton');
+  if (labelInput) labelInput.value = '';
+  if (textInput) textInput.value = '';
+  if (saveButton) saveButton.textContent = 'Add Quick Message';
+  if (cancelButton) cancelButton.hidden = true;
+}
+
+function editCustomerQuickMessage(messageId) {
+  const message = (Array.isArray(settings?.customerQuickMessages) ? settings.customerQuickMessages : [])
+    .find(entry => String(entry?.id || '') === String(messageId || ''));
+  if (!message) return;
+  editingCustomerQuickMessageId = String(message.id);
+  const labelInput = document.getElementById('customerQuickMessageLabel');
+  const textInput = document.getElementById('customerQuickMessageText');
+  const saveButton = document.getElementById('saveCustomerQuickMessageButton');
+  const cancelButton = document.getElementById('cancelCustomerQuickMessageEditButton');
+  if (labelInput) labelInput.value = message.label;
+  if (textInput) textInput.value = message.text;
+  if (saveButton) saveButton.textContent = 'Save Changes';
+  if (cancelButton) cancelButton.hidden = false;
+  labelInput?.focus();
+}
+
+async function persistCustomerQuickMessages(messages, successMessage) {
+  const nextSettings = touchSettingsRecord({ ...settings, customerQuickMessages: messages }, 'settings');
+  await saveState('settings', nextSettings, { enqueueSync: false });
+  settings = nextSettings;
+  let cloudSyncQueued = false;
+  try {
+    await enqueueSettingsSync(nextSettings);
+    cloudSyncQueued = true;
+  } catch (error) {
+    console.error('[SETTINGS] Could not queue customer quick messages for cloud sync:', error);
+  }
+  renderCustomerQuickMessageOptions();
+  renderCustomerQuickMessageManager();
+  await showAppAlert(
+    cloudSyncQueued ? successMessage : `${successMessage} This device saved the changes, but cloud sync could not be queued; please retry sync.`,
+    cloudSyncQueued ? 'Quick Messages Saved' : 'Quick Messages Need Sync'
+  );
+}
+
+async function saveCustomerQuickMessage() {
+  const label = String(document.getElementById('customerQuickMessageLabel')?.value || '').trim();
+  const text = String(document.getElementById('customerQuickMessageText')?.value || '').trim();
+  if (!label || !text) {
+    await showAppAlert('Enter both a quick message name and message text.', 'Quick Message Required');
+    return;
+  }
+
+  const messages = Array.isArray(settings?.customerQuickMessages) ? [...settings.customerQuickMessages] : [];
+  const duplicate = messages.some(message =>
+    String(message?.label || '').trim().toLowerCase() === label.toLowerCase()
+    && String(message?.id || '') !== editingCustomerQuickMessageId
+  );
+  if (duplicate) {
+    await showAppAlert('A custom quick message with this name already exists.', 'Duplicate Quick Message');
+    return;
+  }
+
+  if (editingCustomerQuickMessageId) {
+    const index = messages.findIndex(message => String(message?.id || '') === editingCustomerQuickMessageId);
+    if (index < 0) {
+      resetCustomerQuickMessageForm();
+      await showAppAlert('This quick message no longer exists. Refresh the list and try again.', 'Quick Message Not Found');
+      return;
+    }
+    messages[index] = { ...messages[index], label, text };
+  } else {
+    messages.push({
+      id: `quick-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      label,
+      text
+    });
+  }
+
+  try {
+    await persistCustomerQuickMessages(messages, 'Quick message saved successfully.');
+    resetCustomerQuickMessageForm();
+  } catch (error) {
+    console.error('[SETTINGS] Could not save customer quick message:', error);
+    await showAppAlert('The quick message could not be saved. Please try again.', 'Quick Message Save Failed');
+  }
+}
+
+async function deleteCustomerQuickMessage(messageId) {
+  const message = (Array.isArray(settings?.customerQuickMessages) ? settings.customerQuickMessages : [])
+    .find(entry => String(entry?.id || '') === String(messageId || ''));
+  if (!message) return;
+  const confirmation = await showAppConfirm(
+    `Delete the custom quick message "${message.label}"?`,
+    'Delete Quick Message',
+    'Delete',
+    'Cancel'
+  );
+  if (!confirmation?.confirmed) return;
+
+  const messages = settings.customerQuickMessages.filter(entry => String(entry?.id || '') !== String(messageId));
+  try {
+    await persistCustomerQuickMessages(messages, 'Quick message deleted successfully.');
+    if (editingCustomerQuickMessageId === String(messageId)) resetCustomerQuickMessageForm();
+  } catch (error) {
+    console.error('[SETTINGS] Could not delete customer quick message:', error);
+    await showAppAlert('The quick message could not be deleted. Please try again.', 'Quick Message Delete Failed');
+  }
 }
 
 function applyCustomerQuickMessage(template) {
@@ -24249,6 +24430,7 @@ Object.assign(window, {
   manualBarcodeInput, startCameraScan, closeCameraScanner, startMobileConnection, login, loginWithEmail, registerWithEmail, handleForgotPassword, logout, syncNow, renderSyncHealthPanel, closeMobileConnectModal, generateAndPrintBarcodes, requestNotificationPermission,
   showLoginOverlay, testLocalNotification, toggleNotifications, dismissNotification, selectLoginRole, resetLoginStage,
   renderShopNoticesInSettings, showNoticesPage, closeNoticesPage, addOrUpdateAdminNoticeNotification, removeAdminNoticeNotification, openAdminNoticeFromNotification, checkForAdminNoticeForCurrentShop,
+  saveCustomerQuickMessage, editCustomerQuickMessage, deleteCustomerQuickMessage, resetCustomerQuickMessageForm,
   clearAllNotifications, refreshApp, handleSplashScreen, applyTheme, togglePINVisibility, loginWithPIN, lockApp, forgotPIN, searchTransactionsByRange, updateAppAdminCredentials, updateShopStatus, exportReportAsImage,
   toggleAdminAccessForm, saveAdminAccessEntry, editAdminAccessEntry, deleteAdminAccessEntry, toggleAdminAccessStatus, clearYoShopLocalData, resetLocalDatabase,
   refreshAppAdminShops, refreshAppAdminShopsTable, refreshAppAdminSubscriptions, clearBrokenTenantLogo, setSubscriptionsFilter, toggleSelectAllSubscriptionRows, runBulkSubscriptionAction, monitorShop, fetchGlobalAnalytics, deleteShop, updateTargetShopStatus, sendAdminWhatsApp,

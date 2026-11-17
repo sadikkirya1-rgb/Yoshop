@@ -1128,13 +1128,6 @@
             <div class="action-buttons" style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
               <select id="customerStatusTemplateSelect" onchange="applyCustomerQuickMessage(this.value)" style="padding:8px 10px; border-radius:8px; border:1px solid #cbd5e1; min-width:180px;">
                 <option value="">Quick messages</option>
-                <option value="order_received">Order Received</option>
-                <option value="order_ready">Order Ready</option>
-                <option value="invoice_ready">Invoice Ready</option>
-                <option value="payment_received">Payment Received</option>
-                <option value="balance_due">Balance Due</option>
-                <option value="special_offer">Special Offer</option>
-                <option value="welcome">Welcome / General Care</option>
               </select>
               <button class="btn btn-success" type="button" onclick="sendSelectedCustomersStatusNotification()" title="Send to selected customers by WhatsApp" style="white-space: nowrap;">📩 WhatsApp Selected</button>
               <button class="btn btn-primary" type="button" onclick="sendAllCustomersStatusNotification()" title="Send to all customers with WhatsApp" style="white-space: nowrap;">📢 WhatsApp All</button>
@@ -2036,6 +2029,23 @@
             <div class="input-row">
               <label for="promoMessage">Promo Message:</label>
               <input type="text" id="promoMessage" placeholder="e.g., Get 10% off on your next visit!">
+            </div>
+            <div class="settings-group" id="customerQuickMessagesSettings" style="margin-top:16px;">
+              <h4>Customer Quick Messages</h4>
+              <p class="u-fs-08 u-text-muted">Built-in messages are listed below. Add your own reusable messages for the quick-message menu in Customer Management. Supported placeholders: {{customerName}}, {{businessName}}, and {{balance}}.</p>
+              <div class="input-row">
+                <label for="customerQuickMessageLabel">Message name:</label>
+                <input type="text" id="customerQuickMessageLabel" maxlength="60" placeholder="e.g., Appointment Reminder">
+              </div>
+              <div class="input-row">
+                <label for="customerQuickMessageText">Message text:</label>
+                <textarea id="customerQuickMessageText" maxlength="2000" rows="3" placeholder="Type the reusable customer message"></textarea>
+              </div>
+              <div class="input-row" style="justify-content:flex-end;">
+                <button type="button" class="btn" id="saveCustomerQuickMessageButton" onclick="saveCustomerQuickMessage()">Add Quick Message</button>
+                <button type="button" class="btn btn-secondary" id="cancelCustomerQuickMessageEditButton" onclick="resetCustomerQuickMessageForm()" hidden>Cancel Edit</button>
+              </div>
+              <div id="customerQuickMessageList" aria-live="polite"></div>
             </div>
             <div class="input-row">
               <label for="companyLogo">Logo:</label>
